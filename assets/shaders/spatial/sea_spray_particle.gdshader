@@ -26,6 +26,9 @@ uniform vec4 map_scales[MAX_CASCADES];               // Scales for displacement/
 global uniform uint num_cascades;
 global uniform sampler2DArray displacements;         // Each layer represents one wave cascade.
 global uniform sampler2DArray normals : hint_normal; // Each layer represents one wave cascade.
+global uniform sampler2DArray previous_displacements;
+global uniform sampler2DArray previous_normals : hint_normal;
+global uniform float wave_blend_alpha;
 
 // Source: https://www.shadertoy.com/view/Xt3cDn
 vec3 hash32(uvec2 p) {
@@ -80,7 +83,7 @@ void process() {
 			// Read foam and normal information from normal maps.
 			vec3 gradient = vec3(0);
 			for (uint i = 0U; i < num_cascades; ++i)
-				gradient += texture(normals, vec3(START_POS.xz*map_scales[i].xy, float(i))).xyw;
+				gradient += mix(texture(previous_normals, vec3(START_POS.xz*map_scales[i].xy, float(i))), texture(normals, vec3(START_POS.xz*map_scales[i].xy, float(i))), wave_blend_alpha).xyw;
 			vec3 normal = normalize(vec3(-gradient.x, 1.0, -gradient.y));
 			float foam = gradient.z;
 			float normal_factor = mix(0.25, 1.0, min((normal.y - 0.92) / (0.99 - 0.92), 1.0)); // [0.92..0.99] -> [0.25..1]
@@ -105,7 +108,8 @@ void process() {
 			vec3 displacement = vec3(0);
 			for (uint i = 0U; i < num_cascades; ++i) {
 				vec3 scales = map_scales[i].xyz;
-				displacement += texture(displacements, vec3(START_POS.xz*scales.xy, float(i))).xyz * scales.z;
+				vec3 coords = vec3(START_POS.xz*scales.xy, float(i));
+				displacement += mix(texture(previous_displacements, coords).xyz, texture(displacements, coords).xyz, wave_blend_alpha) * scales.z;
 			}
 			// We multiply the horizontal displacement by a factor < 1 to prevent jittering that occasionally
 			// occurs from this method.

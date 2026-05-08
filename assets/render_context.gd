@@ -108,7 +108,8 @@ func create_pipeline(block_dimensions : Array, descriptor_sets : Array, shader :
 		assert(len(sets) >= 1, 'Must specify at least on descriptor set!')
 
 		device.compute_list_bind_compute_pipeline(compute_list, pipeline)
-		device.compute_list_set_push_constant(compute_list, push_constant, push_constant.size())
+		if not push_constant.is_empty():
+			device.compute_list_set_push_constant(compute_list, push_constant, push_constant.size())
 		for i in range(len(sets)):
 			device.compute_list_bind_uniform_set(compute_list, sets[i], i)
 
@@ -123,9 +124,8 @@ static func create_push_constant(data : Array) -> PackedByteArray:
 	var packed_size := len(data)*4
 	assert(packed_size <= 128, 'Push constant size must be at most 128 bytes!')
 
-	var padding := ceili(packed_size/16.0)*16 - packed_size
 	var packed_data := PackedByteArray();
-	packed_data.resize(packed_size + (padding if padding > 0 else 0));
+	packed_data.resize(packed_size);
 	packed_data.fill(0);
 
 	for i in range(len(data)):

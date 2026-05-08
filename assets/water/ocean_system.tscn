@@ -1,0 +1,73 @@
+[gd_scene format=3 uid="uid://lsh7kr3nyl2t"]
+
+[ext_resource type="Script" uid="uid://dbxip3y4rh1va" path="res://assets/water/water.gd" id="1_ocean"]
+[ext_resource type="Script" uid="uid://cqbpvt36rest3" path="res://assets/water/wave_cascade_parameters.gd" id="2_params"]
+[ext_resource type="Material" uid="uid://byumtcccq4ew3" path="res://assets/water/mat_water.tres" id="3_water_mat"]
+[ext_resource type="Shader" uid="uid://cfkil18smyukv" path="res://assets/shaders/spatial/sea_spray.gdshader" id="5_spray_shader"]
+[ext_resource type="Material" uid="uid://5xqyddws6rt5" path="res://assets/water/mat_spray.tres" id="6_spray_mat"]
+[ext_resource type="Texture2D" uid="uid://dtm5tyuh2slqt" path="res://assets/water/sea_spray.png" id="7_spray_tex"]
+
+[sub_resource type="Resource" id="Resource_primary_swell"]
+script = ExtResource("2_params")
+tile_length = Vector2(88, 88)
+wind_speed = 10.0
+wind_direction = 20.0
+fetch_length = 150.0
+foam_amount = 8.0
+
+[sub_resource type="Resource" id="Resource_secondary_swell"]
+script = ExtResource("2_params")
+tile_length = Vector2(57, 57)
+displacement_scale = 0.75
+wind_speed = 5.0
+wind_direction = 15.0
+fetch_length = 150.0
+spread = 0.4
+foam_amount = 0.0
+
+[sub_resource type="Resource" id="Resource_surface_detail"]
+script = ExtResource("2_params")
+tile_length = Vector2(16, 16)
+displacement_scale = 0.0
+normal_scale = 0.25
+wind_direction = 20.0
+spread = 0.4
+whitecap = 0.25
+foam_amount = 3.0
+
+[sub_resource type="FastNoiseLite" id="FastNoiseLite_spray"]
+
+[sub_resource type="NoiseTexture2D" id="NoiseTexture2D_spray"]
+noise = SubResource("FastNoiseLite_spray")
+seamless = true
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_spray"]
+render_priority = 0
+shader = ExtResource("5_spray_shader")
+shader_parameter/max_alpha = 0.666
+shader_parameter/albedo_texture = ExtResource("7_spray_tex")
+shader_parameter/dissolve_texture = SubResource("NoiseTexture2D_spray")
+
+[sub_resource type="QuadMesh" id="QuadMesh_spray"]
+
+[node name="OceanSystem" type="MeshInstance3D" unique_id=1912029964]
+sorting_offset = 999.0
+material_override = ExtResource("3_water_mat")
+cast_shadow = 0
+extra_cull_margin = 1000.0
+script = ExtResource("1_ocean")
+parameters = Array[ExtResource("2_params")]([SubResource("Resource_primary_swell"), SubResource("Resource_secondary_swell"), SubResource("Resource_surface_detail")])
+generated_base_cell_size = 0.5
+sea_spray_enabled = false
+
+[node name="WaterSprayEmitter" type="GPUParticles3D" parent="." unique_id=1472092133]
+process_mode = 4
+transform = Transform3D(15, 0, 0, 0, 15, 0, 0, 0, 15, 0, 0, 0)
+visible = false
+material_override = SubResource("ShaderMaterial_spray")
+cast_shadow = 0
+emitting = false
+amount = 32768
+lifetime = 6.0
+process_material = ExtResource("6_spray_mat")
+draw_pass_1 = SubResource("QuadMesh_spray")

@@ -11,7 +11,8 @@
 layout(local_size_x = TILE_SIZE, local_size_y = TILE_SIZE, local_size_z = 2) in;
 
 layout(rgba16f, set = 0, binding = 0) restrict writeonly uniform image2DArray displacement_map;
-layout(rgba16f, set = 0, binding = 1) restrict uniform image2DArray normal_map;
+layout(rgba16f, set = 0, binding = 1) restrict writeonly uniform image2DArray normal_map;
+layout(rgba16f, set = 0, binding = 2) restrict readonly uniform image2DArray previous_normal_map;
 
 layout(std430, set = 1, binding = 0) restrict buffer FFTBuffer {
 	vec2 data[]; // map_size x map_size x num_spectra x 2 * num_cascades
@@ -58,7 +59,7 @@ void main() {
 
 			float jacobian = (1.0 + dhx_dx) * (1.0 + dhz_dz) - dhz_dx*dhz_dx;
 			float foam_factor = -min(0, jacobian - whitecap);
-			float foam = imageLoad(normal_map, id).a;
+			float foam = imageLoad(previous_normal_map, id).a;
 			foam *= exp(-foam_decay_rate);
 			foam += foam_factor * foam_grow_rate;
 			foam = clamp(foam, 0.0, 1.0);

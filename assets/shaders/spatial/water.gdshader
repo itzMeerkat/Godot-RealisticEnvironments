@@ -1,5 +1,5 @@
 shader_type spatial;
-render_mode world_vertex_coords, shadows_disabled;
+render_mode world_vertex_coords, cull_disabled, shadows_disabled;
 /**
  * Water lighting model roughly follows the 2019 GDC talk: "Wakes, Explosions and Lighting: Interactive Water Simulation in Atlas".
  * Source: https://gpuopen.com/gdc-presentations/2019/gdc-2019-agtd6-interactive-water-simulation-in-atlas.pdf
@@ -13,18 +13,33 @@ global uniform vec4 foam_color : source_color;
 
 uniform float roughness : hint_range(0.0, 1.0) = 0.4;
 uniform float normal_strength : hint_range(0.0, 1.0) = 1.0; // Global normal strength
+uniform bool use_bicubic_normals = false;
+uniform int fragment_cascade_limit : hint_range(1, 8) = 3;
+uniform bool enable_geometry_morph = false;
+uniform float generated_clipmap_extent = 256.0;
 
 group_uniforms cascade_data;
 uniform vec4 map_scales[MAX_CASCADES];               // Scales for displacement/normal maps. Packed: [uv scale, displacement scale, normal scale]
 global uniform uint num_cascades;
 global uniform sampler2DArray displacements;         // Each layer represents one wave cascade.
 global uniform sampler2DArray normals : hint_normal; // Each layer represents one wave cascade.
+global uniform sampler2DArray previous_displacements;
+global uniform sampler2DArray previous_normals : hint_normal;
+global uniform float wave_blend_alpha;
 
 varying float wave_height;
 varying float foam_factor;
 varying float fresnel;
 
 void vertex() {
+	if (enable_geometry_morph) {
+		float dist = max(abs(VERTEX.x - CAMERA_POSITION_WORLD.x), abs(VERTEX.z - CAMERA_POSITION_WORLD.z));
+		float morph_start = COLOR.r * generated_clipmap_extent;
+		float morph_end = COLOR.g * generated_clipmap_extent;
+		float morph_factor = smoothstep(morph_start, morph_end, dist) * COLOR.b;
+		vec2 morph_target = (MODEL_MATRIX * vec4(UV2.x, 0.0, UV2.y, 1.0)).xz;
+		VERTEX.xz = mix(VERTEX.xz, morph_target, morph_factor);
+	}
 	UV = VERTEX.xz;
 	float distance_factor = min(exp(-(length(VERTEX.xz - CAMERA_POSITION_WORLD.xz) - 150.0)*0.007), 1.0); // Displacement amonut falls off after 150m.
 
@@ -32,7 +47,12 @@ void vertex() {
 	vec3 displacement = vec3(0);
 	for (uint i = 0U; i < num_cascades; ++i) {
 		vec4 scales = map_scales[i];
-		displacement += texture(displacements, vec3(UV*scales.xy, float(i))).xyz * scales.z;
+		if (scales.z == 0.0)
+			continue;
+		vec3 coords = vec3(UV*scales.xy, float(i));
+		vec3 previous_displacement = texture(previous_displacements, coords).xyz;
+		vec3 current_displacement = texture(displacements, coords).xyz;
+		displacement += mix(previous_displacement, current_displacement, wave_blend_alpha) * scales.z;
 	}
 	VERTEX += displacement * distance_factor;
 	wave_height = displacement.y;
@@ -71,16 +91,24 @@ vec4 texture_bicubic(in sampler2DArray sampler, in vec3 uvw) {
 
 void fragment() {
 	float map_size = float(textureSize(normals, 0).x);
-	float dist = length(VERTEX.xz);
+	float dist = length(VERTEX.xz - CAMERA_POSITION_WORLD.xz);
 	// Read foam and normal information from normal maps.
 	vec3 gradient = vec3(0);
-	for (uint i = 0U; i < num_cascades; ++i) {
+	uint cascade_count = min(num_cascades, uint(fragment_cascade_limit));
+	for (uint i = 0U; i < cascade_count; ++i) {
 		vec4 scales = map_scales[i];
 		vec3 coords = vec3(UV*scales.xy, float(i));
-		float ppm = map_size * min(scales.x, scales.y); // Pixels per meter
-		// Mix between bicubic and bilinear filtering depending on the world space pixels per meter.
-		// This is dependent on the tile size as well as displacement/normal map resolution.
-		gradient += mix(texture_bicubic(normals, coords), texture(normals, coords), min(1.0, ppm*0.1)).xyw * vec3(scales.ww, 1.0);
+		vec4 previous_normal_sample = texture(previous_normals, coords);
+		vec4 current_normal_sample = texture(normals, coords);
+		if (use_bicubic_normals) {
+			float ppm = map_size * min(scales.x, scales.y); // Pixels per meter
+			// Mix between bicubic and bilinear filtering depending on the world space pixels per meter.
+			// This is dependent on the tile size as well as displacement/normal map resolution.
+			previous_normal_sample = mix(texture_bicubic(previous_normals, coords), previous_normal_sample, min(1.0, ppm*0.1));
+			current_normal_sample = mix(texture_bicubic(normals, coords), current_normal_sample, min(1.0, ppm*0.1));
+		}
+		vec4 normal_sample = mix(previous_normal_sample, current_normal_sample, wave_blend_alpha);
+		gradient += normal_sample.xyw * vec3(scales.ww, 1.0);
 	}
 		
 	foam_factor = smoothstep(0.0, 1.0, gradient.z*0.75) * exp(-dist*0.0075);
