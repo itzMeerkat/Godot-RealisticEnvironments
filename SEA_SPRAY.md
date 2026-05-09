@@ -44,14 +44,14 @@ The implementation had several practical problems:
 
 The following implementation pieces were removed:
 
- * `WaterSprayEmitter` nodes from `main.tscn` and `assets/water/ocean_system.tscn`
+ * `WaterSprayEmitter` nodes from `demo/main.tscn` and `systems/ocean/ocean_system.tscn`
  * `sea_spray_enabled` runtime toggle from `OceanSystem`
- * runtime sea spray toggle from `main.gd`
- * `assets/water/mat_spray.tres`
- * `assets/water/sea_spray.png`
- * `assets/water/sea_spray.png.import`
- * `assets/shaders/spatial/sea_spray_particle.gdshader`
- * `assets/shaders/spatial/sea_spray.gdshader`
+ * runtime sea spray toggle from `demo/main.gd`
+ * `systems/ocean/mat_spray.tres`
+ * `systems/ocean/sea_spray.png`
+ * `systems/ocean/sea_spray.png.import`
+ * `systems/ocean/shaders/spatial/sea_spray_particle.gdshader`
+ * `systems/ocean/shaders/spatial/sea_spray.gdshader`
 
 Sea foam itself was not removed. The ocean still computes foam in the normal map alpha channel and uses it for water shading.
 

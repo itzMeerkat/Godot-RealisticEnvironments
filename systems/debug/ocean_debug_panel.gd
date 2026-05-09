@@ -5,12 +5,10 @@ const RESOLUTIONS := [128, 256, 512, 1024]
 const PANEL_SIZE := Vector2(420, 560)
 
 var water : OceanSystem
-var camera : Camera3D
+var wind_source : Node
 
 var _panel : PanelContainer
 var _fps_label : Label
-var _camera_position_label : Label
-var _mesh_quality_option : OptionButton
 var _map_size_option : OptionButton
 var _controls_ready := false
 var _is_syncing := false
@@ -20,9 +18,9 @@ func _ready() -> void:
 	_build()
 
 
-func setup(ocean_system : OceanSystem, active_camera : Camera3D) -> void:
+func setup(ocean_system : OceanSystem, active_wind_source : Node = null) -> void:
 	water = ocean_system
-	camera = active_camera
+	wind_source = active_wind_source if active_wind_source != null else water.get_wind_source()
 	if _controls_ready:
 		_rebuild()
 
@@ -51,8 +49,6 @@ func _process(_delta : float) -> void:
 		return
 	var fps := Engine.get_frames_per_second()
 	_fps_label.text = "FPS: %d (%s)" % [fps, "%.2fms" % (1.0 / maxf(fps, 1.0) * 1000.0)]
-	if camera and _camera_position_label:
-		_camera_position_label.text = "Camera Position: %+.2v" % camera.global_position
 
 
 func _build() -> void:
@@ -96,14 +92,15 @@ func _build() -> void:
 	content.add_theme_constant_override("separation", 8)
 	scroll.add_child(content)
 
+	if wind_source:
+		content.add_child(HSeparator.new())
+		_add_wind_controls(content)
+
 	content.add_child(HSeparator.new())
 	_add_ocean_controls(content)
 
 	content.add_child(HSeparator.new())
 	_add_cascade_tabs(content)
-
-	content.add_child(HSeparator.new())
-	_add_camera_controls(content)
 
 	var hint := Label.new()
 	hint.modulate = Color.WEB_GRAY
@@ -135,13 +132,6 @@ func _add_ocean_controls(parent : VBoxContainer) -> void:
 		water.map_size = _map_size_option.get_item_id(index)
 	)
 
-	_mesh_quality_option = _add_option_row(parent, "Wave Mesh Quality", "")
-	_mesh_quality_option.item_selected.connect(func(index : int) -> void:
-		if _is_syncing or not water:
-			return
-		water.mesh_quality = _mesh_quality_option.get_item_id(index)
-	)
-
 	var update_spin := _add_float_row(
 		parent,
 		"Updates per Second",
@@ -168,10 +158,60 @@ func _add_ocean_controls(parent : VBoxContainer) -> void:
 			water.foam_color = value
 	)
 
+	var foam_intensity := _add_float_row(parent, "Foam Intensity", "Scales the visible whitecap amount in the water shader.", 0.0, 4.0, 0.01, true)
+	foam_intensity.value_changed.connect(func(value : float) -> void:
+		if not _is_syncing and water:
+			water.foam_intensity = value
+	)
+
+	var foam_threshold := _add_float_row(parent, "Foam Threshold", "Higher values keep only stronger crest foam.", 0.0, 2.0, 0.01, false)
+	foam_threshold.value_changed.connect(func(value : float) -> void:
+		if not _is_syncing and water:
+			water.foam_threshold = value
+	)
+
+	var foam_softness := _add_float_row(parent, "Foam Softness", "Lower values make foam edges sharper.", 0.01, 2.0, 0.01, false)
+	foam_softness.value_changed.connect(func(value : float) -> void:
+		if not _is_syncing and water:
+			water.foam_softness = value
+	)
+
 	update_spin.name = "UpdatesPerSecond"
 	water_color.name = "WaterColor"
 	foam_color.name = "FoamColor"
+	foam_intensity.name = "FoamIntensity"
+	foam_threshold.name = "FoamThreshold"
+	foam_softness.name = "FoamSoftness"
 
+
+func _add_wind_controls(parent : VBoxContainer) -> void:
+	var title := Label.new()
+	title.text = "Wind"
+	title.add_theme_font_size_override("font_size", 15)
+	parent.add_child(title)
+
+	var use_external := _add_check_row(parent, "Use External Wind", "When enabled, ocean cascades derive wind speed and direction from the assigned wind source.")
+	use_external.name = "UseExternalWind"
+	use_external.toggled.connect(func(is_pressed : bool) -> void:
+		if _is_syncing or not water:
+			return
+		water.use_external_wind = is_pressed
+		_rebuild()
+	)
+
+	var speed := _add_float_row(parent, "External Wind Speed", "Wind speed read from the assigned wind source.", 0.0, 1000.0, 0.1, true)
+	speed.name = "ExternalWindSpeed"
+	speed.value_changed.connect(func(value : float) -> void:
+		if not _is_syncing and wind_source:
+			_set_wind_source_speed(value)
+	)
+
+	var direction := _add_float_row(parent, "External Wind Direction", "Wind direction in degrees read from the assigned wind source.", -360.0, 360.0, 1.0, false)
+	direction.name = "ExternalWindDirection"
+	direction.value_changed.connect(func(value : float) -> void:
+		if not _is_syncing and wind_source:
+			_set_wind_source_direction(value)
+	)
 
 func _add_cascade_tabs(parent : VBoxContainer) -> void:
 	var tabs := TabContainer.new()
@@ -204,8 +244,12 @@ func _add_cascade_tabs(parent : VBoxContainer) -> void:
 		_add_bound_param(tab, "Displacement Scale", "", params.displacement_scale, 0.0, 2.0, 0.01, func(value : float) -> void: params.displacement_scale = value)
 		_add_bound_param(tab, "Normal Scale", "", params.normal_scale, 0.0, 2.0, 0.01, func(value : float) -> void: params.normal_scale = value)
 		tab.add_child(HSeparator.new())
-		_add_bound_param(tab, "Wind Speed", "Denotes the average wind speed above the water (in meters per second).\nIncreasing makes waves steeper and more 'chaotic'.", params.wind_speed, 0.0001, 1000.0, 0.1, func(value : float) -> void: params.wind_speed = value, true)
-		_add_bound_param(tab, "Wind Direction", "", params.wind_direction, -360.0, 360.0, 1.0, func(value : float) -> void: params.wind_direction = value)
+		if water.should_use_external_wind():
+			_add_bound_param(tab, "Wind Speed Multiplier", "Scales the external wind source speed for this cascade.", params.wind_speed_multiplier, 0.0, 10.0, 0.01, func(value : float) -> void: params.wind_speed_multiplier = value, true)
+			_add_bound_param(tab, "Wind Direction Offset", "Adds a per-cascade direction offset to the external wind source direction.", params.wind_direction_offset, -360.0, 360.0, 1.0, func(value : float) -> void: params.wind_direction_offset = value)
+		else:
+			_add_bound_param(tab, "Wind Speed", "Denotes the average wind speed above the water (in meters per second).\nIncreasing makes waves steeper and more 'chaotic'.", params.wind_speed, 0.0001, 1000.0, 0.1, func(value : float) -> void: params.wind_speed = value, true)
+			_add_bound_param(tab, "Wind Direction", "", params.wind_direction, -360.0, 360.0, 1.0, func(value : float) -> void: params.wind_direction = value)
 		_add_bound_param(tab, "Fetch Length", "Denotes the distance from shoreline (in kilometers).\nIncreasing makes waves steeper, but reduces their 'choppiness'.", params.fetch_length, 0.0001, 10000.0, 1.0, func(value : float) -> void: params.fetch_length = value, true)
 		_add_bound_param(tab, "Swell", "Modifies waves to clump in a more elongated, parallel manner.", params.swell, 0.0, 2.0, 0.01, func(value : float) -> void: params.swell = value)
 		_add_bound_param(tab, "Spread", "Modifies how much wind and swell affect the direction of the waves.", params.spread, 0.0, 1.0, 0.01, func(value : float) -> void: params.spread = value)
@@ -213,18 +257,6 @@ func _add_cascade_tabs(parent : VBoxContainer) -> void:
 		tab.add_child(HSeparator.new())
 		_add_bound_param(tab, "Whitecap", "Modifies how steep a wave needs to be before foam can accumulate.", params.whitecap, 0.0, 2.0, 0.01, func(value : float) -> void: params.whitecap = value)
 		_add_bound_param(tab, "Foam Amount", "", params.foam_amount, 0.0, 10.0, 0.01, func(value : float) -> void: params.foam_amount = value)
-
-
-func _add_camera_controls(parent : VBoxContainer) -> void:
-	_camera_position_label = Label.new()
-	parent.add_child(_camera_position_label)
-
-	var fov_spin := _add_float_row(parent, "Camera FOV", "", 20.0, 170.0, 1.0, false)
-	fov_spin.name = "CameraFOV"
-	fov_spin.value_changed.connect(func(value : float) -> void:
-		if not _is_syncing and camera:
-			camera.fov = value
-	)
 
 
 func _populate_values() -> void:
@@ -238,18 +270,16 @@ func _populate_values() -> void:
 			_map_size_option.select(i)
 			break
 
-	_mesh_quality_option.clear()
-	var mesh_quality_keys : Array = water.MeshQuality.keys()
-	for mesh_quality in water.MeshQuality.size():
-		_mesh_quality_option.add_item(str(mesh_quality_keys[mesh_quality]).capitalize(), mesh_quality)
-		if mesh_quality == water.mesh_quality:
-			_mesh_quality_option.select(_mesh_quality_option.get_item_count() - 1)
-
 	_set_named_spin("UpdatesPerSecond", water.updates_per_second)
 	_set_named_color("WaterColor", water.water_color)
 	_set_named_color("FoamColor", water.foam_color)
-	if camera:
-		_set_named_spin("CameraFOV", camera.fov)
+	_set_named_spin("FoamIntensity", water.foam_intensity)
+	_set_named_spin("FoamThreshold", water.foam_threshold)
+	_set_named_spin("FoamSoftness", water.foam_softness)
+	_set_named_check("UseExternalWind", water.use_external_wind)
+	if wind_source:
+		_set_named_spin("ExternalWindSpeed", _get_wind_source_speed())
+		_set_named_spin("ExternalWindDirection", _get_wind_source_direction())
 
 	_is_syncing = false
 
@@ -357,6 +387,24 @@ func _add_color_row(parent : VBoxContainer, label : String, tooltip : String) ->
 	return picker
 
 
+func _add_check_row(parent : VBoxContainer, label : String, tooltip : String) -> CheckBox:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	parent.add_child(row)
+
+	var text := Label.new()
+	text.text = label
+	text.tooltip_text = tooltip
+	text.custom_minimum_size = Vector2(160, 0)
+	row.add_child(text)
+
+	var check := CheckBox.new()
+	check.tooltip_text = tooltip
+	check.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(check)
+	return check
+
+
 func _add_option_row(parent : VBoxContainer, label : String, tooltip : String) -> OptionButton:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 8)
@@ -385,6 +433,40 @@ func _set_named_color(node_name : StringName, value : Color) -> void:
 	var picker := find_child(node_name, true, false) as ColorPickerButton
 	if picker:
 		picker.color = value
+
+
+func _set_named_check(node_name : StringName, value : bool) -> void:
+	var check := find_child(node_name, true, false) as CheckBox
+	if check:
+		check.button_pressed = value
+
+
+func _get_wind_source_speed() -> float:
+	if wind_source == null:
+		return 0.0
+	if wind_source.has_method(&'get_wind_speed'):
+		return float(wind_source.call(&'get_wind_speed'))
+	var value = wind_source.get(&'wind_speed')
+	return 0.0 if value == null else float(value)
+
+
+func _get_wind_source_direction() -> float:
+	if wind_source == null:
+		return 0.0
+	if wind_source.has_method(&'get_wind_direction_degrees'):
+		return float(wind_source.call(&'get_wind_direction_degrees'))
+	var value = wind_source.get(&'wind_direction')
+	return 0.0 if value == null else float(value)
+
+
+func _set_wind_source_speed(value : float) -> void:
+	if wind_source.get(&'wind_speed') != null:
+		wind_source.set(&'wind_speed', value)
+
+
+func _set_wind_source_direction(value : float) -> void:
+	if wind_source.get(&'wind_direction') != null:
+		wind_source.set(&'wind_direction', value)
 
 
 func _shortcut_modifier() -> String:

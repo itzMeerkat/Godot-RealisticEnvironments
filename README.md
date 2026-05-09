@@ -1,8 +1,6 @@
 # GodotOceanWaves
 An open ocean rendering experiment in the Godot Engine utilizing the inverse Fourier transform of directional ocean-wave spectra for wave generation. A concise set of parameters is exposed, allowing for scriptable, real-time modification of wave properties to emulate a wide-variety of ocean-wave environments.
 
-[ocean_demo.mp4](https://github.com/user-attachments/assets/a8083878-a297-4536-a481-9123cea7e7df)
-
 ## Introduction
 ### Why Fourier Transforms?
 A common approach for animating water in video games is by displacing vertices using *Gerstner waves*. While Gerstner waves work well for modeling the lower-frequency details in calmer waters, they fall short in accurately representing the choppy surfaces in an open ocean. To simulate the latter, a more complex approach simulates waves using the *inverse Fourier transform* of ocean-wave spectra modeled from empirical data gathered by oceanographers.
@@ -20,8 +18,6 @@ The normal/foam map is sampled with a mix between bicubic and bilinear filtering
 
 #### Sea Foam
 Tessendorf notes a method for determining when to generate sea foam by checking where the waves' peaks curl into themselves (i.e., when the Jacobian of the displacement is negative). Foam accumulates linearly and dissipates exponentially on a texture over multiple wave updates, and are controlled by "foam grow rate" and "foam decay rate" parameters respectively.
-
-![shading_demo](https://github.com/user-attachments/assets/c69766e7-711c-4909-a1fa-290bac0d577a)
 
 ### Wave Simulation
 The method for generating surface waves closely follows Tessendorf. A directional ocean-wave spectrum function is multiplied with Gaussian-distributed random numbers to generate an initial spectral sea state. The initial state is then propagated in time through a "dispersion relation" (relating the frequency of waves and their propagation speed). An inverse Fourier transform can then be applied to the propagated state to generate displacement and normal maps.
@@ -84,6 +80,14 @@ The displacement, normal, and foam maps generated after running FFT on our direc
 ## Maintenance Notes
 This fork includes a set of fixes and runtime improvements made while converting the ocean renderer into a reusable Godot scene and making it more stable for camera-follow gameplay.
 
+### Project layout
+Project files are grouped by system boundary:
+
+ * `systems/ocean/` contains the reusable ocean scene, wave parameters, wave generator, material, ocean shaders, and ocean-internal RenderingDevice helpers under `systems/ocean/rendering/`.
+ * `systems/wind/` contains the optional wind provider used by the demo and available to future gameplay systems.
+ * `systems/debug/` contains the optional native debug UI.
+ * `demo/` contains the sample scene, camera controller, skybox, and audio assets.
+
 ### RenderingDevice and compute fixes
 Several Godot 4 RenderingDevice validation errors were fixed:
 
@@ -93,9 +97,11 @@ Several Godot 4 RenderingDevice validation errors were fixed:
  * The FFT unpack pass now reads foam history from the previously completed normal map rather than the map currently being written. This keeps foam history continuous when output maps are double-buffered.
 
 ### OceanSystem scene and gameplay API
-The ocean can now be used as a packaged scene through `assets/water/ocean_system.tscn`, backed by `OceanSystem` (`assets/water/water.gd`).
+The ocean can now be used as a packaged scene through `systems/ocean/ocean_system.tscn`, backed by `OceanSystem` (`systems/ocean/ocean_system.gd`).
 
-The runtime ocean scene has no ImGui dependency. The demo scene uses an optional native Godot `OceanDebugPanel` (`ui/ocean_debug_panel.tscn`) for live tuning of the same exported ocean and cascade parameters that are available from the inspector or scripts.
+The runtime ocean scene has no ImGui dependency. The demo scene uses an optional native Godot `OceanDebugPanel` (`systems/debug/ocean_debug_panel.tscn`) for live tuning of the same exported ocean and cascade parameters that are available from the inspector or scripts.
+
+`OceanSystem` is independent of the wind implementation. By default it uses each cascade's local wind speed and direction. If a scene assigns `wind_source_path` and enables `use_external_wind`, the ocean reads wind from that external node through `get_wind_speed()` and `get_wind_direction_degrees()` or matching `wind_speed` / `wind_direction` properties. The included `WindSystem` (`systems/wind/wind_system.gd`) is one such provider, and other systems such as sailing, clouds, particles, and weather can consume the same provider without coupling those systems to the ocean.
 
 The scene exposes CPU-side water queries for buoyancy and gameplay:
 
@@ -116,24 +122,23 @@ The wave update path now supports lower simulation update rates while preserving
  * The project has a frame-rate cap configured through `run/max_fps`.
 
 ### Procedural clipmap mesh
-The water mesh no longer needs to rely on a pre-authored `clipmap.obj` asset for the main runtime path. `OceanSystem` can procedurally generate a clipmap-style grid from exported parameters:
+The water mesh no longer relies on pre-authored mesh assets. `OceanSystem` always generates a clipmap-style grid procedurally from exported parameters:
 
- * `use_generated_mesh`
  * `generated_inner_extent`
  * `generated_base_cell_size`
  * `generated_ring_count`
  * `generated_morph_width`
 
-Generated vertices include morph metadata, and the water shader uses geometry morphing to ease vertices toward the next coarser grid in transition bands. This keeps the mesh parameterized and prepares the renderer for smoother LOD work without requiring new model files.
+Generated vertices include morph metadata, and the water shader uses geometry morphing to ease vertices toward the next coarser grid in transition bands. This keeps the mesh parameterized without requiring model files.
 
 ### Visual stability fixes
 Several visual artifacts were addressed:
 
  * The water material disables backface culling to avoid generated triangle winding differences making the ocean body disappear while foam remained visible.
- * Previously serialized generated `ArrayMesh` data was removed from `main.tscn`. By default, generated mesh preview is disabled in the editor through `preview_generated_mesh_in_editor` so large generated meshes are not accidentally saved into scene files.
+ * Previously serialized generated `ArrayMesh` data was removed from `demo/main.tscn`. The procedural mesh is generated at runtime and is not saved into the scene file.
  * Foam/normal history now follows the same double-buffered timeline as displacement maps, reducing color jumps that could appear when the wave update rate was lower than the render frame rate.
  * The water fragment shader uses camera-relative distance for near/far normal and foam falloff, rather than distance from world origin.
- * The old 1-meter tile snapping that moved the whole water node from `main.gd` was removed. `OceanSystem` now follows the active camera continuously in XZ space by default, keeping the render mesh near the camera while the sampled waves remain stable in world space.
+ * The old 1-meter tile snapping that moved the whole water node from `demo/main.gd` was removed. `OceanSystem` now follows the active camera continuously in XZ space by default, keeping the render mesh near the camera while the sampled waves remain stable in world space.
  * The previous sea spray particle prototype was removed from the runtime scene and archived in `SEA_SPRAY.md`.
  * The heavy ImGui debug dependency was replaced with an optional native Godot debug panel, keeping the reusable ocean component lighter for use in other projects.
 

@@ -4,11 +4,7 @@ extends MeshInstance3D
 ## Handles updating the displacement/normal maps for the water material as well as
 ## managing wave generation pipelines.
 
-const WATER_MAT := preload('res://assets/water/mat_water.tres')
-const WATER_MESH_HIGH_PATH := 'res://assets/water/clipmap_high.obj'
-const WATER_MESH_LOW_PATH := 'res://assets/water/clipmap_low.obj'
-
-enum MeshQuality { LOW, HIGH }
+const WATER_MAT := preload('res://systems/ocean/mat_water.tres')
 
 @export_group('Wave Parameters')
 @export_color_no_alpha var water_color : Color = Color(0.1, 0.15, 0.18) :
@@ -16,6 +12,31 @@ enum MeshQuality { LOW, HIGH }
 
 @export_color_no_alpha var foam_color : Color = Color(0.73, 0.67, 0.62) :
 	set(value): foam_color = value; RenderingServer.global_shader_parameter_set(&'foam_color', foam_color.srgb_to_linear())
+
+@export_group('Foam Shading')
+@export_range(0.0, 4.0, 0.01) var foam_intensity := 1.25 :
+	set(value):
+		foam_intensity = value
+		_set_water_shader_parameter(&'foam_intensity', foam_intensity)
+@export_range(0.0, 2.0, 0.01) var foam_threshold := 0.05 :
+	set(value):
+		foam_threshold = value
+		_set_water_shader_parameter(&'foam_threshold', foam_threshold)
+@export_range(0.01, 2.0, 0.01) var foam_softness := 0.35 :
+	set(value):
+		foam_softness = value
+		_set_water_shader_parameter(&'foam_softness', foam_softness)
+
+@export_group('External Wind')
+@export var use_external_wind := false :
+	set(value):
+		use_external_wind = value
+		_mark_spectra_dirty()
+@export var wind_source_path : NodePath :
+	set(value):
+		wind_source_path = value
+		wind_source = null
+		_mark_spectra_dirty()
 
 ## The parameters for wave cascades. Each parameter set represents one cascade.
 ## Recreates all compute piplines whenever a cascade is added or removed!
@@ -41,22 +62,7 @@ enum MeshQuality { LOW, HIGH }
 		_clear_height_cache()
 		_setup_wave_generator()
 
-@export var mesh_quality := MeshQuality.HIGH :
-	set(value):
-		mesh_quality = value
-		_update_water_mesh()
-
-@export_group('Generated Mesh')
-@export var use_generated_mesh := true :
-	set(value):
-		use_generated_mesh = value
-		_update_water_mesh()
-## Generates the procedural mesh while editing. Keep this off when saving scenes
-## to avoid serializing a large generated ArrayMesh into the .tscn file.
-@export var preview_generated_mesh_in_editor := false :
-	set(value):
-		preview_generated_mesh_in_editor = value
-		_update_water_mesh()
+@export_group('Mesh')
 ## Full side length of the highest-density center patch, in meters.
 @export_range(16.0, 512.0, 1.0) var generated_inner_extent := 128.0 :
 	set(value):
@@ -109,6 +115,9 @@ var wave_generator : WaveGenerator :
 var rng = RandomNumberGenerator.new()
 var time := 0.0
 var next_update_time := 0.0
+var wind_source : Node
+var _last_external_wind_speed := -1.0
+var _last_external_wind_direction := -999999.0
 
 var displacement_maps := Texture2DArrayRD.new()
 var normal_maps := Texture2DArrayRD.new()
@@ -127,13 +136,18 @@ func _init() -> void:
 
 func _ready() -> void:
 	process_priority = 100
+	_resolve_wind_source()
 	RenderingServer.global_shader_parameter_set(&'water_color', water_color.srgb_to_linear())
 	RenderingServer.global_shader_parameter_set(&'foam_color', foam_color.srgb_to_linear())
 	RenderingServer.global_shader_parameter_set(&'wave_blend_alpha', 1.0)
+	_set_water_shader_parameter(&'foam_intensity', foam_intensity)
+	_set_water_shader_parameter(&'foam_threshold', foam_threshold)
+	_set_water_shader_parameter(&'foam_softness', foam_softness)
 	_update_water_mesh()
 
 func _process(delta : float) -> void:
 	_update_follow_camera()
+	_update_external_wind_state()
 	# Update waves once every 1.0/updates_per_second.
 	if updates_per_second == 0 or time >= next_update_time:
 		var target_update_delta := 1.0 / (updates_per_second + 1e-10)
@@ -178,7 +192,7 @@ func _update_scales_uniform() -> void:
 
 func _update_water(delta : float) -> void:
 	if wave_generator == null: _setup_wave_generator()
-	wave_generator.update(delta, parameters)
+	wave_generator.update(delta, parameters, get_external_wind_speed(), get_external_wind_direction(), should_use_external_wind())
 	if enable_height_queries and (height_query_updates_per_second == 0 or time >= _next_height_query_update_time):
 		var target_update_delta := 1.0 / (height_query_updates_per_second + 1e-10)
 		_next_height_query_update_time = time + target_update_delta
@@ -198,6 +212,55 @@ func get_water_normal(world_position: Vector3) -> Vector3:
 	var h_b := get_water_height(world_position + Vector3(0, 0, -e))
 	var h_f := get_water_height(world_position + Vector3(0, 0,  e))
 	return Vector3(h_l - h_r, 2.0 * e, h_b - h_f).normalized()
+
+func should_use_external_wind() -> bool:
+	return use_external_wind and get_wind_source() != null
+
+func get_wind_source() -> Node:
+	if wind_source == null:
+		_resolve_wind_source()
+	return wind_source
+
+func get_external_wind_speed() -> float:
+	var external_wind := get_wind_source()
+	if external_wind == null:
+		return 0.0
+	if external_wind.has_method(&'get_wind_speed'):
+		return float(external_wind.call(&'get_wind_speed'))
+	var value = external_wind.get(&'wind_speed')
+	return 0.0 if value == null else float(value)
+
+func get_external_wind_direction() -> float:
+	var external_wind := get_wind_source()
+	if external_wind == null:
+		return 0.0
+	if external_wind.has_method(&'get_wind_direction_degrees'):
+		return float(external_wind.call(&'get_wind_direction_degrees'))
+	var value = external_wind.get(&'wind_direction')
+	return 0.0 if value == null else float(value)
+
+func _resolve_wind_source() -> void:
+	if wind_source_path.is_empty():
+		return
+	wind_source = get_node_or_null(wind_source_path)
+
+func _update_external_wind_state() -> void:
+	if not should_use_external_wind():
+		return
+	var current_speed := get_external_wind_speed()
+	var current_direction := get_external_wind_direction()
+	if is_equal_approx(current_speed, _last_external_wind_speed) and is_equal_approx(current_direction, _last_external_wind_direction):
+		return
+	_last_external_wind_speed = current_speed
+	_last_external_wind_direction = current_direction
+	_mark_spectra_dirty()
+
+func _mark_spectra_dirty() -> void:
+	if parameters == null:
+		return
+	for params in parameters:
+		if params:
+			params.should_generate_spectrum = true
 
 func refresh_height_cache() -> void:
 	if not wave_generator or not wave_generator.context: return
@@ -253,18 +316,14 @@ func _clear_height_cache() -> void:
 	_next_height_query_update_time = 0.0
 
 func _update_water_mesh() -> void:
-	if Engine.is_editor_hint() and use_generated_mesh and not preview_generated_mesh_in_editor:
+	if Engine.is_editor_hint():
 		mesh = null
 		_set_water_shader_parameter(&'enable_geometry_morph', false)
 		return
 
-	if use_generated_mesh:
-		mesh = _create_generated_clipmap_mesh()
-		_set_water_shader_parameter(&'enable_geometry_morph', true)
-		_set_water_shader_parameter(&'generated_clipmap_extent', _get_generated_mesh_half_extent())
-	else:
-		mesh = load(WATER_MESH_HIGH_PATH if mesh_quality == MeshQuality.HIGH else WATER_MESH_LOW_PATH)
-		_set_water_shader_parameter(&'enable_geometry_morph', false)
+	mesh = _create_generated_clipmap_mesh()
+	_set_water_shader_parameter(&'enable_geometry_morph', true)
+	_set_water_shader_parameter(&'generated_clipmap_extent', _get_generated_mesh_half_extent())
 
 func _update_follow_camera() -> void:
 	if not follow_active_camera:

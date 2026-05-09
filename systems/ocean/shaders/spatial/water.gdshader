@@ -13,6 +13,9 @@ global uniform vec4 foam_color : source_color;
 
 uniform float roughness : hint_range(0.0, 1.0) = 0.4;
 uniform float normal_strength : hint_range(0.0, 1.0) = 1.0; // Global normal strength
+uniform float foam_intensity : hint_range(0.0, 4.0) = 1.25;
+uniform float foam_threshold : hint_range(0.0, 2.0) = 0.05;
+uniform float foam_softness : hint_range(0.01, 2.0) = 0.35;
 uniform bool use_bicubic_normals = false;
 uniform int fragment_cascade_limit : hint_range(1, 8) = 3;
 uniform bool enable_geometry_morph = false;
@@ -111,7 +114,8 @@ void fragment() {
 		gradient += normal_sample.xyw * vec3(scales.ww, 1.0);
 	}
 		
-	foam_factor = smoothstep(0.0, 1.0, gradient.z*0.75) * exp(-dist*0.0075);
+	float foam_signal = gradient.z * 0.75 * foam_intensity;
+	foam_factor = smoothstep(foam_threshold, foam_threshold + foam_softness, foam_signal) * exp(-dist*0.0075);
 	ALBEDO = mix(water_color.rgb, foam_color.rgb, foam_factor);
 
 	gradient *= mix(0.015, normal_strength, exp(-dist*0.0175)); // Blend normal with terrain normal as distance increases.

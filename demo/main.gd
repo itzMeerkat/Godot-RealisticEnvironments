@@ -4,6 +4,7 @@ extends Node3D
 @onready var viewport : Variant = Engine.get_singleton(&'EditorInterface').get_editor_viewport_3d(0) if Engine.is_editor_hint() else get_viewport()
 @onready var camera : Variant = viewport.get_camera_3d()
 @onready var water := $Water
+@onready var wind_system := $WindSystem
 @onready var debug_panel : OceanDebugPanel = $OceanDebugPanel
 
 func _init() -> void:
@@ -15,19 +16,16 @@ func _init() -> void:
 
 func _ready() -> void:
 	if Engine.is_editor_hint(): return
-	debug_panel.setup(water, camera)
+	debug_panel.setup(water, wind_system)
 
 func _process(_delta : float) -> void:
 	if not Engine.is_editor_hint():
 		camera.enable_camera_movement = not debug_panel.is_interacting()
 
 func _physics_process(_delta: float) -> void:
-	# Vary audio samples based on total wind speed across all cascades.
-	var total_wind_speed := 0.0
-	for params in water.parameters:
-		total_wind_speed += params.wind_speed
-	$OceanAudioPlayer.volume_db = lerpf(-30.0, 15.0, minf(total_wind_speed/15.0, 1.0))
-	$WindAudioPlayer.volume_db = lerpf(5.0, -30.0, minf(total_wind_speed/15.0, 1.0))
+	var wind_speed:float = wind_system.get_wind_speed()
+	$OceanAudioPlayer.volume_db = lerpf(-30.0, 15.0, minf(wind_speed / 15.0, 1.0))
+	$WindAudioPlayer.volume_db = lerpf(5.0, -30.0, minf(wind_speed / 15.0, 1.0))
 
 func _input(event: InputEvent) -> void:
 	if event.is_action_pressed(&'toggle_debug_ui'):

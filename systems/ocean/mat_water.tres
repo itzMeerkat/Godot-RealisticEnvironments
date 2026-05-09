@@ -1,12 +1,15 @@
 [gd_resource type="ShaderMaterial" format=4 uid="uid://byumtcccq4ew3"]
 
-[ext_resource type="Shader" uid="uid://cjhn8nkfr4mn0" path="res://assets/shaders/spatial/water.gdshader" id="1_uffek"]
+[ext_resource type="Shader" uid="uid://cjhn8nkfr4mn0" path="res://systems/ocean/shaders/spatial/water.gdshader" id="1_uffek"]
 
 [resource]
 render_priority = 1
 shader = ExtResource("1_uffek")
 shader_parameter/roughness = 0.65
 shader_parameter/normal_strength = 1.0
+shader_parameter/foam_intensity = 1.25
+shader_parameter/foam_threshold = 0.05
+shader_parameter/foam_softness = 0.35
 shader_parameter/use_bicubic_normals = false
 shader_parameter/fragment_cascade_limit = 3
 shader_parameter/enable_geometry_morph = true

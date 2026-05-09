@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://b7oo6ngkleqj0"
+path="res://.godot/imported/fft_unpack.glsl-927c651563df043c68bc6c2eb1ba4573.res"
+
+[deps]
+
+source_file="res://systems/ocean/shaders/compute/fft_unpack.glsl"
+dest_files=["res://.godot/imported/fft_unpack.glsl-927c651563df043c68bc6c2eb1ba4573.res"]
+
+[params]
+

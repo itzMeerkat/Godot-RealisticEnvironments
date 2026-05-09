@@ -1,6 +1,6 @@
 [gd_scene load_steps=2 format=4 uid="uid://bm4bg7uoyr0xy"]
 
-[ext_resource type="Script" path="res://ui/ocean_debug_panel.gd" id="1_qo80x"]
+[ext_resource type="Script" path="res://systems/debug/ocean_debug_panel.gd" id="1_qo80x"]
 
 [node name="OceanDebugPanel" type="CanvasLayer"]
 layer = 64

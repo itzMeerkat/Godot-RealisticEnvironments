@@ -1,8 +1,8 @@
 [gd_scene format=3 uid="uid://lsh7kr3nyl2t"]
 
-[ext_resource type="Script" uid="uid://dbxip3y4rh1va" path="res://assets/water/water.gd" id="1_ocean"]
-[ext_resource type="Script" uid="uid://cqbpvt36rest3" path="res://assets/water/wave_cascade_parameters.gd" id="2_params"]
-[ext_resource type="Material" uid="uid://byumtcccq4ew3" path="res://assets/water/mat_water.tres" id="3_water_mat"]
+[ext_resource type="Script" uid="uid://dbxip3y4rh1va" path="res://systems/ocean/ocean_system.gd" id="1_ocean"]
+[ext_resource type="Script" uid="uid://cqbpvt36rest3" path="res://systems/ocean/wave_cascade_parameters.gd" id="2_params"]
+[ext_resource type="Material" uid="uid://byumtcccq4ew3" path="res://systems/ocean/mat_water.tres" id="3_water_mat"]
 
 [sub_resource type="Resource" id="Resource_primary_swell"]
 script = ExtResource("2_params")

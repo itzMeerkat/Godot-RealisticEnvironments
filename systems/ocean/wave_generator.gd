@@ -20,6 +20,9 @@ var write_output_index := 1
 # Generator state per invocation of `update()`.
 var pass_parameters : Array[WaveCascadeParameters]
 var pass_num_cascades_remaining : int
+var pass_external_wind_speed := 0.0
+var pass_external_wind_direction := 0.0
+var pass_use_external_wind := false
 var pending_update_delta := 0.0
 
 func init_gpu(num_cascades : int) -> void:
@@ -30,12 +33,12 @@ func init_gpu(num_cascades : int) -> void:
 
 	# --- DEVICE/SHADER CREATION ---
 	if not context: context = RenderingContext.create(RenderingServer.get_rendering_device())
-	var spectrum_compute_shader := context.load_shader('./assets/shaders/compute/spectrum_compute.glsl')
-	var fft_butterfly_shader := context.load_shader('./assets/shaders/compute/fft_butterfly.glsl')
-	var spectrum_modulate_shader := context.load_shader('./assets/shaders/compute/spectrum_modulate.glsl')
-	var fft_compute_shader := context.load_shader('./assets/shaders/compute/fft_compute.glsl')
-	var transpose_shader := context.load_shader('./assets/shaders/compute/transpose.glsl')
-	var fft_unpack_shader := context.load_shader('./assets/shaders/compute/fft_unpack.glsl')
+	var spectrum_compute_shader := context.load_shader('res://systems/ocean/shaders/compute/spectrum_compute.glsl')
+	var fft_butterfly_shader := context.load_shader('res://systems/ocean/shaders/compute/fft_butterfly.glsl')
+	var spectrum_modulate_shader := context.load_shader('res://systems/ocean/shaders/compute/spectrum_modulate.glsl')
+	var fft_compute_shader := context.load_shader('res://systems/ocean/shaders/compute/fft_compute.glsl')
+	var transpose_shader := context.load_shader('res://systems/ocean/shaders/compute/transpose.glsl')
+	var fft_unpack_shader := context.load_shader('res://systems/ocean/shaders/compute/fft_unpack.glsl')
 
 	# --- DESCRIPTOR PREPARATION ---
 	var dims := Vector2i(map_size, map_size)
@@ -91,11 +94,13 @@ func _process(delta: float) -> void:
 
 func _update(compute_list : int, cascade_index : int, parameters : Array[WaveCascadeParameters]) -> void:
 	var params := parameters[cascade_index]
+	var wind_speed := params.get_effective_wind_speed(pass_external_wind_speed, pass_use_external_wind)
+	var wind_direction := params.get_effective_wind_direction(pass_external_wind_direction, pass_use_external_wind)
 	## --- WAVE SPECTRA UPDATE ---
 	if params.should_generate_spectrum:
-		var alpha := JONSWAP_alpha(params.wind_speed, params.fetch_length*1e3)
-		var omega := JONSWAP_peak_angular_frequency(params.wind_speed, params.fetch_length*1e3)
-		pipelines[&'spectrum_compute'].call(context, compute_list, RenderingContext.create_push_constant([params.spectrum_seed.x, params.spectrum_seed.y, params.tile_length.x, params.tile_length.y, alpha, omega, params.wind_speed, deg_to_rad(params.wind_direction), DEPTH, params.swell, params.detail, params.spread, cascade_index]))
+		var alpha := JONSWAP_alpha(wind_speed, params.fetch_length*1e3)
+		var omega := JONSWAP_peak_angular_frequency(wind_speed, params.fetch_length*1e3)
+		pipelines[&'spectrum_compute'].call(context, compute_list, RenderingContext.create_push_constant([params.spectrum_seed.x, params.spectrum_seed.y, params.tile_length.x, params.tile_length.y, alpha, omega, wind_speed, deg_to_rad(wind_direction), DEPTH, params.swell, params.detail, params.spread, cascade_index]))
 		params.should_generate_spectrum = false
 	pipelines[&'spectrum_modulate'].call(context, compute_list, RenderingContext.create_push_constant([params.tile_length.x, params.tile_length.y, DEPTH, params.time, cascade_index]))
 
@@ -114,7 +119,7 @@ func _update(compute_list : int, cascade_index : int, parameters : Array[WaveCas
 ## Begins updating wave cascades based on the provided parameters. To balance stutter,
 ## the generator schedules one cascade update per frame. If the previous pass is still
 ## running, the elapsed time is accumulated and used by the next accepted pass.
-func update(delta : float, parameters : Array[WaveCascadeParameters]) -> bool:
+func update(delta : float, parameters : Array[WaveCascadeParameters], external_wind_speed := 0.0, external_wind_direction := 0.0, use_external_wind := false) -> bool:
 	assert(parameters.size() != 0)
 	if not context:
 		init_gpu(maxi(2, len(parameters))) # FIXME: This is needed because my RenderContext API sucks...
@@ -134,6 +139,9 @@ func update(delta : float, parameters : Array[WaveCascadeParameters]) -> bool:
 		params.foam_decay_rate = delta * maxf(0.5, 10.0 - params.foam_amount)*1.15
 
 	pass_parameters = parameters
+	pass_external_wind_speed = external_wind_speed
+	pass_external_wind_direction = external_wind_direction
+	pass_use_external_wind = use_external_wind
 	pass_num_cascades_remaining = len(parameters)
 	return true
 

@@ -1,14 +1,15 @@
 [gd_scene format=4 uid="uid://dx4r13gqfh13"]
 
-[ext_resource type="Script" uid="uid://dj3qlu7uupdmi" path="res://main.gd" id="1_skarq"]
-[ext_resource type="Script" uid="uid://cqbpvt36rest3" path="res://assets/water/wave_cascade_parameters.gd" id="2_pw5n6"]
-[ext_resource type="Texture2D" uid="uid://cnft723bala47" path="res://assets/skybox.png" id="3_0ksgj"]
-[ext_resource type="Shader" uid="uid://cjhn8nkfr4mn0" path="res://assets/shaders/spatial/water.gdshader" id="4_dg77c"]
-[ext_resource type="Script" uid="uid://bqtrj6lb2yvdo" path="res://assets/player/camera.gd" id="4_v2yip"]
-[ext_resource type="AudioStream" uid="uid://cvvn0vke5comw" path="res://assets/ocean_loop.wav" id="6_jpklm"]
-[ext_resource type="Script" uid="uid://dbxip3y4rh1va" path="res://assets/water/water.gd" id="7_s0x5e"]
-[ext_resource type="AudioStream" uid="uid://ck6vmandgjhy0" path="res://assets/wind_loop.wav" id="8_6r5si"]
-[ext_resource type="PackedScene" path="res://ui/ocean_debug_panel.tscn" id="9_gb4mm"]
+[ext_resource type="Script" uid="uid://dj3qlu7uupdmi" path="res://demo/main.gd" id="1_skarq"]
+[ext_resource type="Script" uid="uid://cqbpvt36rest3" path="res://systems/ocean/wave_cascade_parameters.gd" id="2_pw5n6"]
+[ext_resource type="Texture2D" uid="uid://cnft723bala47" path="res://demo/media/skybox.png" id="3_0ksgj"]
+[ext_resource type="Shader" uid="uid://cjhn8nkfr4mn0" path="res://systems/ocean/shaders/spatial/water.gdshader" id="4_dg77c"]
+[ext_resource type="Script" uid="uid://bqtrj6lb2yvdo" path="res://demo/player/camera.gd" id="4_v2yip"]
+[ext_resource type="AudioStream" uid="uid://cvvn0vke5comw" path="res://demo/media/ocean_loop.wav" id="6_jpklm"]
+[ext_resource type="Script" uid="uid://dbxip3y4rh1va" path="res://systems/ocean/ocean_system.gd" id="7_s0x5e"]
+[ext_resource type="AudioStream" uid="uid://ck6vmandgjhy0" path="res://demo/media/wind_loop.wav" id="8_6r5si"]
+[ext_resource type="PackedScene" path="res://systems/debug/ocean_debug_panel.tscn" id="9_gb4mm"]
+[ext_resource type="Script" path="res://systems/wind/wind_system.gd" id="10_tfjfv"]
 
 [sub_resource type="PanoramaSkyMaterial" id="PanoramaSkyMaterial_t7jwl"]
 panorama = ExtResource("3_0ksgj")
@@ -41,6 +42,9 @@ render_priority = 1
 shader = ExtResource("4_dg77c")
 shader_parameter/roughness = 0.65
 shader_parameter/normal_strength = 1.0
+shader_parameter/foam_intensity = 1.25
+shader_parameter/foam_threshold = 0.05
+shader_parameter/foam_softness = 0.35
 shader_parameter/use_bicubic_normals = false
 shader_parameter/fragment_cascade_limit = 3
 shader_parameter/enable_geometry_morph = false
@@ -61,6 +65,8 @@ tile_length = Vector2(57, 57)
 displacement_scale = 0.75
 wind_speed = 5.0
 wind_direction = 15.0
+wind_speed_multiplier = 0.5
+wind_direction_offset = -5.0
 fetch_length = 150.0
 spread = 0.4
 foam_amount = 0.0
@@ -71,6 +77,7 @@ tile_length = Vector2(16, 16)
 displacement_scale = 0.0
 normal_scale = 0.25
 wind_direction = 20.0
+wind_speed_multiplier = 2.0
 spread = 0.4
 whitecap = 0.25
 foam_amount = 3.0
@@ -98,6 +105,9 @@ shadow_blur = 5.0
 transform = Transform3D(-0.996195, -0.0151344, 0.0858316, 0, 0.984807, 0.173648, -0.0871557, 0.172987, -0.981061, 0, 10, -25)
 script = ExtResource("4_v2yip")
 
+[node name="WindSystem" type="Node" parent="." unique_id=370380778]
+script = ExtResource("10_tfjfv")
+
 [node name="Water" type="MeshInstance3D" parent="." unique_id=1159832475]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -45, 0, 475)
 sorting_offset = 999.0
@@ -106,6 +116,8 @@ cast_shadow = 0
 extra_cull_margin = 1000.0
 skeleton = NodePath("")
 script = ExtResource("7_s0x5e")
+use_external_wind = true
+wind_source_path = NodePath("../WindSystem")
 parameters = Array[ExtResource("2_pw5n6")]([SubResource("Resource_adqv5"), SubResource("Resource_luhq0"), SubResource("Resource_83u3u")])
 updates_per_second = 20.0
 

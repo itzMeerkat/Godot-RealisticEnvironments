@@ -16,6 +16,10 @@ signal scale_changed
 	set(value): wind_speed = max(0.0001, value); should_generate_spectrum = true
 @export_range(-360, 360) var wind_direction := 0.0 :
 	set(value): wind_direction = value; should_generate_spectrum = true
+@export var wind_speed_multiplier := 1.0 :
+	set(value): wind_speed_multiplier = maxf(0.0, value); should_generate_spectrum = true
+@export_range(-360, 360) var wind_direction_offset := 0.0 :
+	set(value): wind_direction_offset = value; should_generate_spectrum = true
 ## Denotes the distance from shoreline (in kilometers). Increasing makes waves steeper, but reduces their 'choppiness'.
 @export var fetch_length := 550.0 :
 	set(value): fetch_length = max(0.0001, value); should_generate_spectrum = true
@@ -40,3 +44,15 @@ var should_generate_spectrum := true
 var time : float
 var foam_grow_rate : float
 var foam_decay_rate : float
+
+
+func get_effective_wind_speed(external_wind_speed : float, use_external_wind : bool) -> float:
+	if not use_external_wind:
+		return wind_speed
+	return maxf(0.0001, external_wind_speed * wind_speed_multiplier)
+
+
+func get_effective_wind_direction(external_wind_direction : float, use_external_wind : bool) -> float:
+	if not use_external_wind:
+		return wind_direction
+	return external_wind_direction + wind_direction_offset
