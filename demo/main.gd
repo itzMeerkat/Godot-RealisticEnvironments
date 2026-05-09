@@ -3,6 +3,7 @@ extends Node3D
 
 @onready var viewport : Variant = Engine.get_singleton(&'EditorInterface').get_editor_viewport_3d(0) if Engine.is_editor_hint() else get_viewport()
 @onready var camera : Variant = viewport.get_camera_3d()
+@onready var sky_system := $SkySystem
 @onready var water := $Water
 @onready var wind_system := $WindSystem
 @onready var debug_panel : OceanDebugPanel = $OceanDebugPanel
@@ -16,7 +17,7 @@ func _init() -> void:
 
 func _ready() -> void:
 	if Engine.is_editor_hint(): return
-	debug_panel.setup(water, wind_system)
+	debug_panel.setup(water, wind_system, sky_system)
 
 func _process(_delta : float) -> void:
 	if not Engine.is_editor_hint():

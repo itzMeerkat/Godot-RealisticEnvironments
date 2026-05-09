@@ -1,0 +1,80 @@
+[gd_scene load_steps=11 format=4]
+
+[ext_resource type="Script" path="res://systems/sky/sky_system.gd" id="1_sky_system"]
+[ext_resource type="Material" path="res://systems/sky/materials/procedural_sky.tres" id="2_procedural_sky"]
+[ext_resource type="Shader" path="res://systems/sky/shaders/celestial_disk.gdshader" id="3_disk_shader"]
+[ext_resource type="Material" path="res://systems/sky/materials/starfield.tres" id="4_starfield"]
+
+[sub_resource type="Sky" id="Sky_dynamic"]
+sky_material = ExtResource("2_procedural_sky")
+
+[sub_resource type="Environment" id="Environment_dynamic"]
+background_mode = 2
+sky = SubResource("Sky_dynamic")
+tonemap_mode = 2
+adjustment_enabled = true
+adjustment_brightness = 0.85
+adjustment_contrast = 1.07
+adjustment_saturation = 1.35
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_sun_disk"]
+render_priority = -5
+shader = ExtResource("3_disk_shader")
+shader_parameter/body_color = Color(1, 0.92, 0.72, 1)
+shader_parameter/visibility = 1.0
+shader_parameter/halo_strength = 1.25
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_moon_disk"]
+render_priority = -5
+shader = ExtResource("3_disk_shader")
+shader_parameter/body_color = Color(0.72, 0.78, 1, 1)
+shader_parameter/visibility = 1.0
+shader_parameter/halo_strength = 0.35
+
+[sub_resource type="QuadMesh" id="QuadMesh_sun"]
+size = Vector2(38, 38)
+
+[sub_resource type="QuadMesh" id="QuadMesh_moon"]
+size = Vector2(30, 30)
+
+[sub_resource type="SphereMesh" id="SphereMesh_starfield"]
+radius = 1.0
+height = 2.0
+radial_segments = 96
+rings = 48
+
+[node name="SkySystem" type="Node3D"]
+script = ExtResource("1_sky_system")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_dynamic")
+
+[node name="SunLight" type="DirectionalLight3D" parent="."]
+light_color = Color(1, 0.96, 0.82, 1)
+light_energy = 1.0
+shadow_enabled = true
+shadow_bias = 0.0
+shadow_normal_bias = 6.464
+shadow_opacity = 0.8
+shadow_blur = 5.0
+
+[node name="MoonLight" type="DirectionalLight3D" parent="."]
+light_color = Color(0.45, 0.55, 0.85, 1)
+light_energy = 0.12
+shadow_enabled = false
+
+[node name="SunVisual" type="MeshInstance3D" parent="."]
+material_override = SubResource("ShaderMaterial_sun_disk")
+cast_shadow = 0
+mesh = SubResource("QuadMesh_sun")
+
+[node name="MoonVisual" type="MeshInstance3D" parent="."]
+material_override = SubResource("ShaderMaterial_moon_disk")
+cast_shadow = 0
+mesh = SubResource("QuadMesh_moon")
+
+[node name="Starfield" type="MeshInstance3D" parent="."]
+visible = false
+material_override = ExtResource("4_starfield")
+cast_shadow = 0
+mesh = SubResource("SphereMesh_starfield")

@@ -6,6 +6,7 @@ const PANEL_SIZE := Vector2(420, 560)
 
 var water : OceanSystem
 var wind_source : Node
+var sky_system : Node
 
 var _panel : PanelContainer
 var _fps_label : Label
@@ -18,9 +19,10 @@ func _ready() -> void:
 	_build()
 
 
-func setup(ocean_system : OceanSystem, active_wind_source : Node = null) -> void:
+func setup(ocean_system : OceanSystem, active_wind_source : Node = null, active_sky_system : Node = null) -> void:
 	water = ocean_system
 	wind_source = active_wind_source if active_wind_source != null else water.get_wind_source()
+	sky_system = active_sky_system
 	if _controls_ready:
 		_rebuild()
 
@@ -95,6 +97,10 @@ func _build() -> void:
 	if wind_source:
 		content.add_child(HSeparator.new())
 		_add_wind_controls(content)
+
+	if sky_system:
+		content.add_child(HSeparator.new())
+		_add_sky_controls(content)
 
 	content.add_child(HSeparator.new())
 	_add_ocean_controls(content)
@@ -213,6 +219,56 @@ func _add_wind_controls(parent : VBoxContainer) -> void:
 			_set_wind_source_direction(value)
 	)
 
+
+func _add_sky_controls(parent : VBoxContainer) -> void:
+	var title := Label.new()
+	title.text = "Sky"
+	title.add_theme_font_size_override("font_size", 15)
+	parent.add_child(title)
+
+	var cycle_enabled := _add_check_row(parent, "Cycle Enabled", "When enabled, time of day advances automatically.")
+	cycle_enabled.name = "SkyCycleEnabled"
+	cycle_enabled.toggled.connect(func(is_pressed : bool) -> void:
+		if not _is_syncing and sky_system:
+			sky_system.cycle_enabled = is_pressed
+	)
+
+	var time_of_day := _add_float_row(parent, "Time of Day", "Normalized day time: 0 midnight, 0.25 sunrise, 0.5 noon, 0.75 sunset.", 0.0, 1.0, 0.001, false)
+	time_of_day.name = "SkyTimeOfDay"
+	time_of_day.value_changed.connect(func(value : float) -> void:
+		if not _is_syncing and sky_system:
+			sky_system.time_of_day = value
+	)
+
+	var cycle_duration := _add_float_row(parent, "Cycle Duration", "Seconds for a full day-night cycle.", 1.0, 86400.0, 1.0, true)
+	cycle_duration.name = "SkyCycleDuration"
+	cycle_duration.value_changed.connect(func(value : float) -> void:
+		if not _is_syncing and sky_system:
+			sky_system.cycle_duration_seconds = value
+	)
+
+	var sun_energy := _add_float_row(parent, "Sun Energy", "Multiplier applied to the sky profile's sun light curve.", 0.0, 8.0, 0.01, false)
+	sun_energy.name = "SkySunEnergy"
+	sun_energy.value_changed.connect(func(value : float) -> void:
+		if not _is_syncing and sky_system:
+			sky_system.sun_energy_multiplier = value
+	)
+
+	var moon_energy := _add_float_row(parent, "Moon Energy", "Multiplier applied to the sky profile's moon light curve.", 0.0, 8.0, 0.01, false)
+	moon_energy.name = "SkyMoonEnergy"
+	moon_energy.value_changed.connect(func(value : float) -> void:
+		if not _is_syncing and sky_system:
+			sky_system.moon_energy_multiplier = value
+	)
+
+	var star_brightness := _add_float_row(parent, "Star Brightness", "Multiplier applied to visible stars at night.", 0.0, 8.0, 0.01, false)
+	star_brightness.name = "SkyStarBrightness"
+	star_brightness.value_changed.connect(func(value : float) -> void:
+		if not _is_syncing and sky_system:
+			sky_system.star_brightness = value
+	)
+
+
 func _add_cascade_tabs(parent : VBoxContainer) -> void:
 	var tabs := TabContainer.new()
 	tabs.name = "CascadeTabs"
@@ -280,6 +336,13 @@ func _populate_values() -> void:
 	if wind_source:
 		_set_named_spin("ExternalWindSpeed", _get_wind_source_speed())
 		_set_named_spin("ExternalWindDirection", _get_wind_source_direction())
+	if sky_system:
+		_set_named_check("SkyCycleEnabled", sky_system.cycle_enabled)
+		_set_named_spin("SkyTimeOfDay", sky_system.time_of_day)
+		_set_named_spin("SkyCycleDuration", sky_system.cycle_duration_seconds)
+		_set_named_spin("SkySunEnergy", sky_system.sun_energy_multiplier)
+		_set_named_spin("SkyMoonEnergy", sky_system.moon_energy_multiplier)
+		_set_named_spin("SkyStarBrightness", sky_system.star_brightness)
 
 	_is_syncing = false
 
