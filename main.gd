@@ -12,7 +12,6 @@ var should_render_imgui := not Engine.is_editor_hint()
 @onready var _updates_per_second := [water.updates_per_second]
 @onready var _water_color := [water.water_color.r, water.water_color.g, water.water_color.b]
 @onready var _foam_color := [water.foam_color.r, water.foam_color.g, water.foam_color.b]
-@onready var _is_sea_spray_visible := [water.sea_spray_enabled]
 
 func _init() -> void:
 	if Engine.is_editor_hint(): return
@@ -54,7 +53,6 @@ func _render_imgui() -> void:
 	ImGui.SetWindowPos(Vector2(20, 20))
 	ImGui.SeparatorText('OceanWaves')
 	ImGui.Text('FPS:                %d (%s)' % [fps, '%.2fms' % (1.0 / fps*1e3)])
-	ImGui.Text('Enable Sea Spray:  '); ImGui.SameLine(); if ImGui.Checkbox('##sea_spray_checkbox', _is_sea_spray_visible): water.sea_spray_enabled = _is_sea_spray_visible[0]
 	imgui_text_tooltip('Wave Resolution:   ', 'The resolution of the displacement/normal maps used for each wave cascade.\nThis is also the FFT input size.'); ImGui.SameLine()
 	if ImGui.BeginCombo('##resolution', '%dx%d' % [water.map_size, water.map_size]):
 		for resolution in [128, 256, 512, 1024]:

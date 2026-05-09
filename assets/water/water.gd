@@ -5,7 +5,6 @@ extends MeshInstance3D
 ## managing wave generation pipelines.
 
 const WATER_MAT := preload('res://assets/water/mat_water.tres')
-const SPRAY_MAT := preload('res://assets/water/mat_spray.tres')
 const WATER_MESH_HIGH_PATH := 'res://assets/water/clipmap_high.obj'
 const WATER_MESH_LOW_PATH := 'res://assets/water/clipmap_low.obj'
 
@@ -79,11 +78,6 @@ enum MeshQuality { LOW, HIGH }
 @export_range(0.0, 64.0, 0.25) var follow_snap_size := 0.0
 @export var follow_camera_in_editor := false
 
-@export var sea_spray_enabled := true :
-	set(value):
-		sea_spray_enabled = value
-		_update_sea_spray_visibility()
-
 ## How many times the wave simulation should update per second.
 ## Note: This doesn't reduce the frame stutter caused by FFT calculation, only
 ##       minimizes GPU time taken by it!
@@ -137,7 +131,6 @@ func _ready() -> void:
 	RenderingServer.global_shader_parameter_set(&'foam_color', foam_color.srgb_to_linear())
 	RenderingServer.global_shader_parameter_set(&'wave_blend_alpha', 1.0)
 	_update_water_mesh()
-	_update_sea_spray_visibility()
 
 func _process(delta : float) -> void:
 	_update_follow_camera()
@@ -182,7 +175,6 @@ func _update_scales_uniform() -> void:
 		map_scales[i] = Vector4(uv_scale.x, uv_scale.y, params.displacement_scale, params.normal_scale)
 	# No global shader parameter for arrays :(
 	_set_water_shader_parameter(&'map_scales', map_scales)
-	SPRAY_MAT.set_shader_parameter(&'map_scales', map_scales)
 
 func _update_water(delta : float) -> void:
 	if wave_generator == null: _setup_wave_generator()
@@ -259,14 +251,6 @@ func _clear_height_cache() -> void:
 	_height_images.clear()
 	_previous_height_images.clear()
 	_next_height_query_update_time = 0.0
-
-func _update_sea_spray_visibility() -> void:
-	var sea_spray := get_node_or_null(^"WaterSprayEmitter")
-	if sea_spray:
-		sea_spray.visible = sea_spray_enabled
-		sea_spray.process_mode = Node.PROCESS_MODE_INHERIT if sea_spray_enabled else Node.PROCESS_MODE_DISABLED
-		if sea_spray is GPUParticles3D:
-			sea_spray.emitting = sea_spray_enabled
 
 func _update_water_mesh() -> void:
 	if Engine.is_editor_hint() and use_generated_mesh and not preview_generated_mesh_in_editor:

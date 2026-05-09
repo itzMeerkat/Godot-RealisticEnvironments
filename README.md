@@ -21,13 +21,6 @@ The normal/foam map is sampled with a mix between bicubic and bilinear filtering
 #### Sea Foam
 Tessendorf notes a method for determining when to generate sea foam by checking where the waves' peaks curl into themselves (i.e., when the Jacobian of the displacement is negative). Foam accumulates linearly and dissipates exponentially on a texture over multiple wave updates, and are controlled by "foam grow rate" and "foam decay rate" parameters respectively.
 
-#### Sea Spray
-Sea spray is modeled using particles via Godot's GPUParticles3D node and makes heavy use of a custom particle shader. Particles are distributed evenly across the plane within the GPUParticles3D node's bounding box. Then, they are culled based on the foam amount present at their position. Un-culled particles begin their lifecycle at a random offset.
-
-Each sea spray particle uses a billboarded sprite with a single static texture. Over the course of their lifecycle, particles' scales and displacements are modified to emulate a splash's appearance. A dissolve effect in particles' mesh shader fades the sprite in a way that simulates how sea spray atomizes once in the air.
-
-One *major* drawback of this method is that a large increase in particle amount only results in a small increase in sea spray density. This is due to the equal distribution of particles along the bounding box, which results in a majority of the added particles being culled.
-
 ![shading_demo](https://github.com/user-attachments/assets/c69766e7-711c-4909-a1fa-290bac0d577a)
 
 ### Wave Simulation
@@ -118,7 +111,6 @@ The wave update path now supports lower simulation update rates while preserving
  * If a previous cascade update pass is still running, elapsed time is accumulated and applied to the next accepted pass instead of forcing unfinished work to complete immediately.
  * The fragment shader can limit the number of normal/foam cascades sampled per pixel through `fragment_cascade_limit`.
  * Bicubic normal filtering is optional through `use_bicubic_normals`.
- * Sea spray can be toggled at runtime with `sea_spray_enabled`, disabling the particle node when it is not needed.
  * The project has a frame-rate cap configured through `run/max_fps`.
 
 ### Procedural clipmap mesh
@@ -140,6 +132,7 @@ Several visual artifacts were addressed:
  * Foam/normal history now follows the same double-buffered timeline as displacement maps, reducing color jumps that could appear when the wave update rate was lower than the render frame rate.
  * The water fragment shader uses camera-relative distance for near/far normal and foam falloff, rather than distance from world origin.
  * The old 1-meter tile snapping that moved the whole water node from `main.gd` was removed. `OceanSystem` now follows the active camera continuously in XZ space by default, keeping the render mesh near the camera while the sampled waves remain stable in world space.
+ * The previous sea spray particle prototype was removed from the runtime scene and archived in `SEA_SPRAY.md`.
 
 ## References
 **Flügge, Fynn-Jorin**. **[Realtime GPGPU FFT Ocean Water Simulation](https://tore.tuhh.de/entities/publication/1cd390d3-732b-41c1-aa2b-07b71a64edd2)**. Hamburg University of Technology. (2017).\
