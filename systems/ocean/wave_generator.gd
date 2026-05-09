@@ -14,6 +14,7 @@ var descriptors : Dictionary = {}
 var output_descriptors : Array[Dictionary] = []
 var unpack_sets : Array[RID] = []
 var fft_buffer_set : RID
+var cascade_capacity := 0
 var current_output_index := 0
 var write_output_index := 1
 
@@ -26,6 +27,7 @@ var pass_use_external_wind := false
 var pending_update_delta := 0.0
 
 func init_gpu(num_cascades : int) -> void:
+	cascade_capacity = num_cascades
 	current_output_index = 0
 	write_output_index = 1
 	pass_num_cascades_remaining = 0
@@ -130,8 +132,10 @@ func update(delta : float, parameters : Array[WaveCascadeParameters], external_w
 	delta += pending_update_delta
 	pending_update_delta = 0.0
 
+	var pass_cascade_count := mini(len(parameters), cascade_capacity)
+
 	# Update each cascade's parameters that rely on time delta
-	for i in len(parameters):
+	for i in pass_cascade_count:
 		var params := parameters[i]
 		params.time += delta
 		# Note: The constants are used to normalize parameters between 0 and 10.
@@ -142,7 +146,7 @@ func update(delta : float, parameters : Array[WaveCascadeParameters], external_w
 	pass_external_wind_speed = external_wind_speed
 	pass_external_wind_direction = external_wind_direction
 	pass_use_external_wind = use_external_wind
-	pass_num_cascades_remaining = len(parameters)
+	pass_num_cascades_remaining = pass_cascade_count
 	return true
 
 func _complete_output_pass() -> void:

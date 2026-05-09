@@ -34,11 +34,12 @@ signal scale_changed
 
 ## Modifies how steep a wave needs to be before foam can accumulate.
 @export_range(0, 2) var whitecap := 0.5 : # Note: 'Wispier' foam can be created by increasing the 'foam_amount' and decreasing the 'whitecap' parameters.
-	set(value): whitecap = value; should_generate_spectrum = true
+	set(value): whitecap = value
 @export_range(0, 10) var foam_amount := 5.0 :
-	set(value): foam_amount = value; should_generate_spectrum = true
+	set(value): foam_amount = value
 
 var spectrum_seed := Vector2i.ZERO
+var has_runtime_seed := false
 var should_generate_spectrum := true
 
 var time : float
@@ -56,3 +57,11 @@ func get_effective_wind_direction(external_wind_direction : float, use_external_
 	if not use_external_wind:
 		return wind_direction
 	return external_wind_direction + wind_direction_offset
+
+
+func initialize_runtime_state(seed : Vector2i, initial_time : float) -> void:
+	if has_runtime_seed:
+		return
+	spectrum_seed = seed
+	time = initial_time
+	has_runtime_seed = true

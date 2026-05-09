@@ -1,4 +1,4 @@
-[gd_scene format=4 uid="uid://dx4r13gqfh13"]
+[gd_scene format=3 uid="uid://dx4r13gqfh13"]
 
 [ext_resource type="Script" uid="uid://dj3qlu7uupdmi" path="res://demo/main.gd" id="1_skarq"]
 [ext_resource type="Script" uid="uid://cqbpvt36rest3" path="res://systems/ocean/wave_cascade_parameters.gd" id="2_pw5n6"]
@@ -72,17 +72,6 @@ ambient_energy_curve = SubResource("Curve_fdg1k")
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_ycdy4"]
 render_priority = 1
 shader = ExtResource("4_dg77c")
-shader_parameter/roughness = 0.65
-shader_parameter/specular_strength = 0.55
-shader_parameter/normal_strength = 1.0
-shader_parameter/foam_intensity = 1.25
-shader_parameter/foam_threshold = 0.05
-shader_parameter/foam_softness = 0.35
-shader_parameter/use_bicubic_normals = false
-shader_parameter/fragment_cascade_limit = 3
-shader_parameter/enable_geometry_morph = false
-shader_parameter/generated_clipmap_extent = 256.0
-shader_parameter/map_scales = PackedVector4Array(0.011363637, 0.011363637, 1, 1, 0.01754386, 0.01754386, 0.75, 1, 0.0625, 0.0625, 0, 0.25)
 
 [sub_resource type="Resource" id="Resource_adqv5"]
 script = ExtResource("2_pw5n6")
@@ -131,17 +120,13 @@ script = ExtResource("4_v2yip")
 script = ExtResource("10_tfjfv")
 
 [node name="Water" parent="." unique_id=1159832475 instance=ExtResource("7_s0x5e")]
-process_priority = 100
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -45, 0, 475)
-sorting_offset = 999.0
 material_override = SubResource("ShaderMaterial_ycdy4")
-cast_shadow = 0
 extra_cull_margin = 1000.0
 skeleton = NodePath("")
 use_external_wind = true
 wind_source_path = NodePath("../WindSystem")
 parameters = Array[ExtResource("2_pw5n6")]([SubResource("Resource_adqv5"), SubResource("Resource_luhq0"), SubResource("Resource_83u3u")])
-enable_far_ocean = true
 
 [node name="OceanAudioPlayer" type="AudioStreamPlayer" parent="." unique_id=1224032298]
 stream = ExtResource("6_jpklm")

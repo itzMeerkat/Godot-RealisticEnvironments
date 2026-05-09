@@ -116,6 +116,7 @@ These functions use world-space positions, so boats and floating objects can sam
 The wave update path now supports lower simulation update rates while preserving smoother visuals:
 
  * Wave output maps are double-buffered. The material receives current and previous displacement/normal map arrays and blends them with `wave_blend_alpha`.
+ * Wave textures, colors, cascade counts, and blend state are material uniforms, so multiple `OceanSystem` instances no longer overwrite one another through project-wide shader globals.
  * If a previous cascade update pass is still running, elapsed time is accumulated and applied to the next accepted pass instead of forcing unfinished work to complete immediately.
  * The fragment shader can limit the number of normal/foam cascades sampled per pixel through `fragment_cascade_limit`.
  * Bicubic normal filtering is optional through `use_bicubic_normals`.
@@ -127,9 +128,8 @@ The water mesh no longer relies on pre-authored mesh assets. `OceanSystem` alway
  * `generated_inner_extent`
  * `generated_base_cell_size`
  * `generated_ring_count`
- * `generated_morph_width`
 
-Generated vertices include morph metadata, and the water shader uses geometry morphing to ease vertices toward the next coarser grid in transition bands. This keeps the mesh parameterized without requiring model files.
+The generated mesh is a circular ring layout centered around the ocean node. Far LOD extends the same mesh with coarse outer rings, so the water shader no longer carries the old grid-morph branch or extra morph metadata.
 
 ### Visual stability fixes
 Several visual artifacts were addressed:

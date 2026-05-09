@@ -5,13 +5,21 @@ extends MeshInstance3D
 ## managing wave generation pipelines.
 
 const WATER_MAT := preload('res://systems/ocean/mat_water.tres')
+const MAX_CASCADES := 8
+const EXTERNAL_WIND_SPEED_DIRTY_THRESHOLD := 0.25
+const EXTERNAL_WIND_DIRECTION_DIRTY_THRESHOLD := 2.0
+const EXTERNAL_WIND_SPECTRUM_REFRESH_INTERVAL := 0.5
 
 @export_group('Wave Parameters')
 @export_color_no_alpha var water_color : Color = Color(0.1, 0.15, 0.18) :
-	set(value): water_color = value; RenderingServer.global_shader_parameter_set(&'water_color', water_color.srgb_to_linear())
+	set(value):
+		water_color = value
+		_set_water_shader_parameter(&'water_color', water_color)
 
 @export_color_no_alpha var foam_color : Color = Color(0.73, 0.67, 0.62) :
-	set(value): foam_color = value; RenderingServer.global_shader_parameter_set(&'foam_color', foam_color.srgb_to_linear())
+	set(value):
+		foam_color = value
+		_set_water_shader_parameter(&'foam_color', foam_color)
 
 @export_group('Surface Shading')
 @export_range(0.0, 1.0, 0.01) var roughness := 0.65 :
@@ -22,6 +30,18 @@ const WATER_MAT := preload('res://systems/ocean/mat_water.tres')
 	set(value):
 		specular_strength = value
 		_set_water_shader_parameter(&'specular_strength', specular_strength)
+@export_range(0.0, 4.0, 0.01) var direct_light_strength := 1.45 :
+	set(value):
+		direct_light_strength = value
+		_set_water_shader_parameter(&'direct_light_strength', direct_light_strength)
+@export_range(0.0, 4.0, 0.01) var water_scatter_strength := 1.1 :
+	set(value):
+		water_scatter_strength = value
+		_set_water_shader_parameter(&'water_scatter_strength', water_scatter_strength)
+@export_range(0.0, 4.0, 0.01) var sun_glint_strength := 1.25 :
+	set(value):
+		sun_glint_strength = value
+		_set_water_shader_parameter(&'sun_glint_strength', sun_glint_strength)
 
 @export_group('Foam Shading')
 @export_range(0.0, 4.0, 0.01) var foam_intensity := 1.25 :
@@ -41,27 +61,41 @@ const WATER_MAT := preload('res://systems/ocean/mat_water.tres')
 @export var use_external_wind := false :
 	set(value):
 		use_external_wind = value
+		_reset_external_wind_tracking()
 		_mark_spectra_dirty()
 @export var wind_source_path : NodePath :
 	set(value):
 		wind_source_path = value
 		wind_source = null
+		_reset_external_wind_tracking()
 		_mark_spectra_dirty()
 
 ## The parameters for wave cascades. Each parameter set represents one cascade.
 ## Recreates all compute piplines whenever a cascade is added or removed!
 @export var parameters : Array[WaveCascadeParameters] :
 	set(value):
-		var new_size := len(value)
+		if parameters != null:
+			for existing_param in parameters:
+				if existing_param and existing_param.scale_changed.is_connected(_update_scales_uniform):
+					existing_param.scale_changed.disconnect(_update_scales_uniform)
+
+		var new_parameters := value
+		if new_parameters.size() > MAX_CASCADES:
+			push_warning("OceanSystem supports at most %d wave cascades. Extra cascades were ignored." % MAX_CASCADES)
+			new_parameters.resize(MAX_CASCADES)
+
+		var new_size := len(new_parameters)
 		# All below logic is basically just required for using in the editor!
 		for i in range(new_size):
 			# Ensure all values in the array have an associated cascade
-			if not value[i]: value[i] = WaveCascadeParameters.new()
-			if not value[i].is_connected(&'scale_changed', _update_scales_uniform):
-				value[i].scale_changed.connect(_update_scales_uniform)
-			value[i].spectrum_seed = Vector2i(rng.randi_range(-10000, 10000), rng.randi_range(-10000, 10000))
-			value[i].time = 120.0 + PI*i # We make sure to choose a time offset such that cascades don't interfere!
-		parameters = value
+			if not new_parameters[i]: new_parameters[i] = WaveCascadeParameters.new()
+			if not new_parameters[i].is_connected(&'scale_changed', _update_scales_uniform):
+				new_parameters[i].scale_changed.connect(_update_scales_uniform)
+			new_parameters[i].initialize_runtime_state(
+				Vector2i(rng.randi_range(-10000, 10000), rng.randi_range(-10000, 10000)),
+				120.0 + PI*i
+			) # Offset cascade start times so layered waves are less likely to line up.
+		parameters = new_parameters
 		_setup_wave_generator()
 		_update_scales_uniform()
 
@@ -90,10 +124,6 @@ const WATER_MAT := preload('res://systems/ocean/mat_water.tres')
 	set(value):
 		generated_ring_count = value
 		_update_water_mesh()
-@export_range(0.05, 1.0, 0.05) var generated_morph_width := 0.5 :
-	set(value):
-		generated_morph_width = value
-		_update_water_mesh()
 @export var follow_active_camera := true
 @export_range(0.0, 64.0, 0.25) var follow_snap_size := 0.0
 @export var follow_camera_in_editor := false
@@ -120,29 +150,60 @@ const WATER_MAT := preload('res://systems/ocean/mat_water.tres')
 @export_range(0, 60) var height_query_updates_per_second := 5.0
 @export_group('Visual Smoothing')
 @export var smooth_wave_interpolation := true
-@export_group('Far Ocean')
-@export var enable_far_ocean := true :
+@export_group('Far Ocean LOD')
+@export var enable_far_lod := true :
 	set(value):
-		enable_far_ocean = value
-		_update_far_ocean_state()
-@export var far_ocean_path : NodePath = NodePath("FarOcean") :
+		enable_far_lod = value
+		_update_water_mesh()
+		_update_far_lod_shader_parameters()
+@export_range(256.0, 20000.0, 1.0, "or_greater") var far_lod_radius := 7000.0 :
 	set(value):
-		far_ocean_path = value
-		far_ocean = null
-		_update_far_ocean_state()
+		far_lod_radius = value
+		_update_water_mesh()
+		_update_far_lod_shader_parameters()
+@export_range(4, 96, 1) var far_lod_ring_count := 36 :
+	set(value):
+		far_lod_ring_count = value
+		_update_water_mesh()
+@export_range(1.0, 4000.0, 1.0) var far_lod_blend_distance := 1400.0 :
+	set(value):
+		far_lod_blend_distance = value
+		_update_far_lod_shader_parameters()
+@export_range(0.25, 4.0, 0.01) var far_lod_curve := 1.8 :
+	set(value):
+		far_lod_curve = value
+		_update_far_lod_shader_parameters()
+@export_range(1.0, 512.0, 1.0) var far_low_frequency_tile_length := 64.0 :
+	set(value):
+		far_low_frequency_tile_length = value
+		_update_far_lod_shader_parameters()
+@export_range(0.0, 2.0, 0.01) var far_normal_strength := 0.14 :
+	set(value):
+		far_normal_strength = value
+		_update_far_lod_shader_parameters()
+@export_range(0.0, 1.0, 0.01) var far_foam_coverage := 0.24 :
+	set(value):
+		far_foam_coverage = value
+		_update_far_lod_shader_parameters()
+@export_range(0.0, 1.0, 0.01) var far_foam_threshold_boost := 0.2 :
+	set(value):
+		far_foam_threshold_boost = value
+		_update_far_lod_shader_parameters()
 
 var wave_generator : WaveGenerator :
 	set(value):
-		if wave_generator: wave_generator.queue_free()
+		if wave_generator:
+			wave_generator.queue_free()
 		wave_generator = value
-		add_child(wave_generator)
+		if wave_generator:
+			add_child(wave_generator)
 var rng = RandomNumberGenerator.new()
 var time := 0.0
 var next_update_time := 0.0
 var wind_source : Node
-var far_ocean : Node
 var _last_external_wind_speed := -1.0
 var _last_external_wind_direction := -999999.0
+var _last_external_wind_spectrum_time := -1.0e20
 
 var displacement_maps := Texture2DArrayRD.new()
 var normal_maps := Texture2DArrayRD.new()
@@ -155,22 +216,28 @@ var _has_wave_output := false
 var _last_wave_output_time := 0.0
 var _wave_blend_start_time := 0.0
 var _wave_blend_duration := 1.0 / 60.0
+var _height_cache_refresh_pending := false
 
 func _init() -> void:
 	rng.set_seed(1234) # This seed gives big waves!
 
 func _ready() -> void:
 	process_priority = 100
+	if not Engine.is_editor_hint():
+		_ensure_unique_water_material()
 	_resolve_wind_source()
-	RenderingServer.global_shader_parameter_set(&'water_color', water_color.srgb_to_linear())
-	RenderingServer.global_shader_parameter_set(&'foam_color', foam_color.srgb_to_linear())
-	RenderingServer.global_shader_parameter_set(&'wave_blend_alpha', 1.0)
+	_set_water_shader_parameter(&'water_color', water_color)
+	_set_water_shader_parameter(&'foam_color', foam_color)
+	_set_water_shader_parameter(&'wave_blend_alpha', 1.0)
 	_set_water_shader_parameter(&'roughness', roughness)
 	_set_water_shader_parameter(&'specular_strength', specular_strength)
+	_set_water_shader_parameter(&'direct_light_strength', direct_light_strength)
+	_set_water_shader_parameter(&'water_scatter_strength', water_scatter_strength)
+	_set_water_shader_parameter(&'sun_glint_strength', sun_glint_strength)
 	_set_water_shader_parameter(&'foam_intensity', foam_intensity)
 	_set_water_shader_parameter(&'foam_threshold', foam_threshold)
 	_set_water_shader_parameter(&'foam_softness', foam_softness)
-	_update_far_ocean_state()
+	_update_far_lod_shader_parameters()
 	_update_water_mesh()
 
 func _process(delta : float) -> void:
@@ -186,14 +253,17 @@ func _process(delta : float) -> void:
 	_update_wave_blend_alpha()
 
 func _setup_wave_generator() -> void:
-	if parameters.size() <= 0: return
+	if parameters.size() <= 0:
+		_clear_wave_generator()
+		return
 	for param in parameters:
 		param.should_generate_spectrum = true
 
 	_clear_height_cache()
+	_height_cache_refresh_pending = false
 	wave_generator = WaveGenerator.new()
 	wave_generator.map_size = map_size
-	wave_generator.init_gpu(maxi(2, parameters.size())) # FIXME: This is needed because my RenderContext API sucks...
+	wave_generator.init_gpu(maxi(2, mini(parameters.size(), MAX_CASCADES))) # FIXME: This is needed because my RenderContext API sucks...
 	wave_generator.output_maps_swapped.connect(_on_wave_output_maps_swapped)
 	_has_wave_output = false
 
@@ -202,29 +272,33 @@ func _setup_wave_generator() -> void:
 	_set_texture_rid(previous_displacement_maps, wave_generator.descriptors[&'previous_displacement_map'].rid)
 	_set_texture_rid(previous_normal_maps, wave_generator.descriptors[&'previous_normal_map'].rid)
 
-	RenderingServer.global_shader_parameter_set(&'num_cascades', parameters.size())
-	RenderingServer.global_shader_parameter_set(&'displacements', displacement_maps)
-	RenderingServer.global_shader_parameter_set(&'normals', normal_maps)
-	RenderingServer.global_shader_parameter_set(&'previous_displacements', previous_displacement_maps)
-	RenderingServer.global_shader_parameter_set(&'previous_normals', previous_normal_maps)
-	RenderingServer.global_shader_parameter_set(&'wave_blend_alpha', 1.0)
+	_set_water_shader_parameter(&'num_cascades', parameters.size())
+	_set_water_shader_parameter(&'displacements', displacement_maps)
+	_set_water_shader_parameter(&'normals', normal_maps)
+	_set_water_shader_parameter(&'previous_displacements', previous_displacement_maps)
+	_set_water_shader_parameter(&'previous_normals', previous_normal_maps)
+	_set_water_shader_parameter(&'wave_blend_alpha', 1.0)
 
 func _update_scales_uniform() -> void:
-	var map_scales : PackedVector4Array; map_scales.resize(len(parameters))
-	for i in len(parameters):
+	var cascade_count := mini(len(parameters), MAX_CASCADES)
+	var map_scales : PackedVector4Array; map_scales.resize(cascade_count)
+	for i in cascade_count:
 		var params := parameters[i]
 		var uv_scale := Vector2.ONE / params.tile_length
 		map_scales[i] = Vector4(uv_scale.x, uv_scale.y, params.displacement_scale, params.normal_scale)
-	# No global shader parameter for arrays :(
 	_set_water_shader_parameter(&'map_scales', map_scales)
 
 func _update_water(delta : float) -> void:
+	if parameters.size() <= 0:
+		return
 	if wave_generator == null: _setup_wave_generator()
+	if wave_generator == null:
+		return
 	wave_generator.update(delta, parameters, get_external_wind_speed(), get_external_wind_direction(), should_use_external_wind())
 	if enable_height_queries and (height_query_updates_per_second == 0 or time >= _next_height_query_update_time):
 		var target_update_delta := 1.0 / (height_query_updates_per_second + 1e-10)
 		_next_height_query_update_time = time + target_update_delta
-		refresh_height_cache()
+		_height_cache_refresh_pending = true
 
 func get_water_height(world_position: Vector3) -> float:
 	var t := _get_ocean_time()
@@ -272,33 +346,30 @@ func _resolve_wind_source() -> void:
 		return
 	wind_source = get_node_or_null(wind_source_path)
 
-func get_far_ocean() -> Node:
-	if far_ocean == null:
-		_resolve_far_ocean()
-	return far_ocean
-
-func _resolve_far_ocean() -> void:
-	if far_ocean_path.is_empty() or not is_inside_tree():
-		return
-	far_ocean = get_node_or_null(far_ocean_path)
-
-func _update_far_ocean_state() -> void:
-	var distant_ocean := get_far_ocean()
-	if distant_ocean == null:
-		return
-	distant_ocean.visible = enable_far_ocean
-	distant_ocean.set(&"ocean_path", NodePath(".."))
-
 func _update_external_wind_state() -> void:
 	if not should_use_external_wind():
 		return
 	var current_speed := get_external_wind_speed()
 	var current_direction := get_external_wind_direction()
-	if is_equal_approx(current_speed, _last_external_wind_speed) and is_equal_approx(current_direction, _last_external_wind_direction):
+	if (
+		absf(current_speed - _last_external_wind_speed) < EXTERNAL_WIND_SPEED_DIRTY_THRESHOLD
+		and _get_wrapped_degrees_delta(current_direction, _last_external_wind_direction) < EXTERNAL_WIND_DIRECTION_DIRTY_THRESHOLD
+	):
+		return
+	if time - _last_external_wind_spectrum_time < EXTERNAL_WIND_SPECTRUM_REFRESH_INTERVAL:
 		return
 	_last_external_wind_speed = current_speed
 	_last_external_wind_direction = current_direction
+	_last_external_wind_spectrum_time = time
 	_mark_spectra_dirty()
+
+func _reset_external_wind_tracking() -> void:
+	_last_external_wind_speed = -1.0
+	_last_external_wind_direction = -999999.0
+	_last_external_wind_spectrum_time = -1.0e20
+
+func _get_wrapped_degrees_delta(a : float, b : float) -> float:
+	return absf(wrapf(a - b + 180.0, 0.0, 360.0) - 180.0)
 
 func _mark_spectra_dirty() -> void:
 	if parameters == null:
@@ -359,16 +430,33 @@ func _clear_height_cache() -> void:
 	_height_images.clear()
 	_previous_height_images.clear()
 	_next_height_query_update_time = 0.0
+	_height_cache_refresh_pending = false
+
+func _clear_wave_generator() -> void:
+	_clear_height_cache()
+	wave_generator = null
+	_has_wave_output = false
+	_last_wave_output_time = 0.0
+	_wave_blend_start_time = 0.0
+	_set_texture_rid(displacement_maps, RID())
+	_set_texture_rid(normal_maps, RID())
+	_set_texture_rid(previous_displacement_maps, RID())
+	_set_texture_rid(previous_normal_maps, RID())
+	_set_water_shader_parameter(&'num_cascades', 0)
+	_set_water_shader_parameter(&'displacements', displacement_maps)
+	_set_water_shader_parameter(&'normals', normal_maps)
+	_set_water_shader_parameter(&'previous_displacements', previous_displacement_maps)
+	_set_water_shader_parameter(&'previous_normals', previous_normal_maps)
+	_set_water_shader_parameter(&'wave_blend_alpha', 1.0)
 
 func _update_water_mesh() -> void:
 	if Engine.is_editor_hint():
 		mesh = null
-		_set_water_shader_parameter(&'enable_geometry_morph', false)
 		return
 
 	mesh = _create_generated_clipmap_mesh()
-	_set_water_shader_parameter(&'enable_geometry_morph', false)
-	_set_water_shader_parameter(&'generated_clipmap_extent', _get_generated_mesh_half_extent())
+	extra_cull_margin = _get_generated_mesh_half_extent()
+	_update_far_lod_shader_parameters()
 
 func _update_follow_camera() -> void:
 	if not follow_active_camera:
@@ -400,32 +488,24 @@ func _create_generated_clipmap_mesh() -> ArrayMesh:
 	var vertices := PackedVector3Array()
 	var normals := PackedVector3Array()
 	var uvs := PackedVector2Array()
-	var uv2s := PackedVector2Array()
-	var colors := PackedColorArray()
 	var indices := PackedInt32Array()
 
 	var radii := _build_circular_clipmap_radii()
 	var radial_count := radii.size()
 	var segment_count := _get_circular_clipmap_segment_count()
-	var extent := _get_generated_mesh_half_extent()
 
 	vertices.push_back(Vector3.ZERO)
 	normals.push_back(Vector3.UP)
 	uvs.push_back(Vector2.ZERO)
-	uv2s.push_back(Vector2.ZERO)
-	colors.push_back(Color(0.0, 1.0, 0.0, 1.0))
 
 	for radius_index in range(1, radial_count):
 		var radius := radii[radius_index]
-		var normalized_radius := radius / extent
 		for segment in range(segment_count):
 			var angle := TAU * float(segment) / float(segment_count)
 			var position := Vector3(cos(angle) * radius, 0.0, sin(angle) * radius)
 			vertices.push_back(position)
 			normals.push_back(Vector3.UP)
 			uvs.push_back(Vector2(position.x, position.z))
-			uv2s.push_back(Vector2(position.x, position.z))
-			colors.push_back(Color(normalized_radius, 1.0, 0.0, 1.0))
 
 	for segment in range(segment_count):
 		var next_segment := (segment + 1) % segment_count
@@ -452,8 +532,6 @@ func _create_generated_clipmap_mesh() -> ArrayMesh:
 	arrays[Mesh.ARRAY_VERTEX] = vertices
 	arrays[Mesh.ARRAY_NORMAL] = normals
 	arrays[Mesh.ARRAY_TEX_UV] = uvs
-	arrays[Mesh.ARRAY_TEX_UV2] = uv2s
-	arrays[Mesh.ARRAY_COLOR] = colors
 	arrays[Mesh.ARRAY_INDEX] = indices
 
 	var array_mesh := ArrayMesh.new()
@@ -466,7 +544,7 @@ func _build_circular_clipmap_radii() -> PackedFloat32Array:
 
 	var base_cell := maxf(generated_base_cell_size, 0.1)
 	var inner_radius := generated_inner_extent * 0.5
-	var outer_radius := _get_generated_mesh_half_extent()
+	var outer_radius := maxf(ocean_radius, inner_radius)
 	var current_radius := 0.0
 
 	for band in range(generated_ring_count + 1):
@@ -487,6 +565,16 @@ func _build_circular_clipmap_radii() -> PackedFloat32Array:
 	if radii[radii.size() - 1] < outer_radius - 0.001:
 		radii.push_back(outer_radius)
 
+	if enable_far_lod:
+		var far_radius := maxf(far_lod_radius, outer_radius)
+		var far_ring_count := maxi(far_lod_ring_count, 1)
+		for i in range(1, far_ring_count + 1):
+			var t := float(i) / float(far_ring_count)
+			var eased_t := t * t
+			var radius := lerpf(outer_radius, far_radius, eased_t)
+			if radius > radii[radii.size() - 1] + 0.001:
+				radii.push_back(radius)
+
 	return radii
 
 func _get_circular_clipmap_segment_count() -> int:
@@ -495,55 +583,35 @@ func _get_circular_clipmap_segment_count() -> int:
 	var target_count := int(ceil(TAU * inner_radius / base_cell))
 	return clampi(target_count, 32, 1024)
 
-func _append_clipmap_grid(vertices: PackedVector3Array, normals: PackedVector3Array, uvs: PackedVector2Array, uv2s: PackedVector2Array, colors: PackedColorArray, indices: PackedInt32Array, rect: Rect2, cell_size: float, morph_start: float, morph_end: float, enable_morph: bool) -> void:
-	var min_x := rect.position.x
-	var min_z := rect.position.y
-	var max_x := rect.position.x + rect.size.x
-	var max_z := rect.position.y + rect.size.y
-	var cells_x := maxi(1, int(round((max_x - min_x) / cell_size)))
-	var cells_z := maxi(1, int(round((max_z - min_z) / cell_size)))
-	var actual_cell_x := (max_x - min_x) / cells_x
-	var actual_cell_z := (max_z - min_z) / cells_z
-	var start_index := vertices.size()
-	var row_size := cells_x + 1
-	var extent := _get_generated_mesh_half_extent()
-	var morph_color := Color(morph_start / extent, morph_end / extent, 1.0 if enable_morph else 0.0, 1.0)
-
-	for z_i in range(cells_z + 1):
-		var z := min_z + z_i * actual_cell_z
-		for x_i in range(cells_x + 1):
-			var x := min_x + x_i * actual_cell_x
-			var target_cell := cell_size * 2.0
-			var target := Vector2(round(x / target_cell) * target_cell, round(z / target_cell) * target_cell)
-			vertices.push_back(Vector3(x, 0.0, z))
-			normals.push_back(Vector3.UP)
-			uvs.push_back(Vector2(x, z))
-			uv2s.push_back(target)
-			colors.push_back(morph_color)
-
-	for z_i in range(cells_z):
-		for x_i in range(cells_x):
-			var a := start_index + z_i * row_size + x_i
-			var b := a + 1
-			var c := a + row_size
-			var d := c + 1
-			indices.push_back(a)
-			indices.push_back(b)
-			indices.push_back(c)
-			indices.push_back(b)
-			indices.push_back(d)
-			indices.push_back(c)
-
 func _get_generated_mesh_half_extent() -> float:
-	return maxf(ocean_radius, generated_inner_extent * 0.5)
+	var near_extent := maxf(ocean_radius, generated_inner_extent * 0.5)
+	return maxf(near_extent, far_lod_radius) if enable_far_lod else near_extent
 
 func get_ocean_radius() -> float:
-	return _get_generated_mesh_half_extent()
+	return maxf(ocean_radius, generated_inner_extent * 0.5)
+
+func _update_far_lod_shader_parameters() -> void:
+	_set_water_shader_parameter(&'enable_far_lod', enable_far_lod)
+	_set_water_shader_parameter(&'near_ocean_radius', get_ocean_radius())
+	_set_water_shader_parameter(&'far_lod_radius', _get_generated_mesh_half_extent())
+	_set_water_shader_parameter(&'far_lod_blend_distance', far_lod_blend_distance)
+	_set_water_shader_parameter(&'far_lod_curve', far_lod_curve)
+	_set_water_shader_parameter(&'far_low_frequency_tile_length', far_low_frequency_tile_length)
+	_set_water_shader_parameter(&'far_normal_strength', far_normal_strength)
+	_set_water_shader_parameter(&'far_foam_coverage', far_foam_coverage)
+	_set_water_shader_parameter(&'far_foam_threshold_boost', far_foam_threshold_boost)
 
 func _set_water_shader_parameter(parameter: StringName, value: Variant) -> void:
-	WATER_MAT.set_shader_parameter(parameter, value)
-	if material_override is ShaderMaterial and material_override != WATER_MAT:
+	if material_override is ShaderMaterial:
 		(material_override as ShaderMaterial).set_shader_parameter(parameter, value)
+	else:
+		WATER_MAT.set_shader_parameter(parameter, value)
+
+func _ensure_unique_water_material() -> void:
+	if material_override is ShaderMaterial:
+		material_override = (material_override as ShaderMaterial).duplicate()
+	else:
+		material_override = WATER_MAT.duplicate()
 
 func _read_height_images(device: RenderingDevice, texture_rid: RID) -> Array[Image]:
 	var images : Array[Image] = []
@@ -566,21 +634,24 @@ func _on_wave_output_maps_swapped(current_displacement: RID, previous_displaceme
 		_set_texture_rid(previous_normal_maps, previous_normal)
 		_wave_blend_duration = maxf(time - _last_wave_output_time, 1.0 / 60.0)
 		_wave_blend_start_time = time
-		RenderingServer.global_shader_parameter_set(&'wave_blend_alpha', 0.0 if smooth_wave_interpolation else 1.0)
+		_set_water_shader_parameter(&'wave_blend_alpha', 0.0 if smooth_wave_interpolation else 1.0)
 	else:
 		_set_texture_rid(previous_displacement_maps, current_displacement)
 		_set_texture_rid(previous_normal_maps, current_normal)
 		_has_wave_output = true
 		_wave_blend_start_time = time
-		RenderingServer.global_shader_parameter_set(&'wave_blend_alpha', 1.0)
+		_set_water_shader_parameter(&'wave_blend_alpha', 1.0)
 	_last_wave_output_time = time
-	RenderingServer.global_shader_parameter_set(&'displacements', displacement_maps)
-	RenderingServer.global_shader_parameter_set(&'normals', normal_maps)
-	RenderingServer.global_shader_parameter_set(&'previous_displacements', previous_displacement_maps)
-	RenderingServer.global_shader_parameter_set(&'previous_normals', previous_normal_maps)
+	_set_water_shader_parameter(&'displacements', displacement_maps)
+	_set_water_shader_parameter(&'normals', normal_maps)
+	_set_water_shader_parameter(&'previous_displacements', previous_displacement_maps)
+	_set_water_shader_parameter(&'previous_normals', previous_normal_maps)
+	if _height_cache_refresh_pending and enable_height_queries:
+		refresh_height_cache()
+		_height_cache_refresh_pending = false
 
 func _update_wave_blend_alpha() -> void:
-	RenderingServer.global_shader_parameter_set(&'wave_blend_alpha', _get_wave_blend_alpha())
+	_set_water_shader_parameter(&'wave_blend_alpha', _get_wave_blend_alpha())
 
 func _get_wave_blend_alpha() -> float:
 	if not smooth_wave_interpolation or not _has_wave_output:
