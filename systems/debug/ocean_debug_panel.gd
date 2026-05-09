@@ -7,6 +7,7 @@ const PANEL_SIZE := Vector2(420, 560)
 var water : OceanSystem
 var wind_source : Node
 var sky_system : Node
+var far_ocean : Node
 
 var _panel : PanelContainer
 var _fps_label : Label
@@ -19,10 +20,13 @@ func _ready() -> void:
 	_build()
 
 
-func setup(ocean_system : OceanSystem, active_wind_source : Node = null, active_sky_system : Node = null) -> void:
+func setup(ocean_system : OceanSystem, active_wind_source : Node = null, active_sky_system : Node = null, active_far_ocean : Node = null) -> void:
 	water = ocean_system
 	wind_source = active_wind_source if active_wind_source != null else water.get_wind_source()
 	sky_system = active_sky_system
+	far_ocean = active_far_ocean
+	if far_ocean == null and water and water.has_method(&"get_far_ocean"):
+		far_ocean = water.get_far_ocean()
 	if _controls_ready:
 		_rebuild()
 
@@ -38,10 +42,6 @@ func toggle_panel_visible() -> void:
 func is_interacting() -> bool:
 	if not visible or not _panel:
 		return false
-
-	var focused_control := get_viewport().gui_get_focus_owner()
-	if focused_control and is_ancestor_of(focused_control):
-		return true
 
 	return _panel.get_global_rect().has_point(_panel.get_global_mouse_position())
 
@@ -105,6 +105,10 @@ func _build() -> void:
 	content.add_child(HSeparator.new())
 	_add_ocean_controls(content)
 
+	if far_ocean:
+		content.add_child(HSeparator.new())
+		_add_far_ocean_controls(content)
+
 	content.add_child(HSeparator.new())
 	_add_cascade_tabs(content)
 
@@ -152,6 +156,12 @@ func _add_ocean_controls(parent : VBoxContainer) -> void:
 			water.updates_per_second = value
 	)
 
+	var ocean_radius := _add_float_row(parent, "Ocean Radius", "Radius of the high-detail FFT ocean mesh. Far Ocean can link to this value.", 32.0, 4096.0, 1.0, true)
+	ocean_radius.value_changed.connect(func(value : float) -> void:
+		if not _is_syncing and water:
+			water.ocean_radius = value
+	)
+
 	var water_color := _add_color_row(parent, "Water Color", "")
 	water_color.color_changed.connect(func(value : Color) -> void:
 		if not _is_syncing and water:
@@ -162,6 +172,18 @@ func _add_ocean_controls(parent : VBoxContainer) -> void:
 	foam_color.color_changed.connect(func(value : Color) -> void:
 		if not _is_syncing and water:
 			water.foam_color = value
+	)
+
+	var roughness := _add_float_row(parent, "Roughness", "Material roughness for the high-detail ocean surface and environment reflection blur.", 0.0, 1.0, 0.01, false)
+	roughness.value_changed.connect(func(value : float) -> void:
+		if not _is_syncing and water:
+			water.roughness = value
+	)
+
+	var specular := _add_float_row(parent, "Specular", "Reflection strength for the high-detail ocean surface.", 0.0, 1.0, 0.01, false)
+	specular.value_changed.connect(func(value : float) -> void:
+		if not _is_syncing and water:
+			water.specular_strength = value
 	)
 
 	var foam_intensity := _add_float_row(parent, "Foam Intensity", "Scales the visible whitecap amount in the water shader.", 0.0, 4.0, 0.01, true)
@@ -183,8 +205,11 @@ func _add_ocean_controls(parent : VBoxContainer) -> void:
 	)
 
 	update_spin.name = "UpdatesPerSecond"
+	ocean_radius.name = "OceanRadius"
 	water_color.name = "WaterColor"
 	foam_color.name = "FoamColor"
+	roughness.name = "WaterRoughness"
+	specular.name = "WaterSpecular"
 	foam_intensity.name = "FoamIntensity"
 	foam_threshold.name = "FoamThreshold"
 	foam_softness.name = "FoamSoftness"
@@ -269,6 +294,146 @@ func _add_sky_controls(parent : VBoxContainer) -> void:
 	)
 
 
+func _add_far_ocean_controls(parent : VBoxContainer) -> void:
+	var title := Label.new()
+	title.text = "Far Ocean"
+	title.add_theme_font_size_override("font_size", 15)
+	parent.add_child(title)
+
+	var visible_check := _add_check_row(parent, "Visible", "Toggles the distant ocean fill layer.")
+	visible_check.name = "FarOceanVisible"
+	visible_check.toggled.connect(func(is_pressed : bool) -> void:
+		if not _is_syncing and water:
+			water.enable_far_ocean = is_pressed
+	)
+
+	var link_radius := _add_check_row(parent, "Link Ocean Radius", "When enabled, far ocean starts from Ocean Radius minus Overlap.")
+	link_radius.name = "FarOceanLinkOceanRadius"
+	link_radius.toggled.connect(func(is_pressed : bool) -> void:
+		if not _is_syncing and far_ocean:
+			far_ocean.link_ocean_radius = is_pressed
+	)
+
+	var overlap := _add_float_row(parent, "Overlap", "How far the far ocean overlaps inward over the high-detail ocean.", 0.0, 1000.0, 1.0, false)
+	overlap.name = "FarOceanOverlap"
+	overlap.value_changed.connect(func(value : float) -> void:
+		if not _is_syncing and far_ocean:
+			far_ocean.ocean_overlap = value
+	)
+
+	var inner_radius := _add_float_row(parent, "Manual Inner Radius", "Distance where the far ocean starts fading in when Link Ocean Radius is disabled.", 32.0, 2000.0, 1.0, false)
+	inner_radius.name = "FarOceanInnerRadius"
+	inner_radius.value_changed.connect(func(value : float) -> void:
+		if not _is_syncing and far_ocean:
+			far_ocean.inner_radius = value
+	)
+
+	var inner_fade_width := _add_float_row(parent, "Inner Fade Width", "Blend width between the FFT ocean and the far ocean.", 0.0, 1000.0, 1.0, false)
+	inner_fade_width.name = "FarOceanInnerFadeWidth"
+	inner_fade_width.value_changed.connect(func(value : float) -> void:
+		if not _is_syncing and far_ocean:
+			far_ocean.inner_fade_width = value
+	)
+
+	var outer_radius := _add_float_row(parent, "Outer Radius", "Generated ring radius for the far ocean mesh.", 128.0, 20000.0, 10.0, true)
+	outer_radius.name = "FarOceanOuterRadius"
+	outer_radius.value_changed.connect(func(value : float) -> void:
+		if not _is_syncing and far_ocean:
+			far_ocean.outer_radius = value
+	)
+
+	var radial_segments := _add_float_row(parent, "Radial Segments", "Number of segments around the far ocean ring.", 8.0, 256.0, 1.0, false)
+	radial_segments.name = "FarOceanRadialSegments"
+	radial_segments.value_changed.connect(func(value : float) -> void:
+		if not _is_syncing and far_ocean:
+			far_ocean.radial_segments = int(value)
+	)
+
+	var ring_segments := _add_float_row(parent, "Ring Segments", "Number of distance bands in the far ocean ring.", 1.0, 64.0, 1.0, false)
+	ring_segments.name = "FarOceanRingSegments"
+	ring_segments.value_changed.connect(func(value : float) -> void:
+		if not _is_syncing and far_ocean:
+			far_ocean.ring_segments = int(value)
+	)
+
+	var horizon_start := _add_float_row(parent, "Horizon Fade Start", "Distance where the far ocean starts blending out.", 256.0, 20000.0, 10.0, true)
+	horizon_start.name = "FarOceanHorizonFadeStart"
+	horizon_start.value_changed.connect(func(value : float) -> void:
+		if not _is_syncing and far_ocean:
+			far_ocean.horizon_fade_start = value
+	)
+
+	var horizon_end := _add_float_row(parent, "Horizon Fade End", "Distance where the far ocean is fully faded out.", 256.0, 20000.0, 10.0, true)
+	horizon_end.name = "FarOceanHorizonFadeEnd"
+	horizon_end.value_changed.connect(func(value : float) -> void:
+		if not _is_syncing and far_ocean:
+			far_ocean.horizon_fade_end = value
+	)
+
+	var displacement := _add_float_row(parent, "Displacement", "Low-frequency vertex displacement strength for the far ocean.", 0.0, 4.0, 0.01, false)
+	displacement.name = "FarOceanDisplacement"
+	displacement.value_changed.connect(func(value : float) -> void:
+		if not _is_syncing and far_ocean:
+			far_ocean.displacement_strength = value
+	)
+
+	var normal := _add_float_row(parent, "Normal Strength", "Procedural normal strength for distant wave shading.", 0.0, 2.0, 0.01, false)
+	normal.name = "FarOceanNormalStrength"
+	normal.value_changed.connect(func(value : float) -> void:
+		if not _is_syncing and far_ocean:
+			far_ocean.normal_strength = value
+	)
+
+	var roughness := _add_float_row(parent, "Roughness", "Material roughness for the far ocean.", 0.0, 1.0, 0.01, false)
+	roughness.name = "FarOceanRoughness"
+	roughness.value_changed.connect(func(value : float) -> void:
+		if not _is_syncing and far_ocean:
+			far_ocean.roughness = value
+	)
+
+	var horizon_brightness := _add_float_row(parent, "Horizon Brightness", "How much the far ocean brightens near the horizon.", 0.0, 1.0, 0.01, false)
+	horizon_brightness.name = "FarOceanHorizonBrightness"
+	horizon_brightness.value_changed.connect(func(value : float) -> void:
+		if not _is_syncing and far_ocean:
+			far_ocean.horizon_brightness = value
+	)
+
+	var specular := _add_float_row(parent, "Specular", "Base specular strength before ocean-state modulation.", 0.0, 1.0, 0.01, false)
+	specular.name = "FarOceanSpecular"
+	specular.value_changed.connect(func(value : float) -> void:
+		if not _is_syncing and far_ocean:
+			far_ocean.specular_strength = value
+	)
+
+	var use_ocean_state := _add_check_row(parent, "Use Ocean State", "When enabled, far ocean shading responds to the assigned OceanSystem sea state.")
+	use_ocean_state.name = "FarOceanUseOceanState"
+	use_ocean_state.toggled.connect(func(is_pressed : bool) -> void:
+		if not _is_syncing and far_ocean:
+			far_ocean.use_ocean_state = is_pressed
+	)
+
+	var reference_wind := _add_float_row(parent, "Reference Wind", "Wind speed that maps to sea state 1.0 for far ocean reflection matching.", 0.1, 60.0, 0.1, true)
+	reference_wind.name = "FarOceanReferenceWind"
+	reference_wind.value_changed.connect(func(value : float) -> void:
+		if not _is_syncing and far_ocean:
+			far_ocean.reference_wind_speed = value
+	)
+
+	var state_influence := _add_float_row(parent, "State Influence", "Strength of ocean-state response for far ocean displacement, normals, and specular.", 0.0, 3.0, 0.01, false)
+	state_influence.name = "FarOceanStateInfluence"
+	state_influence.value_changed.connect(func(value : float) -> void:
+		if not _is_syncing and far_ocean:
+			far_ocean.sea_state_influence = value
+	)
+
+	var manual_state := _add_float_row(parent, "Manual State", "Fallback sea state used when Use Ocean State is disabled.", 0.0, 2.0, 0.01, false)
+	manual_state.name = "FarOceanManualState"
+	manual_state.value_changed.connect(func(value : float) -> void:
+		if not _is_syncing and far_ocean:
+			far_ocean.manual_sea_state = value
+	)
+
+
 func _add_cascade_tabs(parent : VBoxContainer) -> void:
 	var tabs := TabContainer.new()
 	tabs.name = "CascadeTabs"
@@ -327,8 +492,11 @@ func _populate_values() -> void:
 			break
 
 	_set_named_spin("UpdatesPerSecond", water.updates_per_second)
+	_set_named_spin("OceanRadius", water.ocean_radius)
 	_set_named_color("WaterColor", water.water_color)
 	_set_named_color("FoamColor", water.foam_color)
+	_set_named_spin("WaterRoughness", water.roughness)
+	_set_named_spin("WaterSpecular", water.specular_strength)
 	_set_named_spin("FoamIntensity", water.foam_intensity)
 	_set_named_spin("FoamThreshold", water.foam_threshold)
 	_set_named_spin("FoamSoftness", water.foam_softness)
@@ -343,6 +511,26 @@ func _populate_values() -> void:
 		_set_named_spin("SkySunEnergy", sky_system.sun_energy_multiplier)
 		_set_named_spin("SkyMoonEnergy", sky_system.moon_energy_multiplier)
 		_set_named_spin("SkyStarBrightness", sky_system.star_brightness)
+	if far_ocean:
+		_set_named_check("FarOceanVisible", water.enable_far_ocean)
+		_set_named_check("FarOceanLinkOceanRadius", far_ocean.link_ocean_radius)
+		_set_named_spin("FarOceanOverlap", far_ocean.ocean_overlap)
+		_set_named_spin("FarOceanInnerRadius", far_ocean.inner_radius)
+		_set_named_spin("FarOceanInnerFadeWidth", far_ocean.inner_fade_width)
+		_set_named_spin("FarOceanOuterRadius", far_ocean.outer_radius)
+		_set_named_spin("FarOceanRadialSegments", far_ocean.radial_segments)
+		_set_named_spin("FarOceanRingSegments", far_ocean.ring_segments)
+		_set_named_spin("FarOceanHorizonFadeStart", far_ocean.horizon_fade_start)
+		_set_named_spin("FarOceanHorizonFadeEnd", far_ocean.horizon_fade_end)
+		_set_named_spin("FarOceanDisplacement", far_ocean.displacement_strength)
+		_set_named_spin("FarOceanNormalStrength", far_ocean.normal_strength)
+		_set_named_spin("FarOceanRoughness", far_ocean.roughness)
+		_set_named_spin("FarOceanHorizonBrightness", far_ocean.horizon_brightness)
+		_set_named_spin("FarOceanSpecular", far_ocean.specular_strength)
+		_set_named_check("FarOceanUseOceanState", far_ocean.use_ocean_state)
+		_set_named_spin("FarOceanReferenceWind", far_ocean.reference_wind_speed)
+		_set_named_spin("FarOceanStateInfluence", far_ocean.sea_state_influence)
+		_set_named_spin("FarOceanManualState", far_ocean.manual_sea_state)
 
 	_is_syncing = false
 

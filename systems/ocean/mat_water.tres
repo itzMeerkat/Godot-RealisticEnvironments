@@ -6,6 +6,7 @@
 render_priority = 1
 shader = ExtResource("1_uffek")
 shader_parameter/roughness = 0.65
+shader_parameter/specular_strength = 0.55
 shader_parameter/normal_strength = 1.0
 shader_parameter/foam_intensity = 1.25
 shader_parameter/foam_threshold = 0.05

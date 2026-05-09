@@ -37,8 +37,20 @@ signal lighting_changed
 
 @export_group("Visuals")
 @export var follow_active_camera := true
+@export var render_bodies_in_sky := true :
+	set(value):
+		render_bodies_in_sky = value
+		_update_sky()
 @export_range(100.0, 10000.0, 1.0, "or_greater") var celestial_visual_distance := 900.0
 @export_range(100.0, 10000.0, 1.0, "or_greater") var starfield_radius := 1200.0
+@export_range(0.0, 3.0, 0.01) var radiance_sun_disk_strength := 0.16 :
+	set(value):
+		radiance_sun_disk_strength = value
+		_update_sky()
+@export_range(0.0, 1.0, 0.01) var radiance_sun_halo_strength := 0.18 :
+	set(value):
+		radiance_sun_halo_strength = value
+		_update_sky()
 
 @export_group("Ocean Integration")
 @export var ocean_path : NodePath :
@@ -112,7 +124,7 @@ func _update_sky() -> void:
 
 	_update_light(_sun_light, sun_direction, active_profile.sample_sun_color(time_of_day), active_profile.sample_sun_energy(time_of_day) * sun_visibility * sun_energy_multiplier)
 	_update_light(_moon_light, moon_direction, active_profile.sample_moon_color(time_of_day), active_profile.sample_moon_energy(time_of_day) * moon_visibility * moon_energy_multiplier)
-	_update_environment(active_profile)
+	_update_environment(active_profile, sun_direction, moon_direction, sun_visibility, moon_visibility)
 	_update_starfield_visibility(active_profile.sample_star_visibility(night_factor) * star_brightness)
 	_update_visual_colors(active_profile, sun_visibility, moon_visibility)
 	_update_ocean_colors(active_profile)
@@ -129,20 +141,37 @@ func _update_light(light : DirectionalLight3D, direction : Vector3, color : Colo
 	light.look_at(global_position - direction, _get_look_up(direction))
 
 
-func _update_environment(active_profile) -> void:
+func _update_environment(active_profile, sun_direction : Vector3, moon_direction : Vector3, sun_visibility : float, moon_visibility : float) -> void:
 	if _world_environment == null or _world_environment.environment == null:
 		return
 	var environment := _world_environment.environment
 	var top_color : Color = active_profile.sample_sky_top_color(time_of_day)
 	var horizon_color : Color = active_profile.sample_sky_horizon_color(time_of_day)
+	var sun_color : Color = active_profile.sample_sun_color(time_of_day)
+	var moon_color : Color = active_profile.sample_moon_color(time_of_day)
 	environment.ambient_light_color = top_color.lerp(horizon_color, 0.35)
 	environment.ambient_light_energy = active_profile.sample_ambient_energy(time_of_day)
 	if environment.sky and environment.sky.sky_material:
 		var material := environment.sky.sky_material
-		material.set(&"sky_top_color", top_color)
-		material.set(&"sky_horizon_color", horizon_color)
-		material.set(&"ground_bottom_color", top_color.darkened(0.55))
-		material.set(&"ground_horizon_color", horizon_color.darkened(0.25))
+		if material is ShaderMaterial:
+			var shader_material := material as ShaderMaterial
+			shader_material.set_shader_parameter(&"sky_top_color", top_color)
+			shader_material.set_shader_parameter(&"sky_horizon_color", horizon_color)
+			shader_material.set_shader_parameter(&"ground_bottom_color", top_color.darkened(0.55))
+			shader_material.set_shader_parameter(&"ground_horizon_color", horizon_color.darkened(0.25))
+			shader_material.set_shader_parameter(&"sun_direction", sun_direction)
+			shader_material.set_shader_parameter(&"sun_color", sun_color)
+			shader_material.set_shader_parameter(&"sun_visibility", sun_visibility if render_bodies_in_sky else 0.0)
+			shader_material.set_shader_parameter(&"radiance_sun_disk_strength", radiance_sun_disk_strength)
+			shader_material.set_shader_parameter(&"radiance_sun_halo_strength", radiance_sun_halo_strength)
+			shader_material.set_shader_parameter(&"moon_direction", moon_direction)
+			shader_material.set_shader_parameter(&"moon_color", moon_color)
+			shader_material.set_shader_parameter(&"moon_visibility", moon_visibility if render_bodies_in_sky else 0.0)
+		else:
+			material.set(&"sky_top_color", top_color)
+			material.set(&"sky_horizon_color", horizon_color)
+			material.set(&"ground_bottom_color", top_color.darkened(0.55))
+			material.set(&"ground_horizon_color", horizon_color.darkened(0.25))
 
 
 func _update_starfield_visibility(visibility : float) -> void:
@@ -164,6 +193,12 @@ func _update_starfield_time() -> void:
 
 
 func _update_visual_colors(active_profile, sun_visibility : float, moon_visibility : float) -> void:
+	if render_bodies_in_sky:
+		if _sun_visual:
+			_sun_visual.visible = false
+		if _moon_visual:
+			_moon_visual.visible = false
+		return
 	_set_visual_color(_sun_visual, active_profile.sample_sun_color(time_of_day), sun_visibility)
 	_set_visual_color(_moon_visual, active_profile.sample_moon_color(time_of_day), moon_visibility)
 
@@ -189,8 +224,9 @@ func _update_visual_positions() -> void:
 	if camera == null:
 		return
 	var origin := camera.global_position if follow_active_camera else global_position
-	_position_body_visual(_sun_visual, origin, get_sun_direction())
-	_position_body_visual(_moon_visual, origin, get_moon_direction())
+	if not render_bodies_in_sky:
+		_position_body_visual(_sun_visual, origin, get_sun_direction())
+		_position_body_visual(_moon_visual, origin, get_moon_direction())
 	if _starfield:
 		_starfield.global_position = origin
 		_starfield.scale = Vector3.ONE * starfield_radius

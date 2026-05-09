@@ -1,0 +1,25 @@
+[gd_resource type="ShaderMaterial" format=4]
+
+[ext_resource type="Shader" path="res://systems/ocean/far_ocean/shaders/far_ocean.gdshader" id="1_far_ocean"]
+
+[resource]
+render_priority = -1
+shader = ExtResource("1_far_ocean")
+shader_parameter/inner_radius = 150.0
+shader_parameter/inner_fade_width = 96.0
+shader_parameter/horizon_fade_start = 5200.0
+shader_parameter/horizon_fade_end = 6800.0
+shader_parameter/displacement_strength = 1.0
+shader_parameter/normal_strength = 0.42
+shader_parameter/roughness = 0.65
+shader_parameter/horizon_brightness = 0.04
+shader_parameter/specular_strength = 0.55
+shader_parameter/low_frequency_tile_length = 64.0
+shader_parameter/lod_blend_distance = 1200.0
+shader_parameter/lod_curve = 1.7
+shader_parameter/far_swell_visibility = 0.52
+shader_parameter/far_wave_contrast = 0.28
+shader_parameter/far_foam_coverage = 0.36
+shader_parameter/far_foam_threshold_boost = 0.18
+shader_parameter/sea_state = 0.0
+shader_parameter/sea_state_influence = 1.0

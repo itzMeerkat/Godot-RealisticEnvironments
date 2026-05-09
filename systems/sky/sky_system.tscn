@@ -1,12 +1,12 @@
 [gd_scene load_steps=11 format=4]
 
 [ext_resource type="Script" path="res://systems/sky/sky_system.gd" id="1_sky_system"]
-[ext_resource type="Material" path="res://systems/sky/materials/procedural_sky.tres" id="2_procedural_sky"]
+[ext_resource type="Material" path="res://systems/sky/materials/sky.tres" id="2_sky"]
 [ext_resource type="Shader" path="res://systems/sky/shaders/celestial_disk.gdshader" id="3_disk_shader"]
 [ext_resource type="Material" path="res://systems/sky/materials/starfield.tres" id="4_starfield"]
 
 [sub_resource type="Sky" id="Sky_dynamic"]
-sky_material = ExtResource("2_procedural_sky")
+sky_material = ExtResource("2_sky")
 
 [sub_resource type="Environment" id="Environment_dynamic"]
 background_mode = 2
@@ -64,11 +64,13 @@ light_energy = 0.12
 shadow_enabled = false
 
 [node name="SunVisual" type="MeshInstance3D" parent="."]
+visible = false
 material_override = SubResource("ShaderMaterial_sun_disk")
 cast_shadow = 0
 mesh = SubResource("QuadMesh_sun")
 
 [node name="MoonVisual" type="MeshInstance3D" parent="."]
+visible = false
 material_override = SubResource("ShaderMaterial_moon_disk")
 cast_shadow = 0
 mesh = SubResource("QuadMesh_moon")

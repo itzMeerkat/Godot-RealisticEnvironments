@@ -12,6 +12,7 @@ global uniform vec4 water_color : source_color;
 global uniform vec4 foam_color : source_color;
 
 uniform float roughness : hint_range(0.0, 1.0) = 0.4;
+uniform float specular_strength : hint_range(0.0, 1.0) = 0.55;
 uniform float normal_strength : hint_range(0.0, 1.0) = 1.0; // Global normal strength
 uniform float foam_intensity : hint_range(0.0, 4.0) = 1.25;
 uniform float foam_threshold : hint_range(0.0, 2.0) = 0.05;
@@ -122,7 +123,7 @@ void fragment() {
 	NORMAL = (VIEW_MATRIX * vec4(normalize(vec3(-gradient.x, 1.0, -gradient.y)), 0.0)).xyz;
 
 	fresnel = mix(pow(1.0 - dot(VIEW, NORMAL), 5.0*exp(-2.69*roughness)) / (1.0 + 22.7*pow(roughness, 1.5)), 1.0, REFLECTANCE);
-	ROUGHNESS = (1.0 - fresnel) * foam_factor + 0.4; // Roughness is proportional to foam/fog amount and fresnel.
+	ROUGHNESS = clamp(roughness + (1.0 - fresnel) * foam_factor * 0.35, 0.0, 1.0);
 }
 
 float smith_masking_shadowing(in float cos_theta, in float alpha) {
@@ -148,12 +149,14 @@ void light() {
 	float view_mask = smith_masking_shadowing(roughness, dot_nl);
 	float microfacet_distribution = ggx_distribution(dot(NORMAL, halfway), roughness);
 	float geometric_attenuation = 1.0 / (1.0 + light_mask + view_mask);
-	SPECULAR_LIGHT += fresnel * microfacet_distribution * geometric_attenuation / (4.0 * dot_nv + 0.1) * ATTENUATION;
+	SPECULAR_LIGHT += fresnel * microfacet_distribution * geometric_attenuation / (4.0 * dot_nv + 0.1) * ATTENUATION * LIGHT_COLOR * specular_strength;
 
 	// --- DIFFUSE ---
 	const vec3 sss_modifier = vec3(0.9,1.15,0.85); // Subsurface scattering produces a 'greener' color.
 	float sss_height = 1.0*max(0.0, wave_height + 2.5) * pow(max(dot(LIGHT, -VIEW), 0.0), 4.0) * pow(0.5 - 0.5 * dot(LIGHT, NORMAL), 3.0);
 	float sss_near = 0.5*pow(dot_nv, 2.0);
 	float lambertian = 0.5*dot_nl;
-	DIFFUSE_LIGHT += mix((sss_height + sss_near) * sss_modifier / (1.0 + light_mask) + lambertian, foam_color.rgb, foam_factor) * (1.0 - fresnel) * ATTENUATION * LIGHT_COLOR;
+	vec3 water_scatter = water_color.rgb * sss_modifier;
+	vec3 water_diffuse = (sss_height + sss_near) * water_scatter / (1.0 + light_mask) + lambertian * water_color.rgb;
+	DIFFUSE_LIGHT += mix(water_diffuse, foam_color.rgb, foam_factor) * (1.0 - fresnel) * ATTENUATION * LIGHT_COLOR;
 }

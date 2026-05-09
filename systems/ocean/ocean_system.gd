@@ -13,6 +13,16 @@ const WATER_MAT := preload('res://systems/ocean/mat_water.tres')
 @export_color_no_alpha var foam_color : Color = Color(0.73, 0.67, 0.62) :
 	set(value): foam_color = value; RenderingServer.global_shader_parameter_set(&'foam_color', foam_color.srgb_to_linear())
 
+@export_group('Surface Shading')
+@export_range(0.0, 1.0, 0.01) var roughness := 0.65 :
+	set(value):
+		roughness = value
+		_set_water_shader_parameter(&'roughness', roughness)
+@export_range(0.0, 1.0, 0.01) var specular_strength := 0.55 :
+	set(value):
+		specular_strength = value
+		_set_water_shader_parameter(&'specular_strength', specular_strength)
+
 @export_group('Foam Shading')
 @export_range(0.0, 4.0, 0.01) var foam_intensity := 1.25 :
 	set(value):
@@ -63,6 +73,10 @@ const WATER_MAT := preload('res://systems/ocean/mat_water.tres')
 		_setup_wave_generator()
 
 @export_group('Mesh')
+@export_range(32.0, 4096.0, 1.0, "or_greater") var ocean_radius := 256.0 :
+	set(value):
+		ocean_radius = value
+		_update_water_mesh()
 ## Full side length of the highest-density center patch, in meters.
 @export_range(16.0, 512.0, 1.0) var generated_inner_extent := 128.0 :
 	set(value):
@@ -106,6 +120,16 @@ const WATER_MAT := preload('res://systems/ocean/mat_water.tres')
 @export_range(0, 60) var height_query_updates_per_second := 5.0
 @export_group('Visual Smoothing')
 @export var smooth_wave_interpolation := true
+@export_group('Far Ocean')
+@export var enable_far_ocean := true :
+	set(value):
+		enable_far_ocean = value
+		_update_far_ocean_state()
+@export var far_ocean_path : NodePath = NodePath("FarOcean") :
+	set(value):
+		far_ocean_path = value
+		far_ocean = null
+		_update_far_ocean_state()
 
 var wave_generator : WaveGenerator :
 	set(value):
@@ -116,6 +140,7 @@ var rng = RandomNumberGenerator.new()
 var time := 0.0
 var next_update_time := 0.0
 var wind_source : Node
+var far_ocean : Node
 var _last_external_wind_speed := -1.0
 var _last_external_wind_direction := -999999.0
 
@@ -140,9 +165,12 @@ func _ready() -> void:
 	RenderingServer.global_shader_parameter_set(&'water_color', water_color.srgb_to_linear())
 	RenderingServer.global_shader_parameter_set(&'foam_color', foam_color.srgb_to_linear())
 	RenderingServer.global_shader_parameter_set(&'wave_blend_alpha', 1.0)
+	_set_water_shader_parameter(&'roughness', roughness)
+	_set_water_shader_parameter(&'specular_strength', specular_strength)
 	_set_water_shader_parameter(&'foam_intensity', foam_intensity)
 	_set_water_shader_parameter(&'foam_threshold', foam_threshold)
 	_set_water_shader_parameter(&'foam_softness', foam_softness)
+	_update_far_ocean_state()
 	_update_water_mesh()
 
 func _process(delta : float) -> void:
@@ -244,6 +272,23 @@ func _resolve_wind_source() -> void:
 		return
 	wind_source = get_node_or_null(wind_source_path)
 
+func get_far_ocean() -> Node:
+	if far_ocean == null:
+		_resolve_far_ocean()
+	return far_ocean
+
+func _resolve_far_ocean() -> void:
+	if far_ocean_path.is_empty() or not is_inside_tree():
+		return
+	far_ocean = get_node_or_null(far_ocean_path)
+
+func _update_far_ocean_state() -> void:
+	var distant_ocean := get_far_ocean()
+	if distant_ocean == null:
+		return
+	distant_ocean.visible = enable_far_ocean
+	distant_ocean.set(&"ocean_path", NodePath(".."))
+
 func _update_external_wind_state() -> void:
 	if not should_use_external_wind():
 		return
@@ -322,7 +367,7 @@ func _update_water_mesh() -> void:
 		return
 
 	mesh = _create_generated_clipmap_mesh()
-	_set_water_shader_parameter(&'enable_geometry_morph', true)
+	_set_water_shader_parameter(&'enable_geometry_morph', false)
 	_set_water_shader_parameter(&'generated_clipmap_extent', _get_generated_mesh_half_extent())
 
 func _update_follow_camera() -> void:
@@ -359,23 +404,50 @@ func _create_generated_clipmap_mesh() -> ArrayMesh:
 	var colors := PackedColorArray()
 	var indices := PackedInt32Array()
 
-	var base_cell := generated_base_cell_size
-	var inner_half := generated_inner_extent * 0.5
-	_append_clipmap_grid(vertices, normals, uvs, uv2s, colors, indices, Rect2(Vector2(-inner_half, -inner_half), Vector2(generated_inner_extent, generated_inner_extent)), base_cell, 0.0, 1.0, false)
+	var radii := _build_circular_clipmap_radii()
+	var radial_count := radii.size()
+	var segment_count := _get_circular_clipmap_segment_count()
+	var extent := _get_generated_mesh_half_extent()
 
-	for ring in range(generated_ring_count):
-		var ring_inner_half := inner_half * pow(2.0, ring)
-		var ring_outer_half := inner_half * pow(2.0, ring + 1)
-		var cell_size := base_cell * pow(2.0, ring + 1)
-		var ring_width := ring_outer_half - ring_inner_half
-		var morph_width := maxf(ring_width * generated_morph_width, cell_size)
-		var morph_start := maxf(ring_inner_half, ring_outer_half - morph_width)
-		var morph_end := ring_outer_half
+	vertices.push_back(Vector3.ZERO)
+	normals.push_back(Vector3.UP)
+	uvs.push_back(Vector2.ZERO)
+	uv2s.push_back(Vector2.ZERO)
+	colors.push_back(Color(0.0, 1.0, 0.0, 1.0))
 
-		_append_clipmap_grid(vertices, normals, uvs, uv2s, colors, indices, Rect2(Vector2(-ring_outer_half, -ring_outer_half), Vector2(ring_outer_half * 2.0, ring_width)), cell_size, morph_start, morph_end, true)
-		_append_clipmap_grid(vertices, normals, uvs, uv2s, colors, indices, Rect2(Vector2(-ring_outer_half, ring_inner_half), Vector2(ring_outer_half * 2.0, ring_width)), cell_size, morph_start, morph_end, true)
-		_append_clipmap_grid(vertices, normals, uvs, uv2s, colors, indices, Rect2(Vector2(-ring_outer_half, -ring_inner_half), Vector2(ring_width, ring_inner_half * 2.0)), cell_size, morph_start, morph_end, true)
-		_append_clipmap_grid(vertices, normals, uvs, uv2s, colors, indices, Rect2(Vector2(ring_inner_half, -ring_inner_half), Vector2(ring_width, ring_inner_half * 2.0)), cell_size, morph_start, morph_end, true)
+	for radius_index in range(1, radial_count):
+		var radius := radii[radius_index]
+		var normalized_radius := radius / extent
+		for segment in range(segment_count):
+			var angle := TAU * float(segment) / float(segment_count)
+			var position := Vector3(cos(angle) * radius, 0.0, sin(angle) * radius)
+			vertices.push_back(position)
+			normals.push_back(Vector3.UP)
+			uvs.push_back(Vector2(position.x, position.z))
+			uv2s.push_back(Vector2(position.x, position.z))
+			colors.push_back(Color(normalized_radius, 1.0, 0.0, 1.0))
+
+	for segment in range(segment_count):
+		var next_segment := (segment + 1) % segment_count
+		indices.push_back(0)
+		indices.push_back(1 + next_segment)
+		indices.push_back(1 + segment)
+
+	for radius_index in range(1, radial_count - 1):
+		var row := 1 + (radius_index - 1) * segment_count
+		var next_row := row + segment_count
+		for segment in range(segment_count):
+			var next_segment := (segment + 1) % segment_count
+			var a := row + segment
+			var b := row + next_segment
+			var c := next_row + segment
+			var d := next_row + next_segment
+			indices.push_back(a)
+			indices.push_back(b)
+			indices.push_back(c)
+			indices.push_back(b)
+			indices.push_back(d)
+			indices.push_back(c)
 
 	arrays[Mesh.ARRAY_VERTEX] = vertices
 	arrays[Mesh.ARRAY_NORMAL] = normals
@@ -387,6 +459,41 @@ func _create_generated_clipmap_mesh() -> ArrayMesh:
 	var array_mesh := ArrayMesh.new()
 	array_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 	return array_mesh
+
+func _build_circular_clipmap_radii() -> PackedFloat32Array:
+	var radii := PackedFloat32Array()
+	radii.push_back(0.0)
+
+	var base_cell := maxf(generated_base_cell_size, 0.1)
+	var inner_radius := generated_inner_extent * 0.5
+	var outer_radius := _get_generated_mesh_half_extent()
+	var current_radius := 0.0
+
+	for band in range(generated_ring_count + 1):
+		var band_outer := minf(inner_radius * pow(2.0, band), outer_radius)
+		var cell_size := base_cell * pow(2.0, band)
+		while current_radius + cell_size < band_outer - 0.001:
+			current_radius += cell_size
+			radii.push_back(current_radius)
+		if radii[radii.size() - 1] < band_outer - 0.001:
+			current_radius = band_outer
+			radii.push_back(current_radius)
+
+	var outer_cell_size := base_cell * pow(2.0, generated_ring_count + 1)
+	while current_radius + outer_cell_size < outer_radius - 0.001:
+		current_radius += outer_cell_size
+		radii.push_back(current_radius)
+
+	if radii[radii.size() - 1] < outer_radius - 0.001:
+		radii.push_back(outer_radius)
+
+	return radii
+
+func _get_circular_clipmap_segment_count() -> int:
+	var base_cell := maxf(generated_base_cell_size, 0.1)
+	var inner_radius := maxf(generated_inner_extent * 0.5, base_cell)
+	var target_count := int(ceil(TAU * inner_radius / base_cell))
+	return clampi(target_count, 32, 1024)
 
 func _append_clipmap_grid(vertices: PackedVector3Array, normals: PackedVector3Array, uvs: PackedVector2Array, uv2s: PackedVector2Array, colors: PackedColorArray, indices: PackedInt32Array, rect: Rect2, cell_size: float, morph_start: float, morph_end: float, enable_morph: bool) -> void:
 	var min_x := rect.position.x
@@ -428,7 +535,10 @@ func _append_clipmap_grid(vertices: PackedVector3Array, normals: PackedVector3Ar
 			indices.push_back(c)
 
 func _get_generated_mesh_half_extent() -> float:
-	return generated_inner_extent * 0.5 * pow(2.0, generated_ring_count)
+	return maxf(ocean_radius, generated_inner_extent * 0.5)
+
+func get_ocean_radius() -> float:
+	return _get_generated_mesh_half_extent()
 
 func _set_water_shader_parameter(parameter: StringName, value: Variant) -> void:
 	WATER_MAT.set_shader_parameter(parameter, value)
