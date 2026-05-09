@@ -46,7 +46,7 @@ The following implementation pieces were removed:
 
  * `WaterSprayEmitter` nodes from `main.tscn` and `assets/water/ocean_system.tscn`
  * `sea_spray_enabled` runtime toggle from `OceanSystem`
- * ImGui sea spray toggle from `main.gd`
+ * runtime sea spray toggle from `main.gd`
  * `assets/water/mat_spray.tres`
  * `assets/water/sea_spray.png`
  * `assets/water/sea_spray.png.import`

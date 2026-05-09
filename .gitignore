@@ -18,4 +18,3 @@ mono_crash.*.json
 build/
 
 .vscode
-addons

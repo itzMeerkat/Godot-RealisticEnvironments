@@ -95,6 +95,8 @@ Several Godot 4 RenderingDevice validation errors were fixed:
 ### OceanSystem scene and gameplay API
 The ocean can now be used as a packaged scene through `assets/water/ocean_system.tscn`, backed by `OceanSystem` (`assets/water/water.gd`).
 
+The runtime ocean scene has no ImGui dependency. The demo scene uses an optional native Godot `OceanDebugPanel` (`ui/ocean_debug_panel.tscn`) for live tuning of the same exported ocean and cascade parameters that are available from the inspector or scripts.
+
 The scene exposes CPU-side water queries for buoyancy and gameplay:
 
 ```gdscript
@@ -133,6 +135,7 @@ Several visual artifacts were addressed:
  * The water fragment shader uses camera-relative distance for near/far normal and foam falloff, rather than distance from world origin.
  * The old 1-meter tile snapping that moved the whole water node from `main.gd` was removed. `OceanSystem` now follows the active camera continuously in XZ space by default, keeping the render mesh near the camera while the sampled waves remain stable in world space.
  * The previous sea spray particle prototype was removed from the runtime scene and archived in `SEA_SPRAY.md`.
+ * The heavy ImGui debug dependency was replaced with an optional native Godot debug panel, keeping the reusable ocean component lighter for use in other projects.
 
 ## References
 **Flügge, Fynn-Jorin**. **[Realtime GPGPU FFT Ocean Water Simulation](https://tore.tuhh.de/entities/publication/1cd390d3-732b-41c1-aa2b-07b71a64edd2)**. Hamburg University of Technology. (2017).\
