@@ -88,6 +88,59 @@ The displacement, normal, and foam maps generated after running FFT on our direc
 
 [environment_demo.mp4](https://github.com/user-attachments/assets/7589758f-1233-4be8-accc-2902a1dd01ec)
 
+## Maintenance Notes
+This fork includes a set of fixes and runtime improvements made while converting the ocean renderer into a reusable Godot scene and making it more stable for camera-follow gameplay.
+
+### RenderingDevice and compute fixes
+Several Godot 4 RenderingDevice validation errors were fixed:
+
+ * Push constant uploads now use the exact byte count expected by each compute pipeline. This avoids pipelines rejecting a dispatch because a shader expects 4 bytes but receives a padded 16-byte block.
+ * Spectrum write/read descriptor sets were separated so storage images match the shader's declared read/write access. This fixes uniform-set validation errors where a writable image was supplied to a shader binding that required a read-only image.
+ * Displacement output textures include `TEXTURE_USAGE_CAN_COPY_FROM_BIT`, allowing CPU readback for height queries through `texture_get_data()`.
+ * The FFT unpack pass now reads foam history from the previously completed normal map rather than the map currently being written. This keeps foam history continuous when output maps are double-buffered.
+
+### OceanSystem scene and gameplay API
+The ocean can now be used as a packaged scene through `assets/water/ocean_system.tscn`, backed by `OceanSystem` (`assets/water/water.gd`).
+
+The scene exposes CPU-side water queries for buoyancy and gameplay:
+
+```gdscript
+func get_water_height(world_position: Vector3) -> float
+func get_water_normal(world_position: Vector3) -> Vector3
+```
+
+These functions use world-space positions, so boats and floating objects can sample the water consistently even when the render mesh follows a moving camera. The CPU height cache can be enabled through exported query settings and refreshed at a lower rate than rendering to avoid unnecessary GPU stalls.
+
+### Performance and smoothing changes
+The wave update path now supports lower simulation update rates while preserving smoother visuals:
+
+ * Wave output maps are double-buffered. The material receives current and previous displacement/normal map arrays and blends them with `wave_blend_alpha`.
+ * If a previous cascade update pass is still running, elapsed time is accumulated and applied to the next accepted pass instead of forcing unfinished work to complete immediately.
+ * The fragment shader can limit the number of normal/foam cascades sampled per pixel through `fragment_cascade_limit`.
+ * Bicubic normal filtering is optional through `use_bicubic_normals`.
+ * Sea spray can be toggled at runtime with `sea_spray_enabled`, disabling the particle node when it is not needed.
+ * The project has a frame-rate cap configured through `run/max_fps`.
+
+### Procedural clipmap mesh
+The water mesh no longer needs to rely on a pre-authored `clipmap.obj` asset for the main runtime path. `OceanSystem` can procedurally generate a clipmap-style grid from exported parameters:
+
+ * `use_generated_mesh`
+ * `generated_inner_extent`
+ * `generated_base_cell_size`
+ * `generated_ring_count`
+ * `generated_morph_width`
+
+Generated vertices include morph metadata, and the water shader uses geometry morphing to ease vertices toward the next coarser grid in transition bands. This keeps the mesh parameterized and prepares the renderer for smoother LOD work without requiring new model files.
+
+### Visual stability fixes
+Several visual artifacts were addressed:
+
+ * The water material disables backface culling to avoid generated triangle winding differences making the ocean body disappear while foam remained visible.
+ * Previously serialized generated `ArrayMesh` data was removed from `main.tscn`. By default, generated mesh preview is disabled in the editor through `preview_generated_mesh_in_editor` so large generated meshes are not accidentally saved into scene files.
+ * Foam/normal history now follows the same double-buffered timeline as displacement maps, reducing color jumps that could appear when the wave update rate was lower than the render frame rate.
+ * The water fragment shader uses camera-relative distance for near/far normal and foam falloff, rather than distance from world origin.
+ * The old 1-meter tile snapping that moved the whole water node from `main.gd` was removed. `OceanSystem` now follows the active camera continuously in XZ space by default, keeping the render mesh near the camera while the sampled waves remain stable in world space.
+
 ## References
 **Flügge, Fynn-Jorin**. **[Realtime GPGPU FFT Ocean Water Simulation](https://tore.tuhh.de/entities/publication/1cd390d3-732b-41c1-aa2b-07b71a64edd2)**. Hamburg University of Technology. (2017).\
 **Gunnell, Garrett**. **[I Tried Simulating The Entire Ocean](https://www.youtube.com/watch?v=yPfagLeUa7k)**. (2023).\

@@ -75,6 +75,9 @@ enum MeshQuality { LOW, HIGH }
 	set(value):
 		generated_morph_width = value
 		_update_water_mesh()
+@export var follow_active_camera := true
+@export_range(0.0, 64.0, 0.25) var follow_snap_size := 0.0
+@export var follow_camera_in_editor := false
 
 @export var sea_spray_enabled := true :
 	set(value):
@@ -129,6 +132,7 @@ func _init() -> void:
 	rng.set_seed(1234) # This seed gives big waves!
 
 func _ready() -> void:
+	process_priority = 100
 	RenderingServer.global_shader_parameter_set(&'water_color', water_color.srgb_to_linear())
 	RenderingServer.global_shader_parameter_set(&'foam_color', foam_color.srgb_to_linear())
 	RenderingServer.global_shader_parameter_set(&'wave_blend_alpha', 1.0)
@@ -136,6 +140,7 @@ func _ready() -> void:
 	_update_sea_spray_visibility()
 
 func _process(delta : float) -> void:
+	_update_follow_camera()
 	# Update waves once every 1.0/updates_per_second.
 	if updates_per_second == 0 or time >= next_update_time:
 		var target_update_delta := 1.0 / (updates_per_second + 1e-10)
@@ -276,6 +281,29 @@ func _update_water_mesh() -> void:
 	else:
 		mesh = load(WATER_MESH_HIGH_PATH if mesh_quality == MeshQuality.HIGH else WATER_MESH_LOW_PATH)
 		_set_water_shader_parameter(&'enable_geometry_morph', false)
+
+func _update_follow_camera() -> void:
+	if not follow_active_camera:
+		return
+	if Engine.is_editor_hint() and not follow_camera_in_editor:
+		return
+	var viewport := get_viewport()
+	if viewport == null:
+		return
+	var camera := viewport.get_camera_3d()
+	if camera == null:
+		return
+
+	var target_x := camera.global_position.x
+	var target_z := camera.global_position.z
+	if follow_snap_size > 0.0:
+		target_x = roundf(target_x / follow_snap_size) * follow_snap_size
+		target_z = roundf(target_z / follow_snap_size) * follow_snap_size
+
+	var target_position := global_position
+	target_position.x = target_x
+	target_position.z = target_z
+	global_position = target_position
 
 func _create_generated_clipmap_mesh() -> ArrayMesh:
 	var arrays := []

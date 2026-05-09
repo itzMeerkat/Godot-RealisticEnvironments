@@ -1,8 +1,6 @@
 @tool
 extends Node3D
 
-var clipmap_tile_size := 1.0 # Not the smallest tile size, but one that reduces the amount of vertex jitter.
-var previous_tile := Vector3i.MAX
 var should_render_imgui := not Engine.is_editor_hint()
 
 @onready var viewport : Variant = Engine.get_singleton(&'EditorInterface').get_editor_viewport_3d(0) if Engine.is_editor_hint() else get_viewport()
@@ -29,13 +27,7 @@ func _process(delta : float) -> void:
 			_render_imgui()
 		camera.enable_camera_movement = not (ImGui.IsWindowHovered(ImGui.HoveredFlags_AnyWindow) or ImGui.IsAnyItemActive())
 
-func _physics_process(delta: float) -> void:
-	# Shift water mesh whenever player moves into a new tile.
-	var tile := (Vector3(camera.global_position.x, 0.0, camera.global_position.z) / clipmap_tile_size).ceil()
-	if not tile.is_equal_approx(previous_tile):
-		water.global_position = tile * clipmap_tile_size
-		previous_tile = tile
-
+func _physics_process(_delta: float) -> void:
 	# Vary audio samples based on total wind speed across all cascades.
 	var total_wind_speed := 0.0
 	for params in water.parameters:
@@ -74,7 +66,6 @@ func _render_imgui() -> void:
 		for mesh_quality in len(water.MeshQuality):
 			if ImGui.Selectable('%s' % mesh_quality_keys[mesh_quality].capitalize()):
 				water.mesh_quality = mesh_quality
-				clipmap_tile_size = 1.0 if mesh_quality == water.MeshQuality.HIGH else 4.0
 		ImGui.EndCombo()
 	imgui_text_tooltip('Updates per Second:', 'Denotes how many times wave spectrums will be updated per second.\n(0 is uncapped)'); ImGui.SameLine(); if ImGui.SliderFloat('##update_rate', _updates_per_second, 0, 60): water.updates_per_second = _updates_per_second[0]
 	ImGui.Text('Water Color:       '); ImGui.SameLine(); if ImGui.ColorButtonEx('##water_color_button', water.water_color, ImGui.ColorEditFlags_Float, Vector2(ImGui.GetColumnWidth(), ImGui.GetFrameHeight())): ImGui.OpenPopup('water_color_picker')
