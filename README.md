@@ -83,8 +83,9 @@ This fork includes a set of fixes and runtime improvements made while converting
 ### Project layout
 Project files are grouped by system boundary:
 
- * `systems/ocean/` contains the reusable ocean scene, wave parameters, wave generator, material, ocean shaders, and ocean-internal RenderingDevice helpers under `systems/ocean/rendering/`.
- * `systems/wind/` contains the optional wind provider used by the demo and available to future gameplay systems.
+ * `addons/ocean_system/` contains the reusable ocean scene, wave parameters, wave generator, material, ocean shaders, and ocean-internal RenderingDevice helpers under `addons/ocean_system/rendering/`.
+ * `addons/wind_system/` contains the optional wind provider used by the demo and available to future gameplay systems.
+ * `addons/sky_system/` contains the reusable day-night sky scene, sky profile resource, celestial shaders, and lighting controller.
  * `systems/debug/` contains the optional native debug UI.
  * `demo/` contains the sample scene, camera controller, skybox, and audio assets.
 
@@ -97,11 +98,11 @@ Several Godot 4 RenderingDevice validation errors were fixed:
  * The FFT unpack pass now reads foam history from the previously completed normal map rather than the map currently being written. This keeps foam history continuous when output maps are double-buffered.
 
 ### OceanSystem scene and gameplay API
-The ocean can now be used as a packaged scene through `systems/ocean/ocean_system.tscn`, backed by `OceanSystem` (`systems/ocean/ocean_system.gd`).
+The ocean can now be used as a packaged scene through `addons/ocean_system/ocean_system.tscn`, backed by `OceanSystem` (`addons/ocean_system/ocean_system.gd`).
 
 The runtime ocean scene has no ImGui dependency. The demo scene uses an optional native Godot `OceanDebugPanel` (`systems/debug/ocean_debug_panel.tscn`) for live tuning of the same exported ocean and cascade parameters that are available from the inspector or scripts.
 
-`OceanSystem` is independent of the wind implementation. By default it uses each cascade's local wind speed and direction. If a scene assigns `wind_source_path` and enables `use_external_wind`, the ocean reads wind from that external node through `get_wind_speed()` and `get_wind_direction_degrees()` or matching `wind_speed` / `wind_direction` properties. The included `WindSystem` (`systems/wind/wind_system.gd`) is one such provider, and other systems such as sailing, clouds, particles, and weather can consume the same provider without coupling those systems to the ocean.
+`OceanSystem` is independent of the wind implementation. By default it uses each cascade's local wind speed and direction. If a scene assigns `wind_source_path` and enables `use_external_wind`, the ocean reads wind from that external node through `get_wind_speed()` and `get_wind_direction_degrees()` or matching `wind_speed` / `wind_direction` properties. The included `WindSystem` (`addons/wind_system/wind_system.gd`) is one such provider, and other systems such as sailing, clouds, particles, and weather can consume the same provider without coupling those systems to the ocean.
 
 The scene exposes CPU-side water queries for buoyancy and gameplay:
 

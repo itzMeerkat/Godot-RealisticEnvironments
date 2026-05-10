@@ -1,0 +1,13 @@
+[gd_resource type="ShaderMaterial" format=4]
+
+[ext_resource type="Shader" path="res://addons/sky_system/shaders/starfield.gdshader" id="1_star"]
+
+[resource]
+render_priority = -10
+shader = ExtResource("1_star")
+shader_parameter/star_visibility = 0.0
+shader_parameter/star_brightness = 1.0
+shader_parameter/star_density = 72.0
+shader_parameter/star_twinkle_strength = 0.12
+shader_parameter/horizon_softness = 0.08
+shader_parameter/time = 0.0

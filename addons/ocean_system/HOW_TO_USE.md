@@ -1,0 +1,50 @@
+# Ocean System HOW TO USE
+
+## 安装
+
+1. 将 `addons/ocean_system/` 复制到目标 Godot 项目的 `res://addons/ocean_system/`。
+2. 在 Godot 中打开 `Project > Project Settings > Plugins`，启用 `Ocean System`。
+3. 将 `res://addons/ocean_system/ocean_system.tscn` 实例化到 3D 场景中。
+
+## 基本设置
+
+- `parameters`：波浪 cascade 列表。每个 `WaveCascadeParameters` 控制一个波浪尺度。
+- `map_size`：每层 displacement/normal 贴图分辨率。越高越细，GPU 成本越高。
+- `ocean_radius`、`generated_inner_extent`、`generated_base_cell_size`、`generated_ring_count`：控制近处海面网格密度和范围。
+- `enable_far_lod`、`far_lod_radius`、`far_lod_blend_distance`：控制远海网格和远处细节淡出。
+- `water_color`、`foam_color`、`clear_roughness`、`normal_strength`、`foam_intensity`：控制材质外观。
+
+所有主要参数都导出到 Inspector，也可以直接在代码中设置：
+
+```gdscript
+@onready var ocean: OceanSystem = $OceanSystem
+
+func _ready() -> void:
+	ocean.water_color = Color(0.05, 0.12, 0.16)
+	ocean.foam_intensity = 1.6
+	ocean.updates_per_second = 20.0
+```
+
+## 连接外部风系统
+
+Ocean System 不依赖 Wind System。任何节点只要提供 `get_wind_speed()` 和 `get_wind_direction_degrees()`，或拥有 `wind_speed` / `wind_direction` 属性，都可以作为风源。
+
+```gdscript
+ocean.use_external_wind = true
+ocean.wind_source_path = ocean.get_path_to($WindSystem)
+```
+
+每个 cascade 仍可用 `wind_speed_multiplier` 和 `wind_direction_offset` 对外部风做局部调整。
+
+## 高度查询
+
+开启 `enable_height_queries` 后，可以查询 CPU 缓存的水面高度和法线。读回 GPU 贴图有成本，建议把 `height_query_updates_per_second` 保持在较低值。
+
+```gdscript
+var height := ocean.get_water_height(global_position)
+var normal := ocean.get_water_normal(global_position)
+```
+
+## 独立性说明
+
+该插件只依赖自身目录下的脚本、材质和 shader。复制到其他项目时请保持 `addons/ocean_system/` 目录结构不变。

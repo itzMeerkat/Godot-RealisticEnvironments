@@ -6,12 +6,12 @@ Add a reusable `SkySystem` that owns the day-night cycle, celestial lighting, vi
 
 Current structure already separates reusable systems:
 
-* `systems/ocean/` has `OceanSystem`, water material, and the water shader.
-* `systems/wind/` has `WindSystem`, a small provider-style runtime node.
+* `addons/ocean_system/` has `OceanSystem`, water material, and the water shader.
+* `addons/wind_system/` has `WindSystem`, a small provider-style runtime node.
 * `systems/debug/` has the native debug panel.
 * `demo/main.tscn` currently composes the scene and owns the static skybox plus root `Sun`.
 
-The new system should follow the same pattern: put reusable sky logic in `systems/sky/`, then instance it from `demo/main.tscn`.
+The new system should follow the same pattern: put reusable sky logic in `addons/sky_system/`, then instance it from `demo/main.tscn`.
 
 ## Goals
 
@@ -24,23 +24,25 @@ The new system should follow the same pattern: put reusable sky logic in `system
 ## Files
 
 ```text
-systems/sky/
+addons/sky_system/
   sky_system.tscn
   sky_system.gd
   sky_profile.gd
   materials/
-    procedural_sky.tres
+    sky.tres
+    celestial_disk.tres
     starfield.tres
   shaders/
     sky.gdshader
+    celestial_disk.gdshader
     starfield.gdshader
 ```
 
 Optional later:
 
 ```text
-systems/sky/textures/moon_albedo.png
-systems/sky/textures/star_noise.png
+addons/sky_system/textures/moon_albedo.png
+addons/sky_system/textures/star_noise.png
 ```
 
 ## Scene
@@ -185,7 +187,7 @@ Optional later integration:
 
 In `demo/main.tscn`:
 
-* Instance `res://systems/sky/sky_system.tscn`.
+* Instance `res://addons/sky_system/sky_system.tscn`.
 * Remove or disable the root `Sun` once `SkySystem/SunLight` is active.
 * Move the current sky background setup into `SkySystem`.
 * Keep `WindSystem`, `Water`, camera, audio, and debug panel structure unchanged.
