@@ -1,21 +1,20 @@
 shader_type spatial;
 render_mode world_vertex_coords, cull_disabled, shadows_disabled;
 /**
- * Water lighting model roughly follows the 2019 GDC talk: "Wakes, Explosions and Lighting: Interactive Water Simulation in Atlas".
- * Source: https://gpuopen.com/gdc-presentations/2019/gdc-2019-agtd6-interactive-water-simulation-in-atlas.pdf
+ * Water uses Godot's built-in spatial PBR lighting. The shader only provides
+ * displacement, normals, foam color, and dynamic material properties.
  */
 
 #define MAX_CASCADES 8
-#define REFLECTANCE  0.02 // Reflectance from air to water (eta=1.33).
 
 uniform vec4 water_color : source_color;
 uniform vec4 foam_color : source_color;
 
-uniform float roughness : hint_range(0.0, 1.0) = 0.4;
-uniform float specular_strength : hint_range(0.0, 1.0) = 0.55;
-uniform float direct_light_strength : hint_range(0.0, 4.0) = 1.45;
-uniform float water_scatter_strength : hint_range(0.0, 4.0) = 1.1;
-uniform float sun_glint_strength : hint_range(0.0, 4.0) = 1.25;
+uniform float clear_roughness : hint_range(0.0, 1.0) = 0.06;
+uniform float foam_roughness : hint_range(0.0, 1.0) = 0.24;
+uniform float clear_specular : hint_range(0.0, 1.0) = 0.85;
+uniform float foam_specular : hint_range(0.0, 1.0) = 0.35;
+uniform float slope_roughness_strength : hint_range(0.0, 4.0) = 0.55;
 uniform float normal_strength : hint_range(0.0, 1.0) = 1.0; // Global normal strength
 uniform float foam_intensity : hint_range(0.0, 4.0) = 1.25;
 uniform float foam_threshold : hint_range(0.0, 2.0) = 0.05;
@@ -41,10 +40,7 @@ uniform sampler2DArray previous_displacements;
 uniform sampler2DArray previous_normals : hint_normal;
 uniform float wave_blend_alpha = 1.0;
 
-varying float wave_height;
 varying float foam_factor;
-varying float fresnel;
-varying float lighting_roughness;
 varying float distance_to_camera;
 varying float distance_lod;
 
@@ -85,7 +81,6 @@ void vertex() {
 		displacement += mix(previous_displacement, current_displacement, wave_blend_alpha) * scales.z * cascade_weight;
 	}
 	VERTEX += displacement;
-	wave_height = displacement.y;
 }
 
 /** Filter weights for a cubic B-spline. */
@@ -122,6 +117,7 @@ vec4 texture_bicubic(in sampler2DArray sampler, in vec3 uvw) {
 void fragment() {
 	float dist = distance_to_camera;
 	vec3 gradient = vec3(0);
+	float wave_slope = 0.0;
 	foam_factor = 0.0;
 
 	if (num_cascades > 0) {
@@ -151,6 +147,7 @@ void fragment() {
 		float foam_edge = foam_threshold + far_foam_threshold_boost * distance_lod;
 		float foam_distance_fade = mix(1.0, far_foam_coverage, distance_lod);
 		foam_factor = smoothstep(foam_edge, foam_edge + foam_softness, foam_signal) * exp(-dist*0.0075) * foam_distance_fade;
+		wave_slope = clamp(length(gradient.xy) * slope_roughness_strength, 0.0, 1.0);
 
 		float near_normal_fade = exp(-dist*0.0175);
 		float far_normal_fade = max(far_normal_strength * 0.35, 0.015);
@@ -159,53 +156,7 @@ void fragment() {
 	}
 
 	ALBEDO = mix(water_color.rgb, foam_color.rgb, foam_factor);
-
-	float cos_view = clamp(dot(VIEW, NORMAL), 0.0, 1.0);
-	fresnel = mix(pow(1.0 - cos_view, 5.0*exp(-2.69*roughness)) / (1.0 + 22.7*pow(roughness, 1.5)), 1.0, REFLECTANCE);
-	lighting_roughness = clamp(roughness + (1.0 - fresnel) * foam_factor * 0.35, 0.0, 1.0);
-	ROUGHNESS = lighting_roughness;
-	SPECULAR = clamp(specular_strength, 0.0, 1.0);
-}
-
-float smith_masking_shadowing(in float cos_theta, in float alpha) {
-	cos_theta = clamp(cos_theta, 0.0001, 0.9999);
-	alpha = max(alpha, 0.0001);
-	float a = cos_theta / (alpha * sqrt(1.0 - cos_theta*cos_theta)); // Approximate: 1.0 / (alpha * tan(acos(cos_theta)))
-	float a_sq = a*a;
-	return a < 1.6 ? (1.0 - 1.259*a + 0.396*a_sq) / (3.535*a + 2.181*a_sq) : 0.0;
-}
-
-// Source: https://github.com/godotengine/godot/blob/7b56111c297f24304eb911fe75082d8cdc3d4141/drivers/gles3/shaders/scene.glsl#L995
-float ggx_distribution(in float cos_theta, in float alpha) {
-	float a_sq = alpha*alpha;
-	float d = 1.0 + (a_sq - 1.0) * cos_theta * cos_theta;
-	return a_sq / (PI * d*d);
-}
-
-void light() {
-	vec3 halfway = normalize(LIGHT + VIEW);
-	float raw_dot_nl = dot(NORMAL, LIGHT);
-	float dot_nl = max(raw_dot_nl, 2e-5);
-	float dot_nv = max(dot(NORMAL, VIEW), 2e-5);
-
-	// --- SPECULAR ---
-	float alpha = max(lighting_roughness, 0.04);
-	float light_mask = smith_masking_shadowing(dot_nl, alpha);
-	float view_mask = smith_masking_shadowing(dot_nv, alpha);
-	float microfacet_distribution = ggx_distribution(max(dot(NORMAL, halfway), 0.0), alpha);
-	float geometric_attenuation = 1.0 / (1.0 + light_mask + view_mask);
-	float broad_glint = pow(max(dot(reflect(-LIGHT, NORMAL), VIEW), 0.0), mix(96.0, 18.0, lighting_roughness));
-	float specular_light = (microfacet_distribution * geometric_attenuation / (4.0 * dot_nv + 0.1) + broad_glint * 0.16) * fresnel * sun_glint_strength;
-	SPECULAR_LIGHT += specular_light * ATTENUATION * LIGHT_COLOR * specular_strength;
-
-	// --- DIFFUSE ---
-	const vec3 sss_modifier = vec3(0.9,1.15,0.85); // Subsurface scattering produces a 'greener' color.
-	float wrapped_light = smoothstep(-0.35, 0.85, raw_dot_nl);
-	float forward_scatter = pow(max(dot(LIGHT, -VIEW), 0.0), 2.5);
-	float crest_scatter = max(0.0, wave_height + 2.0) * forward_scatter * pow(max(0.0, 0.5 - 0.5 * raw_dot_nl), 2.0);
-	float view_scatter = 0.35 * pow(dot_nv, 2.0);
-	vec3 water_scatter = water_color.rgb * sss_modifier;
-	vec3 water_diffuse = water_color.rgb * (0.18 + 0.82 * wrapped_light) * direct_light_strength;
-	water_diffuse += (crest_scatter + view_scatter) * water_scatter * water_scatter_strength / (1.0 + light_mask);
-	DIFFUSE_LIGHT += mix(water_diffuse, foam_color.rgb, foam_factor) * (1.0 - fresnel * 0.65) * ATTENUATION * LIGHT_COLOR;
+	METALLIC = 0.0;
+	ROUGHNESS = mix(clear_roughness, foam_roughness, max(foam_factor, wave_slope));
+	SPECULAR = mix(clear_specular, foam_specular, foam_factor);
 }

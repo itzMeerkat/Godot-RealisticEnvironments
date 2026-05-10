@@ -32,10 +32,10 @@ shader_parameter/visibility = 1.0
 shader_parameter/halo_strength = 0.35
 
 [sub_resource type="QuadMesh" id="QuadMesh_sun"]
-size = Vector2(38, 38)
+size = Vector2(9.3, 9.3)
 
 [sub_resource type="QuadMesh" id="QuadMesh_moon"]
-size = Vector2(30, 30)
+size = Vector2(9.3, 9.3)
 
 [sub_resource type="SphereMesh" id="SphereMesh_starfield"]
 radius = 1.0
@@ -60,7 +60,7 @@ shadow_blur = 5.0
 
 [node name="MoonLight" type="DirectionalLight3D" parent="."]
 light_color = Color(0.45, 0.55, 0.85, 1)
-light_energy = 0.12
+light_energy = 0.045
 shadow_enabled = false
 
 [node name="SunVisual" type="MeshInstance3D" parent="."]

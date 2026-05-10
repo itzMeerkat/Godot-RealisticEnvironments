@@ -38,7 +38,7 @@
 `OceanSystem` 中大多数导出参数都有 setter。setter 会立即把值同步到 shader 或标记频谱需要重算：
 
 - 颜色、波浪纹理、cascade 数量和 `wave_blend_alpha` 都通过 `_set_water_shader_parameter()` 写入材质实例。
-- `roughness`、`specular_strength`、foam 参数和 Far LOD 参数也走同一条材质同步路径。
+- `clear_roughness`、`foam_roughness`、`clear_specular`、`foam_specular`、`slope_roughness_strength`、foam 参数和 Far LOD 参数也走同一条材质同步路径。
 - cascade 参数、风速、风向变化会调用 `_mark_spectra_dirty()`，让下一次 wave update 重新生成频谱。
 
 运行时会复制当前 `material_override`，确保每个 `OceanSystem` 拥有独立材质状态，避免多个海面实例互相覆盖贴图、颜色或插值进度。
@@ -137,18 +137,19 @@ Far LOD 不再叠加独立 procedural swell。远处浪型必须来自同一组 
 - `far_foam_threshold_boost` 抬高远处泡沫阈值。
 - `far_foam_coverage` 限制远处 foam 占比。
 
-水面反射不按近远分支。近海、远海、关闭 Far LOD 后扩大的主 ocean 都使用同一套 `roughness`、`specular_strength`、Fresnel 和 GGX specular 路径。调试反光问题时应先把这条统一路径调正确，再考虑是否需要额外的距离实验参数。
+水面材质不按近远分支。近海、远海、关闭 Far LOD 后扩大的主 ocean 都使用同一套 PBR 材质输出路径。调试反光问题时应先确认 Godot 的环境光、DirectionalLight、SSR/反射探针和水体 PBR 参数，再考虑是否需要额外的距离实验参数。
 
 ## Water Shader 光照
 
-水面 shader 使用自定义 `light()`，大致分为：
+水面 shader 不手写 `light()`，而是让 Godot spatial shader 的内置 PBR 光照接管直接光和环境反射。`fragment()` 只输出基础材质属性：
 
-- Fresnel：视角越掠射，反射越强。
-- GGX specular：受 `roughness` 和 `specular_strength` 影响。
-- 简化 diffuse/subsurface scattering：用 `water_color` 和光照方向模拟水体散射。
+- `METALLIC = 0.0`。
+- 清水区域使用低 `clear_roughness` 和高 `clear_specular`。
+- Foam 区域混合到更高 `foam_roughness` 和更低 `foam_specular`。
+- 波面坡度通过 `slope_roughness_strength` 额外提高 roughness。
 - Foam 混合：根据 normal map 中的 foam signal 混合 `foam_color`。
 
-近海和远海共享同一份 shader，因此颜色、roughness、specular、foam 和日落光色都会走同一条路径。这是减少接缝和色差的关键。
+近海和远海共享同一份 shader，因此颜色、PBR 参数、foam 和环境反射都会走同一条路径。这是减少接缝和色差的关键。
 
 ## CPU 高度查询
 
@@ -168,7 +169,9 @@ Far LOD 不再叠加独立 procedural swell。远处浪型必须来自同一组 
 - wave resolution 和 update rate
 - ocean radius
 - water / foam color
-- roughness / specular
+- clear / foam roughness
+- clear / foam specular
+- slope roughness strength
 - foam intensity / threshold / softness
 - Far LOD radius、ring count、blend distance、curve
 - Far normal 和 foam 衰减参数
@@ -180,7 +183,9 @@ Far LOD 不再叠加独立 procedural swell。远处浪型必须来自同一组 
 - `far_lod_curve`：是否更久保留近处细节。
 - `far_low_frequency_tile_length`：哪些 cascade 被认为是远处低频。
 - `far_normal_strength`：远处反光和波纹强度。
-- `roughness` / `specular_strength`：整体反光是否过白。
+- `clear_roughness` / `clear_specular`：清水区域是否过亮或过糊。
+- `foam_roughness` / `foam_specular`：白沫区域是否还像镜面。
+- `slope_roughness_strength`：陡峭波面是否过于锐利或过于发灰。
 
 ## 常见修改方向
 
@@ -188,7 +193,7 @@ Far LOD 不再叠加独立 procedural swell。远处浪型必须来自同一组 
 - 如果远处太碎或闪烁：提高 `far_low_frequency_tile_length`，降低 `far_normal_strength`，或降低小尺度 cascade 的 `normal_scale`。
 - 如果远处泡沫铺满：提高 `far_foam_threshold_boost`，降低 `far_foam_coverage`。
 - 如果近远接缝明显：增大 `far_lod_blend_distance`，调整 `far_lod_curve`，并确认近海与远海没有走不同材质。
-- 如果整个海面越远越白：优先检查统一反射路径里的 `specular_strength`、`roughness`、Fresnel/GGX 实现、环境反射强度和天空/太阳光颜色。
+- 如果整个海面越远越白：优先检查 `clear_specular`、`clear_roughness`、环境反射强度、SSR/反射探针和天空/太阳光颜色。
 
 ## 维护原则
 

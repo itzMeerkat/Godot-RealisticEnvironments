@@ -169,34 +169,34 @@ func _add_ocean_controls(parent : VBoxContainer) -> void:
 			water.foam_color = value
 	)
 
-	var roughness := _add_float_row(parent, "Roughness", "Material roughness for the high-detail ocean surface and environment reflection blur.", 0.0, 1.0, 0.01, false)
-	roughness.value_changed.connect(func(value : float) -> void:
+	var clear_roughness := _add_float_row(parent, "Clear Roughness", "PBR roughness for clear water.", 0.0, 1.0, 0.01, false)
+	clear_roughness.value_changed.connect(func(value : float) -> void:
 		if not _is_syncing and water:
-			water.roughness = value
+			water.clear_roughness = value
 	)
 
-	var specular := _add_float_row(parent, "Specular", "Reflection strength for the high-detail ocean surface.", 0.0, 1.0, 0.01, false)
-	specular.value_changed.connect(func(value : float) -> void:
+	var foam_roughness := _add_float_row(parent, "Foam Roughness", "PBR roughness for whitecaps and crest foam.", 0.0, 1.0, 0.01, false)
+	foam_roughness.value_changed.connect(func(value : float) -> void:
 		if not _is_syncing and water:
-			water.specular_strength = value
+			water.foam_roughness = value
 	)
 
-	var direct_light := _add_float_row(parent, "Direct Light", "Multiplier for broad sun/moon lighting on the water surface.", 0.0, 4.0, 0.01, false)
-	direct_light.value_changed.connect(func(value : float) -> void:
+	var clear_specular := _add_float_row(parent, "Clear Specular", "PBR specular strength for clear water.", 0.0, 1.0, 0.01, false)
+	clear_specular.value_changed.connect(func(value : float) -> void:
 		if not _is_syncing and water:
-			water.direct_light_strength = value
+			water.clear_specular = value
 	)
 
-	var water_scatter := _add_float_row(parent, "Water Scatter", "Multiplier for forward and crest scattering from direct lights.", 0.0, 4.0, 0.01, false)
-	water_scatter.value_changed.connect(func(value : float) -> void:
+	var foam_specular := _add_float_row(parent, "Foam Specular", "PBR specular strength for whitecaps and crest foam.", 0.0, 1.0, 0.01, false)
+	foam_specular.value_changed.connect(func(value : float) -> void:
 		if not _is_syncing and water:
-			water.water_scatter_strength = value
+			water.foam_specular = value
 	)
 
-	var sun_glint := _add_float_row(parent, "Sun Glint", "Multiplier for direct-light specular glints on the water surface.", 0.0, 4.0, 0.01, false)
-	sun_glint.value_changed.connect(func(value : float) -> void:
+	var slope_roughness := _add_float_row(parent, "Slope Roughness", "How much wave slope increases PBR roughness before foam appears.", 0.0, 4.0, 0.01, false)
+	slope_roughness.value_changed.connect(func(value : float) -> void:
 		if not _is_syncing and water:
-			water.sun_glint_strength = value
+			water.slope_roughness_strength = value
 	)
 
 	var foam_intensity := _add_float_row(parent, "Foam Intensity", "Scales the visible whitecap amount in the water shader.", 0.0, 4.0, 0.01, true)
@@ -221,11 +221,11 @@ func _add_ocean_controls(parent : VBoxContainer) -> void:
 	ocean_radius.name = "OceanRadius"
 	water_color.name = "WaterColor"
 	foam_color.name = "FoamColor"
-	roughness.name = "WaterRoughness"
-	specular.name = "WaterSpecular"
-	direct_light.name = "WaterDirectLight"
-	water_scatter.name = "WaterScatter"
-	sun_glint.name = "WaterSunGlint"
+	clear_roughness.name = "WaterClearRoughness"
+	foam_roughness.name = "WaterFoamRoughness"
+	clear_specular.name = "WaterClearSpecular"
+	foam_specular.name = "WaterFoamSpecular"
+	slope_roughness.name = "WaterSlopeRoughness"
 	foam_intensity.name = "FoamIntensity"
 	foam_threshold.name = "FoamThreshold"
 	foam_softness.name = "FoamSoftness"
@@ -344,7 +344,7 @@ func _add_sky_controls(parent : VBoxContainer) -> void:
 			sky_system.cycle_enabled = is_pressed
 	)
 
-	var time_of_day := _add_float_row(parent, "Time of Day", "Normalized day time: 0 midnight, 0.25 sunrise, 0.5 noon, 0.75 sunset.", 0.0, 1.0, 0.001, false)
+	var time_of_day := _add_float_row(parent, "Time of Day", "Normalized solar time: 0 midnight, 0.5 solar noon.", 0.0, 1.0, 0.001, false)
 	time_of_day.name = "SkyTimeOfDay"
 	time_of_day.value_changed.connect(func(value : float) -> void:
 		if not _is_syncing and sky_system:
@@ -356,6 +356,41 @@ func _add_sky_controls(parent : VBoxContainer) -> void:
 	cycle_duration.value_changed.connect(func(value : float) -> void:
 		if not _is_syncing and sky_system:
 			sky_system.cycle_duration_seconds = value
+	)
+
+	var advance_calendar := _add_check_row(parent, "Advance Calendar", "When enabled, the date and lunar age move with the day cycle.")
+	advance_calendar.name = "SkyAdvanceCalendar"
+	advance_calendar.toggled.connect(func(is_pressed : bool) -> void:
+		if not _is_syncing and sky_system:
+			sky_system.advance_calendar_with_cycle = is_pressed
+	)
+
+	var latitude := _add_float_row(parent, "Latitude", "Observer latitude in degrees; changes sun height, day length, and star rotation.", -89.0, 89.0, 0.1, false)
+	latitude.name = "SkyLatitude"
+	latitude.value_changed.connect(func(value : float) -> void:
+		if not _is_syncing and sky_system:
+			sky_system.latitude_degrees = value
+	)
+
+	var day_of_year := _add_float_row(parent, "Day of Year", "Astronomical day number; 80 is near the March equinox.", 0.0, 365.2422, 0.1, false)
+	day_of_year.name = "SkyDayOfYear"
+	day_of_year.value_changed.connect(func(value : float) -> void:
+		if not _is_syncing and sky_system:
+			sky_system.day_of_year = value
+	)
+
+	var lunar_age := _add_float_row(parent, "Lunar Age", "Moon age in days; 0 new moon, about 14.8 full moon.", 0.0, 29.530588, 0.01, false)
+	lunar_age.name = "SkyLunarAge"
+	lunar_age.value_changed.connect(func(value : float) -> void:
+		if not _is_syncing and sky_system:
+			sky_system.lunar_age_days = value
+	)
+
+	var north_offset := _add_float_row(parent, "North Offset", "Rotates astronomical north relative to the scene.", -180.0, 180.0, 0.1, false)
+	north_offset.name = "SkyNorthOffset"
+	north_offset.value_changed.connect(func(value : float) -> void:
+		if not _is_syncing and sky_system:
+			sky_system.north_offset_degrees = value
 	)
 
 	var sun_energy := _add_float_row(parent, "Sun Energy", "Multiplier applied to the sky profile's sun light curve.", 0.0, 8.0, 0.01, false)
@@ -441,11 +476,11 @@ func _populate_values() -> void:
 	_set_named_spin("OceanRadius", water.ocean_radius)
 	_set_named_color("WaterColor", water.water_color)
 	_set_named_color("FoamColor", water.foam_color)
-	_set_named_spin("WaterRoughness", water.roughness)
-	_set_named_spin("WaterSpecular", water.specular_strength)
-	_set_named_spin("WaterDirectLight", water.direct_light_strength)
-	_set_named_spin("WaterScatter", water.water_scatter_strength)
-	_set_named_spin("WaterSunGlint", water.sun_glint_strength)
+	_set_named_spin("WaterClearRoughness", water.clear_roughness)
+	_set_named_spin("WaterFoamRoughness", water.foam_roughness)
+	_set_named_spin("WaterClearSpecular", water.clear_specular)
+	_set_named_spin("WaterFoamSpecular", water.foam_specular)
+	_set_named_spin("WaterSlopeRoughness", water.slope_roughness_strength)
 	_set_named_spin("FoamIntensity", water.foam_intensity)
 	_set_named_spin("FoamThreshold", water.foam_threshold)
 	_set_named_spin("FoamSoftness", water.foam_softness)
@@ -466,6 +501,11 @@ func _populate_values() -> void:
 		_set_named_check("SkyCycleEnabled", sky_system.cycle_enabled)
 		_set_named_spin("SkyTimeOfDay", sky_system.time_of_day)
 		_set_named_spin("SkyCycleDuration", sky_system.cycle_duration_seconds)
+		_set_named_check("SkyAdvanceCalendar", sky_system.advance_calendar_with_cycle)
+		_set_named_spin("SkyLatitude", sky_system.latitude_degrees)
+		_set_named_spin("SkyDayOfYear", sky_system.day_of_year)
+		_set_named_spin("SkyLunarAge", sky_system.lunar_age_days)
+		_set_named_spin("SkyNorthOffset", sky_system.north_offset_degrees)
 		_set_named_spin("SkySunEnergy", sky_system.sun_energy_multiplier)
 		_set_named_spin("SkyMoonEnergy", sky_system.moon_energy_multiplier)
 		_set_named_spin("SkyStarBrightness", sky_system.star_brightness)

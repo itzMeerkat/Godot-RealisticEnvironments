@@ -121,12 +121,14 @@
 
 1. 先关掉 foam 或把 `Foam Intensity` 降到 0，确认白色问题是否来自反射。
 2. 设置 `Far LOD Enabled = false`，把 `Ocean Radius` 加大，用主 ocean 单独验证反射。
-3. 从近处效果能接受的值开始，分别测试 `Roughness = 0.6 / 0.7 / 0.8`。
-4. 在最佳 roughness 下测试 `Specular = 0.25 / 0.4 / 0.55`。
-5. 如果远处仍有移动噪声，把 `Far Normal` 从 `0.14` 降到 `0.08 - 0.12`；如果 Far LOD 已关闭，则降低各 cascade 的 `Normal Scale`。
-6. 重新开启 Far LOD，确认近远海没有接缝或反光突变。
-7. Foam 恢复后，如果远处白沫铺开，再调 `Far Foam Coverage` 和 `Far Foam Threshold`。
-8. 最后用风速 20 和黄昏各复查一次。
+3. 从近处效果能接受的值开始，分别测试 `Clear Roughness = 0.04 / 0.08 / 0.12`。
+4. 在最佳 clear roughness 下测试 `Clear Specular = 0.75 / 0.85 / 0.95`。
+5. 再调 `Foam Roughness` 和 `Foam Specular`，让浪尖白沫比清水更粗糙、更不反光。
+6. 用 `Slope Roughness` 控制陡峭波面是否需要更散的反射。
+7. 如果远处仍有移动噪声，把 `Far Normal` 从 `0.14` 降到 `0.08 - 0.12`；如果 Far LOD 已关闭，则降低各 cascade 的 `Normal Scale`。
+8. 重新开启 Far LOD，确认近远海没有接缝或反光突变。
+9. Foam 恢复后，如果远处白沫铺开，再调 `Far Foam Coverage` 和 `Far Foam Threshold`。
+10. 最后用风速 20 和黄昏各复查一次。
 
 ## 参数记录模板
 

@@ -22,26 +22,26 @@ const EXTERNAL_WIND_SPECTRUM_REFRESH_INTERVAL := 0.5
 		_set_water_shader_parameter(&'foam_color', foam_color)
 
 @export_group('Surface Shading')
-@export_range(0.0, 1.0, 0.01) var roughness := 0.65 :
+@export_range(0.0, 1.0, 0.01) var clear_roughness := 0.06 :
 	set(value):
-		roughness = value
-		_set_water_shader_parameter(&'roughness', roughness)
-@export_range(0.0, 1.0, 0.01) var specular_strength := 0.55 :
+		clear_roughness = value
+		_set_water_shader_parameter(&'clear_roughness', clear_roughness)
+@export_range(0.0, 1.0, 0.01) var foam_roughness := 0.24 :
 	set(value):
-		specular_strength = value
-		_set_water_shader_parameter(&'specular_strength', specular_strength)
-@export_range(0.0, 4.0, 0.01) var direct_light_strength := 1.45 :
+		foam_roughness = value
+		_set_water_shader_parameter(&'foam_roughness', foam_roughness)
+@export_range(0.0, 1.0, 0.01) var clear_specular := 0.85 :
 	set(value):
-		direct_light_strength = value
-		_set_water_shader_parameter(&'direct_light_strength', direct_light_strength)
-@export_range(0.0, 4.0, 0.01) var water_scatter_strength := 1.1 :
+		clear_specular = value
+		_set_water_shader_parameter(&'clear_specular', clear_specular)
+@export_range(0.0, 1.0, 0.01) var foam_specular := 0.35 :
 	set(value):
-		water_scatter_strength = value
-		_set_water_shader_parameter(&'water_scatter_strength', water_scatter_strength)
-@export_range(0.0, 4.0, 0.01) var sun_glint_strength := 1.25 :
+		foam_specular = value
+		_set_water_shader_parameter(&'foam_specular', foam_specular)
+@export_range(0.0, 4.0, 0.01) var slope_roughness_strength := 0.55 :
 	set(value):
-		sun_glint_strength = value
-		_set_water_shader_parameter(&'sun_glint_strength', sun_glint_strength)
+		slope_roughness_strength = value
+		_set_water_shader_parameter(&'slope_roughness_strength', slope_roughness_strength)
 
 @export_group('Foam Shading')
 @export_range(0.0, 4.0, 0.01) var foam_intensity := 1.25 :
@@ -229,11 +229,11 @@ func _ready() -> void:
 	_set_water_shader_parameter(&'water_color', water_color)
 	_set_water_shader_parameter(&'foam_color', foam_color)
 	_set_water_shader_parameter(&'wave_blend_alpha', 1.0)
-	_set_water_shader_parameter(&'roughness', roughness)
-	_set_water_shader_parameter(&'specular_strength', specular_strength)
-	_set_water_shader_parameter(&'direct_light_strength', direct_light_strength)
-	_set_water_shader_parameter(&'water_scatter_strength', water_scatter_strength)
-	_set_water_shader_parameter(&'sun_glint_strength', sun_glint_strength)
+	_set_water_shader_parameter(&'clear_roughness', clear_roughness)
+	_set_water_shader_parameter(&'foam_roughness', foam_roughness)
+	_set_water_shader_parameter(&'clear_specular', clear_specular)
+	_set_water_shader_parameter(&'foam_specular', foam_specular)
+	_set_water_shader_parameter(&'slope_roughness_strength', slope_roughness_strength)
 	_set_water_shader_parameter(&'foam_intensity', foam_intensity)
 	_set_water_shader_parameter(&'foam_threshold', foam_threshold)
 	_set_water_shader_parameter(&'foam_softness', foam_softness)

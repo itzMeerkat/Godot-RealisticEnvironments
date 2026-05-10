@@ -129,12 +129,12 @@ func _ensure_defaults() -> void:
 		])
 	if moon_energy_curve == null:
 		moon_energy_curve = _make_curve([
-			Vector2(0.0, 0.18),
-			Vector2(0.22, 0.08),
+			Vector2(0.0, 0.045),
+			Vector2(0.22, 0.018),
 			Vector2(0.30, 0.0),
 			Vector2(0.70, 0.0),
-			Vector2(0.78, 0.08),
-			Vector2(1.0, 0.18),
+			Vector2(0.78, 0.018),
+			Vector2(1.0, 0.045),
 		])
 	if star_visibility_curve == null:
 		star_visibility_curve = _make_curve([
@@ -145,11 +145,11 @@ func _ensure_defaults() -> void:
 		])
 	if ambient_energy_curve == null:
 		ambient_energy_curve = _make_curve([
-			Vector2(0.0, 0.08),
-			Vector2(0.25, 0.28),
-			Vector2(0.50, 0.75),
-			Vector2(0.75, 0.28),
-			Vector2(1.0, 0.08),
+			Vector2(0.0, 0.035),
+			Vector2(0.25, 0.22),
+			Vector2(0.50, 0.65),
+			Vector2(0.75, 0.22),
+			Vector2(1.0, 0.035),
 		])
 
 

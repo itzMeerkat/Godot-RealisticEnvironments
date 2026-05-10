@@ -7,6 +7,14 @@ const SkyProfileResource := preload("res://systems/sky/sky_profile.gd")
 signal time_of_day_changed(time_of_day : float)
 signal lighting_changed
 
+const SOLAR_YEAR_DAYS := 365.2422
+const SYNODIC_MONTH_DAYS := 29.530588
+const LUNAR_ORBIT_INCLINATION_DEGREES := 5.145
+const SUNSET_PROFILE_TIME := 0.75
+const SUNRISE_PROFILE_TIME := 0.25
+const NOON_PROFILE_TIME := 0.5
+const MIDNIGHT_PROFILE_TIME := 0.0
+
 @export_range(0.0, 1.0, 0.001) var time_of_day := 0.35 :
 	set(value):
 		time_of_day = fposmod(value, 1.0)
@@ -14,10 +22,28 @@ signal lighting_changed
 		time_of_day_changed.emit(time_of_day)
 @export var cycle_enabled := true
 @export_range(1.0, 86400.0, 1.0, "or_greater") var cycle_duration_seconds := 600.0
-@export_range(-89.0, 89.0, 0.1) var axis_tilt_degrees := 25.0 :
+@export_group("Astronomy")
+@export_range(-89.0, 89.0, 0.1) var latitude_degrees := 35.0 :
+	set(value):
+		latitude_degrees = value
+		_update_sky()
+@export_range(0.0, 365.2422, 0.1) var day_of_year := 80.0 :
+	set(value):
+		day_of_year = fposmod(value, SOLAR_YEAR_DAYS)
+		_update_sky()
+@export_range(0.0, 29.530588, 0.01) var lunar_age_days := 14.765 :
+	set(value):
+		lunar_age_days = fposmod(value, SYNODIC_MONTH_DAYS)
+		_update_sky()
+@export_range(-180.0, 180.0, 0.1) var north_offset_degrees := 0.0 :
+	set(value):
+		north_offset_degrees = value
+		_update_sky()
+@export_range(0.0, 45.0, 0.01) var axis_tilt_degrees := 23.44 :
 	set(value):
 		axis_tilt_degrees = value
 		_update_sky()
+@export var advance_calendar_with_cycle := true
 @export_range(0.0, 8.0, 0.01) var sun_energy_multiplier := 1.0 :
 	set(value):
 		sun_energy_multiplier = value
@@ -72,6 +98,10 @@ signal lighting_changed
 
 var _ocean : Node
 var _elapsed_time := 0.0
+var _sun_hour_angle := 0.0
+var _moon_phase := 1.0
+var _star_visibility := 0.0
+var _profile_sample_time := 0.5
 
 
 func _ready() -> void:
@@ -82,7 +112,11 @@ func _ready() -> void:
 
 func _process(delta : float) -> void:
 	if not Engine.is_editor_hint() and cycle_enabled:
-		time_of_day = time_of_day + delta / maxf(cycle_duration_seconds, 1.0)
+		var day_delta := delta / maxf(cycle_duration_seconds, 1.0)
+		time_of_day = time_of_day + day_delta
+		if advance_calendar_with_cycle:
+			day_of_year = day_of_year + day_delta
+			lunar_age_days = lunar_age_days + day_delta
 	_elapsed_time += delta
 	_update_visual_positions()
 	_update_starfield_time()
@@ -93,23 +127,37 @@ func get_time_of_day() -> float:
 
 
 func get_sun_direction() -> Vector3:
-	return _get_body_direction(time_of_day)
+	var solar_coordinates := _get_solar_equatorial_coordinates()
+	_sun_hour_angle = _get_solar_hour_angle()
+	return _equatorial_to_horizontal_direction(solar_coordinates.y, _sun_hour_angle)
 
 
 func get_moon_direction() -> Vector3:
-	return -get_sun_direction()
+	return _get_moon_state()["direction"]
 
 
 func get_sun_visibility() -> float:
-	return smoothstep(-0.05, 0.08, get_sun_direction().y)
+	return _sun_altitude_visibility(get_sun_direction().y)
 
 
 func get_moon_visibility() -> float:
-	return smoothstep(-0.05, 0.08, get_moon_direction().y)
+	return _moon_altitude_visibility(get_moon_direction().y)
 
 
 func get_night_factor() -> float:
-	return 1.0 - smoothstep(-0.08, 0.18, get_sun_direction().y)
+	return _night_factor_from_sun_height(get_sun_direction().y)
+
+
+func get_moon_phase() -> float:
+	_moon_phase = float(_get_moon_state()["phase"])
+	return _moon_phase
+
+
+func get_star_visibility() -> float:
+	var sun_direction := get_sun_direction()
+	var moon_state := _get_moon_state()
+	var moon_direction : Vector3 = moon_state["direction"]
+	return _calculate_star_visibility(sun_direction.y, _moon_altitude_visibility(moon_direction.y), float(moon_state["phase"]))
 
 
 func _update_sky() -> void:
@@ -117,15 +165,19 @@ func _update_sky() -> void:
 		return
 	var active_profile = _get_profile()
 	var sun_direction := get_sun_direction()
-	var moon_direction := -sun_direction
-	var sun_visibility := get_sun_visibility()
-	var moon_visibility := get_moon_visibility()
-	var night_factor := get_night_factor()
+	var moon_state := _get_moon_state()
+	var moon_direction : Vector3 = moon_state["direction"]
+	var sun_visibility := _sun_altitude_visibility(sun_direction.y)
+	var moon_visibility := _moon_altitude_visibility(moon_direction.y)
+	var night_factor := _night_factor_from_sun_height(sun_direction.y)
+	_moon_phase = float(moon_state["phase"])
+	_star_visibility = _calculate_star_visibility(sun_direction.y, moon_visibility, _moon_phase)
+	_profile_sample_time = _get_profile_sample_time(sun_direction.y)
 
-	_update_light(_sun_light, sun_direction, active_profile.sample_sun_color(time_of_day), active_profile.sample_sun_energy(time_of_day) * sun_visibility * sun_energy_multiplier)
-	_update_light(_moon_light, moon_direction, active_profile.sample_moon_color(time_of_day), active_profile.sample_moon_energy(time_of_day) * moon_visibility * moon_energy_multiplier)
+	_update_light(_sun_light, sun_direction, active_profile.sample_sun_color(_profile_sample_time), active_profile.sample_sun_energy(_profile_sample_time) * _solar_energy_from_height(sun_direction.y) * sun_energy_multiplier)
+	_update_light(_moon_light, moon_direction, active_profile.sample_moon_color(_profile_sample_time), active_profile.sample_moon_energy(_profile_sample_time) * moon_visibility * _moon_phase * night_factor * moon_energy_multiplier)
 	_update_environment(active_profile, sun_direction, moon_direction, sun_visibility, moon_visibility)
-	_update_starfield_visibility(active_profile.sample_star_visibility(night_factor) * star_brightness)
+	_update_starfield_visibility(active_profile.sample_star_visibility(_star_visibility) * star_brightness)
 	_update_visual_colors(active_profile, sun_visibility, moon_visibility)
 	_update_ocean_colors(active_profile)
 	_update_visual_positions()
@@ -145,12 +197,12 @@ func _update_environment(active_profile, sun_direction : Vector3, moon_direction
 	if _world_environment == null or _world_environment.environment == null:
 		return
 	var environment := _world_environment.environment
-	var top_color : Color = active_profile.sample_sky_top_color(time_of_day)
-	var horizon_color : Color = active_profile.sample_sky_horizon_color(time_of_day)
-	var sun_color : Color = active_profile.sample_sun_color(time_of_day)
-	var moon_color : Color = active_profile.sample_moon_color(time_of_day)
+	var top_color : Color = active_profile.sample_sky_top_color(_profile_sample_time)
+	var horizon_color : Color = active_profile.sample_sky_horizon_color(_profile_sample_time)
+	var sun_color : Color = active_profile.sample_sun_color(_profile_sample_time)
+	var moon_color : Color = active_profile.sample_moon_color(_profile_sample_time)
 	environment.ambient_light_color = top_color.lerp(horizon_color, 0.35)
-	environment.ambient_light_energy = active_profile.sample_ambient_energy(time_of_day)
+	environment.ambient_light_energy = active_profile.sample_ambient_energy(_profile_sample_time) * lerpf(0.35, 1.0, smoothstep(-0.08, 0.35, sun_direction.y))
 	if environment.sky and environment.sky.sky_material:
 		var material := environment.sky.sky_material
 		if material is ShaderMaterial:
@@ -167,6 +219,7 @@ func _update_environment(active_profile, sun_direction : Vector3, moon_direction
 			shader_material.set_shader_parameter(&"moon_direction", moon_direction)
 			shader_material.set_shader_parameter(&"moon_color", moon_color)
 			shader_material.set_shader_parameter(&"moon_visibility", moon_visibility if render_bodies_in_sky else 0.0)
+			shader_material.set_shader_parameter(&"moon_phase", _moon_phase)
 		else:
 			material.set(&"sky_top_color", top_color)
 			material.set(&"sky_horizon_color", horizon_color)
@@ -182,6 +235,7 @@ func _update_starfield_visibility(visibility : float) -> void:
 	if material:
 		material.set_shader_parameter(&"star_visibility", visibility)
 		material.set_shader_parameter(&"star_brightness", star_brightness)
+		material.set_shader_parameter(&"horizon_softness", 0.08)
 
 
 func _update_starfield_time() -> void:
@@ -199,8 +253,8 @@ func _update_visual_colors(active_profile, sun_visibility : float, moon_visibili
 		if _moon_visual:
 			_moon_visual.visible = false
 		return
-	_set_visual_color(_sun_visual, active_profile.sample_sun_color(time_of_day), sun_visibility)
-	_set_visual_color(_moon_visual, active_profile.sample_moon_color(time_of_day), moon_visibility)
+	_set_visual_color(_sun_visual, active_profile.sample_sun_color(_profile_sample_time), sun_visibility)
+	_set_visual_color(_moon_visual, active_profile.sample_moon_color(_profile_sample_time), moon_visibility * _moon_phase)
 
 
 func _set_visual_color(visual : MeshInstance3D, color : Color, visibility : float) -> void:
@@ -229,7 +283,9 @@ func _update_visual_positions() -> void:
 		_position_body_visual(_moon_visual, origin, get_moon_direction())
 	if _starfield:
 		_starfield.global_position = origin
-		_starfield.scale = Vector3.ONE * starfield_radius
+		var star_axis := _get_celestial_north_axis()
+		var sidereal_angle := _get_local_sidereal_time()
+		_starfield.global_transform = Transform3D(Basis(star_axis, sidereal_angle).scaled(Vector3.ONE * starfield_radius), origin)
 
 
 func _position_body_visual(visual : MeshInstance3D, origin : Vector3, direction : Vector3) -> void:
@@ -246,16 +302,102 @@ func _update_ocean_colors(active_profile) -> void:
 	if ocean == null:
 		return
 	if ocean.get(&"water_color") != null:
-		ocean.set(&"water_color", active_profile.sample_water_color(time_of_day))
+		ocean.set(&"water_color", active_profile.sample_water_color(_profile_sample_time))
 	if ocean.get(&"foam_color") != null:
-		ocean.set(&"foam_color", active_profile.sample_foam_color(time_of_day))
+		ocean.set(&"foam_color", active_profile.sample_foam_color(_profile_sample_time))
 
 
-func _get_body_direction(value : float) -> Vector3:
-	var angle := TAU * (value - 0.25)
-	var base_direction := Vector3(cos(angle), sin(angle), 0.0)
-	var tilt_basis := Basis(Vector3.RIGHT, deg_to_rad(axis_tilt_degrees))
-	return (tilt_basis * base_direction).normalized()
+func _get_solar_equatorial_coordinates() -> Vector2:
+	var obliquity := deg_to_rad(axis_tilt_degrees)
+	var solar_longitude := _get_solar_ecliptic_longitude()
+	var right_ascension := atan2(cos(obliquity) * sin(solar_longitude), cos(solar_longitude))
+	var declination := asin(sin(obliquity) * sin(solar_longitude))
+	return Vector2(_wrap_pi(right_ascension), declination)
+
+
+func _get_solar_ecliptic_longitude() -> float:
+	return TAU * fposmod((day_of_year - 80.0) / SOLAR_YEAR_DAYS, 1.0)
+
+
+func _get_solar_hour_angle() -> float:
+	return _wrap_pi(TAU * (time_of_day - 0.5))
+
+
+func _get_moon_state() -> Dictionary:
+	var obliquity := deg_to_rad(axis_tilt_degrees)
+	var phase_angle := TAU * fposmod(lunar_age_days / SYNODIC_MONTH_DAYS, 1.0)
+	var lunar_longitude := _get_solar_ecliptic_longitude() + phase_angle
+	var lunar_latitude := deg_to_rad(LUNAR_ORBIT_INCLINATION_DEGREES) * sin(TAU * fposmod(lunar_age_days / 27.21222, 1.0))
+	var right_ascension := atan2(sin(lunar_longitude) * cos(obliquity) - tan(lunar_latitude) * sin(obliquity), cos(lunar_longitude))
+	var declination := asin(sin(lunar_latitude) * cos(obliquity) + cos(lunar_latitude) * sin(obliquity) * sin(lunar_longitude))
+	var hour_angle := _wrap_pi(_get_local_sidereal_time() - right_ascension)
+	var phase := clampf((1.0 - cos(phase_angle)) * 0.5, 0.0, 1.0)
+	return {
+		"direction": _equatorial_to_horizontal_direction(declination, hour_angle),
+		"phase": phase,
+	}
+
+
+func _get_local_sidereal_time() -> float:
+	var solar_coordinates := _get_solar_equatorial_coordinates()
+	return _wrap_pi(_get_solar_hour_angle() + solar_coordinates.x)
+
+
+func _equatorial_to_horizontal_direction(declination : float, hour_angle : float) -> Vector3:
+	var latitude := deg_to_rad(latitude_degrees)
+	var east := -cos(declination) * sin(hour_angle)
+	var north := cos(latitude) * sin(declination) - sin(latitude) * cos(declination) * cos(hour_angle)
+	var up := sin(latitude) * sin(declination) + cos(latitude) * cos(declination) * cos(hour_angle)
+	return _horizontal_to_world(Vector3(east, up, -north)).normalized()
+
+
+func _horizontal_to_world(local_direction : Vector3) -> Vector3:
+	return Basis(Vector3.UP, deg_to_rad(north_offset_degrees)) * local_direction
+
+
+func _get_celestial_north_axis() -> Vector3:
+	var latitude := deg_to_rad(latitude_degrees)
+	return _horizontal_to_world(Vector3(0.0, sin(latitude), -cos(latitude))).normalized()
+
+
+func _sun_altitude_visibility(sun_height : float) -> float:
+	return smoothstep(-0.035, 0.045, sun_height)
+
+
+func _moon_altitude_visibility(moon_height : float) -> float:
+	return smoothstep(-0.025, 0.045, moon_height)
+
+
+func _night_factor_from_sun_height(sun_height : float) -> float:
+	return 1.0 - smoothstep(-0.30, -0.10, sun_height)
+
+
+func _calculate_star_visibility(sun_height : float, moon_visibility : float, moon_phase : float) -> float:
+	var twilight_visibility := 1.0 - smoothstep(-0.30, -0.10, sun_height)
+	var moon_washout := moon_visibility * moon_phase * 0.45
+	return clampf(twilight_visibility * (1.0 - moon_washout), 0.0, 1.0)
+
+
+func _solar_energy_from_height(sun_height : float) -> float:
+	return pow(clampf(sun_height, 0.0, 1.0), 0.45)
+
+
+func _get_profile_sample_time(sun_height : float) -> float:
+	var horizon_amount := smoothstep(-0.08, 0.20, sun_height)
+	if sun_height > 0.20:
+		return NOON_PROFILE_TIME
+	var twilight_amount := smoothstep(-0.18, -0.08, sun_height)
+	if _sun_hour_angle < 0.0:
+		if sun_height < -0.08:
+			return lerpf(MIDNIGHT_PROFILE_TIME, SUNRISE_PROFILE_TIME, twilight_amount)
+		return lerpf(SUNRISE_PROFILE_TIME, NOON_PROFILE_TIME, horizon_amount)
+	if sun_height > -0.08:
+		return lerpf(SUNSET_PROFILE_TIME, NOON_PROFILE_TIME, horizon_amount)
+	return lerpf(1.0, SUNSET_PROFILE_TIME, twilight_amount)
+
+
+func _wrap_pi(value : float) -> float:
+	return fposmod(value + PI, TAU) - PI
 
 
 func _get_look_up(direction : Vector3) -> Vector3:
