@@ -12,6 +12,8 @@ A fork of the original repository solved those issues: https://github.com/20k/Go
 
 This project builds on that fork and focuses on improving overall usability.
 
+The reason I decide to detach from the fork network is I found this repo is deviated too much from original repos.
+
 ## Maintenance Notes
 This fork includes a set of fixes and runtime improvements made while converting the ocean renderer into a reusable Godot scene and making it more stable for camera-follow gameplay.
 
