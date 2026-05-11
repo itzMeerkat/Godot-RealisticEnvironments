@@ -1,4 +1,4 @@
-[gd_scene format=3 uid="uid://dx4r13gqfh13"]
+[gd_scene format=4 uid="uid://dx4r13gqfh13"]
 
 [ext_resource type="Script" uid="uid://dj3qlu7uupdmi" path="res://demo/main.gd" id="1_skarq"]
 [ext_resource type="Script" uid="uid://cqbpvt36rest3" path="res://addons/ocean_system/wave_cascade_parameters.gd" id="2_pw5n6"]
@@ -69,9 +69,46 @@ moon_energy_curve = SubResource("Curve_f8mb2")
 star_visibility_curve = SubResource("Curve_dls5p")
 ambient_energy_curve = SubResource("Curve_fdg1k")
 
+[sub_resource type="Texture2DArrayRD" id="Texture2DArrayRD_iscmt"]
+
+[sub_resource type="Texture2DArrayRD" id="Texture2DArrayRD_nr2wj"]
+
+[sub_resource type="Texture2DArrayRD" id="Texture2DArrayRD_fdg1k"]
+
+[sub_resource type="Texture2DArrayRD" id="Texture2DArrayRD_6g5ly"]
+
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_ycdy4"]
 render_priority = 1
 shader = ExtResource("4_dg77c")
+shader_parameter/water_color = Color(0.1, 0.15, 0.18, 1)
+shader_parameter/foam_color = Color(0.73, 0.67, 0.62, 1)
+shader_parameter/clear_roughness = 0.06
+shader_parameter/foam_roughness = 0.24
+shader_parameter/clear_specular = 0.85
+shader_parameter/foam_specular = 0.35
+shader_parameter/slope_roughness_strength = 0.55
+shader_parameter/normal_strength = 1.0
+shader_parameter/foam_intensity = 1.25
+shader_parameter/foam_threshold = 0.05
+shader_parameter/foam_softness = 0.35
+shader_parameter/use_bicubic_normals = false
+shader_parameter/fragment_cascade_limit = 3
+shader_parameter/enable_far_lod = true
+shader_parameter/near_ocean_radius = 256.0
+shader_parameter/far_lod_radius = 7000.0
+shader_parameter/far_lod_blend_distance = 1400.0
+shader_parameter/far_lod_curve = 1.8
+shader_parameter/far_low_frequency_tile_length = 64.0
+shader_parameter/far_normal_strength = 0.14
+shader_parameter/far_foam_coverage = 0.24
+shader_parameter/far_foam_threshold_boost = 0.2
+shader_parameter/map_scales = PackedVector4Array(0.011363637, 0.011363637, 1, 1, 0.01754386, 0.01754386, 0.75, 1, 0.0625, 0.0625, 0, 0.25)
+shader_parameter/num_cascades = 3
+shader_parameter/displacements = SubResource("Texture2DArrayRD_iscmt")
+shader_parameter/normals = SubResource("Texture2DArrayRD_nr2wj")
+shader_parameter/previous_displacements = SubResource("Texture2DArrayRD_fdg1k")
+shader_parameter/previous_normals = SubResource("Texture2DArrayRD_6g5ly")
+shader_parameter/wave_blend_alpha = 0.16211097973985256
 
 [sub_resource type="Resource" id="Resource_adqv5"]
 script = ExtResource("2_pw5n6")
@@ -108,6 +145,7 @@ foam_amount = 3.0
 script = ExtResource("1_skarq")
 
 [node name="SkySystem" parent="." unique_id=447290062 instance=ExtResource("11_sky")]
+cycle_duration_seconds = 60.0
 profile = SubResource("Resource_msmub")
 ocean_path = NodePath("../Water")
 
