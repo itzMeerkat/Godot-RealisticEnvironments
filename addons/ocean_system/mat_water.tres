@@ -30,3 +30,4 @@ shader_parameter/far_foam_threshold_boost = 0.2
 shader_parameter/num_cascades = 0
 shader_parameter/wave_blend_alpha = 1.0
 shader_parameter/map_scales = PackedVector4Array(0.011363637, 0.011363637, 1, 1, 0.01754386, 0.01754386, 0.75, 1, 0.0625, 0.0625, 0, 0.25)
+shader_parameter/spectrum_blend_states = PackedVector4Array(0, 1, 0, 0, 2, 3, 0, 0, 4, 5, 0, 0)

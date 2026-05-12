@@ -36,14 +36,32 @@ ocean.wind_source_path = ocean.get_path_to($WindSystem)
 
 每个 cascade 仍可用 `wind_speed_multiplier` 和 `wind_direction_offset` 对外部风做局部调整。
 
-## 高度查询
+风向不会瞬间改写波浪方向。每个 `WaveCascadeParameters` 会把风向当作目标方向，并按自己的
+`wave_turn_rate_degrees_per_second` 或自动 tile-length 转向速度逐渐转向。系统会保留 active/pending
+两套频谱并用 `spectrum_direction_blend_duration` 混合，避免大角度变风时波面硬切。
+
+## 连接独立海流
+
+海流与风、波浪方向独立。Ocean 可以读取任意提供 `get_current_vector_3d(world_position)` 的节点：
+
+```gdscript
+ocean.current_source_path = ocean.get_path_to($CurrentSystem)
+```
+
+如果不设置 current source，则使用 `fallback_current_speed` 和 `fallback_current_direction`。海流主要供
+浮力、船只和 gameplay 查询使用，不参与波浪频谱生成。
+
+## 水面查询
 
 开启 `enable_height_queries` 后，可以查询 CPU 缓存的水面高度和法线。读回 GPU 贴图有成本，建议把 `height_query_updates_per_second` 保持在较低值。
 
 ```gdscript
 var height := ocean.get_water_height(global_position)
 var normal := ocean.get_water_normal(global_position)
+var sample := ocean.sample_water_surface(global_position)
 ```
+
+浮力和 gameplay 应优先使用 `sample_water_surface_batch(points)`。该接口使用 GPU point-query 后端，只上传查询点并读回小型 sample buffer，不需要开启 `enable_height_queries`，也不会整张 displacement 贴图读回。主渲染设备上的查询结果会延迟一个 physics frame 返回，避免手动 `submit/sync`。
 
 ## 独立性说明
 

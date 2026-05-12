@@ -33,6 +33,7 @@ uniform float far_foam_threshold_boost : hint_range(0.0, 1.0) = 0.2;
 
 group_uniforms cascade_data;
 uniform vec4 map_scales[MAX_CASCADES];               // Scales for displacement/normal maps. Packed: [uv scale, displacement scale, normal scale]
+uniform vec4 spectrum_blend_states[MAX_CASCADES];    // Packed: [active layer, pending layer, blend alpha, unused]
 uniform int num_cascades = 0;
 uniform sampler2DArray displacements;         // Each layer represents one wave cascade.
 uniform sampler2DArray normals : hint_normal; // Each layer represents one wave cascade.
@@ -75,10 +76,16 @@ void vertex() {
 		float cascade_weight = get_cascade_lod_weight(scales, distance_lod);
 		if (cascade_weight <= 0.0)
 			continue;
-		vec3 coords = vec3(UV*scales.xy, float(i));
-		vec3 previous_displacement = texture(previous_displacements, coords).xyz;
-		vec3 current_displacement = texture(displacements, coords).xyz;
-		displacement += mix(previous_displacement, current_displacement, wave_blend_alpha) * scales.z * cascade_weight;
+		vec4 blend_state = spectrum_blend_states[i];
+		vec3 active_coords = vec3(UV*scales.xy, blend_state.x);
+		vec3 pending_coords = vec3(UV*scales.xy, blend_state.y);
+		vec3 previous_active = texture(previous_displacements, active_coords).xyz;
+		vec3 current_active = texture(displacements, active_coords).xyz;
+		vec3 previous_pending = texture(previous_displacements, pending_coords).xyz;
+		vec3 current_pending = texture(displacements, pending_coords).xyz;
+		vec3 active_displacement = mix(previous_active, current_active, wave_blend_alpha);
+		vec3 pending_displacement = mix(previous_pending, current_pending, wave_blend_alpha);
+		displacement += mix(active_displacement, pending_displacement, blend_state.z) * scales.z * cascade_weight;
 	}
 	VERTEX += displacement;
 }
@@ -129,17 +136,25 @@ void fragment() {
 			float cascade_weight = get_cascade_lod_weight(scales, distance_lod);
 			if (cascade_weight <= 0.0)
 				continue;
-			vec3 coords = vec3(UV*scales.xy, float(i));
-			vec4 previous_normal_sample = texture(previous_normals, coords);
-			vec4 current_normal_sample = texture(normals, coords);
+			vec4 blend_state = spectrum_blend_states[i];
+			vec3 active_coords = vec3(UV*scales.xy, blend_state.x);
+			vec3 pending_coords = vec3(UV*scales.xy, blend_state.y);
+			vec4 previous_active_sample = texture(previous_normals, active_coords);
+			vec4 current_active_sample = texture(normals, active_coords);
+			vec4 previous_pending_sample = texture(previous_normals, pending_coords);
+			vec4 current_pending_sample = texture(normals, pending_coords);
 			if (use_bicubic_normals) {
 				float ppm = map_size * min(scales.x, scales.y); // Pixels per meter
 				// Mix between bicubic and bilinear filtering depending on the world space pixels per meter.
 				// This is dependent on the tile size as well as displacement/normal map resolution.
-				previous_normal_sample = mix(texture_bicubic(previous_normals, coords), previous_normal_sample, min(1.0, ppm*0.1));
-				current_normal_sample = mix(texture_bicubic(normals, coords), current_normal_sample, min(1.0, ppm*0.1));
+				previous_active_sample = mix(texture_bicubic(previous_normals, active_coords), previous_active_sample, min(1.0, ppm*0.1));
+				current_active_sample = mix(texture_bicubic(normals, active_coords), current_active_sample, min(1.0, ppm*0.1));
+				previous_pending_sample = mix(texture_bicubic(previous_normals, pending_coords), previous_pending_sample, min(1.0, ppm*0.1));
+				current_pending_sample = mix(texture_bicubic(normals, pending_coords), current_pending_sample, min(1.0, ppm*0.1));
 			}
-			vec4 normal_sample = mix(previous_normal_sample, current_normal_sample, wave_blend_alpha);
+			vec4 active_sample = mix(previous_active_sample, current_active_sample, wave_blend_alpha);
+			vec4 pending_sample = mix(previous_pending_sample, current_pending_sample, wave_blend_alpha);
+			vec4 normal_sample = mix(active_sample, pending_sample, blend_state.z);
 			gradient += normal_sample.xyw * vec3(scales.ww, 1.0) * cascade_weight;
 		}
 

@@ -6,6 +6,11 @@ extends MeshInstance3D
 
 const WATER_MAT := preload('res://addons/ocean_system/mat_water.tres')
 const MAX_CASCADES := 8
+const SPECTRUM_SLOT_COUNT := 2
+const SURFACE_QUERY_WORKGROUP_SIZE := 64
+const SURFACE_QUERY_BYTES_PER_POINT := 16
+const SURFACE_QUERY_BYTES_PER_CASCADE := 32
+const SURFACE_QUERY_BYTES_PER_SAMPLE := 48
 const EXTERNAL_WIND_SPEED_DIRTY_THRESHOLD := 0.25
 const EXTERNAL_WIND_DIRECTION_DIRTY_THRESHOLD := 2.0
 const EXTERNAL_WIND_SPECTRUM_REFRESH_INTERVAL := 0.5
@@ -96,6 +101,18 @@ const EXTERNAL_WIND_SPECTRUM_REFRESH_INTERVAL := 0.5
 		wind_source = null
 		_reset_external_wind_tracking()
 		_mark_spectra_dirty()
+
+@export_group('Ocean Current')
+## Optional node that exposes get_current_vector_3d(world_position). Currents are
+## independent from wind and wave direction.
+@export var current_source_path : NodePath :
+	set(value):
+		current_source_path = value
+		current_source = null
+## Fallback current speed in meters per second when current_source_path is empty.
+@export_range(0.0, 100.0, 0.01, "or_greater") var fallback_current_speed := 0.0
+## Fallback current heading in degrees. 0 points along +Z; 90 points along +X.
+@export_range(-360.0, 360.0, 1.0) var fallback_current_direction := 0.0
 
 ## Parameters for wave cascades. Each item represents one wave scale.
 ## Adding/removing cascades recreates the compute pipelines.
@@ -245,6 +262,7 @@ var rng = RandomNumberGenerator.new()
 var time := 0.0
 var next_update_time := 0.0
 var wind_source : Node
+var current_source : Node
 var _last_external_wind_speed := -1.0
 var _last_external_wind_direction := -999999.0
 var _last_external_wind_spectrum_time := -1.0e20
@@ -261,15 +279,26 @@ var _last_wave_output_time := 0.0
 var _wave_blend_start_time := 0.0
 var _wave_blend_duration := 1.0 / 60.0
 var _height_cache_refresh_pending := false
+var _surface_query_capacity := 0
+var _surface_query_shader := RID()
+var _surface_query_pipeline := RID()
+var _surface_query_point_buffer
+var _surface_query_cascade_buffer
+var _surface_query_sample_buffer
+var _surface_query_sets := {}
+var _surface_query_has_pending_readback := false
+var _surface_query_pending_points := PackedVector3Array()
 
 func _init() -> void:
 	rng.set_seed(1234) # This seed gives big waves!
 
 func _ready() -> void:
 	process_priority = 100
+	add_to_group(&"ocean_system")
 	if not Engine.is_editor_hint():
 		_ensure_unique_water_material()
 	_resolve_wind_source()
+	_resolve_current_source()
 	_set_water_shader_parameter(&'water_color', water_color)
 	_set_water_shader_parameter(&'foam_color', foam_color)
 	_set_water_shader_parameter(&'wave_blend_alpha', 1.0)
@@ -305,9 +334,10 @@ func _setup_wave_generator() -> void:
 		return
 	for param in parameters:
 		if param:
-			param.should_generate_spectrum = true
+			param.mark_all_spectra_dirty()
 
 	_clear_height_cache()
+	_reset_surface_query_resources()
 	_height_cache_refresh_pending = false
 	wave_generator = WaveGenerator.new()
 	wave_generator.map_size = map_size
@@ -327,6 +357,7 @@ func _setup_wave_generator() -> void:
 	_set_water_shader_parameter(&'previous_displacements', previous_displacement_maps)
 	_set_water_shader_parameter(&'previous_normals', previous_normal_maps)
 	_set_water_shader_parameter(&'wave_blend_alpha', 1.0)
+	_update_spectrum_blend_uniform()
 
 func _update_scales_uniform() -> void:
 	var cascade_count := mini(len(parameters), MAX_CASCADES)
@@ -338,6 +369,17 @@ func _update_scales_uniform() -> void:
 		var uv_scale := Vector2.ONE / params.tile_length
 		map_scales[i] = Vector4(uv_scale.x, uv_scale.y, params.displacement_scale, params.normal_scale)
 	_set_water_shader_parameter(&'map_scales', map_scales)
+	_update_spectrum_blend_uniform()
+
+func _update_spectrum_blend_uniform() -> void:
+	var cascade_count := mini(len(parameters), MAX_CASCADES)
+	var spectrum_blend_states : PackedVector4Array; spectrum_blend_states.resize(cascade_count)
+	for i in cascade_count:
+		var params := parameters[i]
+		if params == null:
+			continue
+		spectrum_blend_states[i] = params.get_spectrum_blend_state(i)
+	_set_water_shader_parameter(&'spectrum_blend_states', spectrum_blend_states)
 
 func _update_water(delta : float) -> void:
 	if parameters.size() <= 0:
@@ -346,17 +388,30 @@ func _update_water(delta : float) -> void:
 	if wave_generator == null:
 		return
 	wave_generator.update(delta, parameters, get_external_wind_speed(), get_external_wind_direction(), should_use_external_wind())
+	_update_spectrum_blend_uniform()
 	if enable_height_queries and (height_query_updates_per_second == 0 or time >= _next_height_query_update_time):
 		var target_update_delta := 1.0 / (height_query_updates_per_second + 1e-10)
 		_next_height_query_update_time = time + target_update_delta
 		_height_cache_refresh_pending = true
 
 func get_water_height(world_position: Vector3) -> float:
-	var t := _get_ocean_time()
 	var height := water_level
-	for i in mini(parameters.size(), _height_images.size()):
-		height += _sample_wave_height(i, world_position, t)
+	for i in parameters.size():
+		height += _sample_wave_displacement(i, world_position).y
 	return height
+
+func get_water_displacement(world_position: Vector3) -> Vector3:
+	var displacement := Vector3.ZERO
+	for i in parameters.size():
+		displacement += _sample_wave_displacement(i, world_position)
+	return displacement
+
+func get_water_surface_velocity(world_position: Vector3) -> Vector3:
+	if _height_images.is_empty() or _previous_height_images.is_empty():
+		return Vector3.ZERO
+	var current_displacement := _sample_total_wave_displacement_from_images(_height_images, world_position)
+	var previous_displacement := _sample_total_wave_displacement_from_images(_previous_height_images, world_position)
+	return (current_displacement - previous_displacement) / maxf(_wave_blend_duration, 1.0 / 60.0)
 
 func get_water_normal(world_position: Vector3) -> Vector3:
 	var e := 0.25
@@ -366,6 +421,31 @@ func get_water_normal(world_position: Vector3) -> Vector3:
 	var h_f := get_water_height(world_position + Vector3(0, 0,  e))
 	return Vector3(h_l - h_r, 2.0 * e, h_b - h_f).normalized()
 
+func get_water_current(world_position: Vector3) -> Vector3:
+	var source := get_current_source()
+	if source != null:
+		if source.has_method(&'get_current_vector_3d'):
+			var current_3d : Vector3 = source.call(&'get_current_vector_3d', world_position)
+			return current_3d
+		if source.has_method(&'get_current_vector_2d'):
+			var current_2d : Vector2 = source.call(&'get_current_vector_2d', world_position)
+			return Vector3(current_2d.x, 0.0, current_2d.y)
+	var radians := deg_to_rad(fallback_current_direction)
+	return Vector3(sin(radians), 0.0, cos(radians)) * fallback_current_speed
+
+func sample_water_surface(world_position: Vector3) -> WaterSurfaceSample:
+	var points := PackedVector3Array()
+	points.push_back(world_position)
+	var samples := sample_water_surface_batch(points)
+	if samples.is_empty():
+		return _create_invalid_surface_sample(world_position)
+	return samples[0]
+
+func sample_water_surface_batch(points: PackedVector3Array) -> Array[WaterSurfaceSample]:
+	if points.is_empty():
+		return []
+	return _sample_water_surface_batch_gpu(points)
+
 func should_use_external_wind() -> bool:
 	return use_external_wind and get_wind_source() != null
 
@@ -373,6 +453,11 @@ func get_wind_source() -> Node:
 	if wind_source == null:
 		_resolve_wind_source()
 	return wind_source
+
+func get_current_source() -> Node:
+	if current_source == null:
+		_resolve_current_source()
+	return current_source
 
 func get_external_wind_speed() -> float:
 	var external_wind := get_wind_source()
@@ -397,22 +482,27 @@ func _resolve_wind_source() -> void:
 		return
 	wind_source = get_node_or_null(wind_source_path)
 
+func _resolve_current_source() -> void:
+	if current_source_path.is_empty():
+		return
+	current_source = get_node_or_null(current_source_path)
+
 func _update_external_wind_state() -> void:
 	if not should_use_external_wind():
 		return
 	var current_speed := get_external_wind_speed()
 	var current_direction := get_external_wind_direction()
-	if (
-		absf(current_speed - _last_external_wind_speed) < EXTERNAL_WIND_SPEED_DIRTY_THRESHOLD
-		and _get_wrapped_degrees_delta(current_direction, _last_external_wind_direction) < EXTERNAL_WIND_DIRECTION_DIRTY_THRESHOLD
-	):
+	var speed_changed := absf(current_speed - _last_external_wind_speed) >= EXTERNAL_WIND_SPEED_DIRTY_THRESHOLD
+	var direction_changed := _get_wrapped_degrees_delta(current_direction, _last_external_wind_direction) >= EXTERNAL_WIND_DIRECTION_DIRTY_THRESHOLD
+	if not speed_changed and not direction_changed:
 		return
 	if time - _last_external_wind_spectrum_time < EXTERNAL_WIND_SPECTRUM_REFRESH_INTERVAL:
 		return
 	_last_external_wind_speed = current_speed
 	_last_external_wind_direction = current_direction
 	_last_external_wind_spectrum_time = time
-	_mark_spectra_dirty()
+	if speed_changed:
+		_mark_spectra_dirty()
 
 func _reset_external_wind_tracking() -> void:
 	_last_external_wind_speed = -1.0
@@ -427,7 +517,7 @@ func _mark_spectra_dirty() -> void:
 		return
 	for params in parameters:
 		if params:
-			params.should_generate_spectrum = true
+			params.mark_all_spectra_dirty()
 
 func refresh_height_cache() -> void:
 	if not wave_generator or not wave_generator.context: return
@@ -442,20 +532,38 @@ func refresh_height_cache() -> void:
 func _get_ocean_time() -> float:
 	return time
 
-func _sample_wave_height(cascade_index: int, world_position: Vector3, _ocean_time: float) -> float:
-	if cascade_index >= _height_images.size(): return 0.0
-	var image := _height_images[cascade_index]
-	if image == null or image.is_empty(): return 0.0
+func _sample_wave_displacement(cascade_index: int, world_position: Vector3) -> Vector3:
+	var displacement := _sample_wave_displacement_from_images(_height_images, cascade_index, world_position)
+	if not _previous_height_images.is_empty():
+		var previous_displacement := _sample_wave_displacement_from_images(_previous_height_images, cascade_index, world_position)
+		displacement = previous_displacement.lerp(displacement, _get_wave_blend_alpha())
+	return displacement
 
+func _sample_total_wave_displacement_from_images(images: Array[Image], world_position: Vector3) -> Vector3:
+	var displacement := Vector3.ZERO
+	for i in parameters.size():
+		displacement += _sample_wave_displacement_from_images(images, i, world_position)
+	return displacement
+
+func _sample_wave_displacement_from_images(images: Array[Image], cascade_index: int, world_position: Vector3) -> Vector3:
 	var params := parameters[cascade_index]
+	if params == null:
+		return Vector3.ZERO
 	var uv := Vector2(world_position.x / params.tile_length.x, world_position.z / params.tile_length.y)
-	var displacement := _sample_image_bilinear(image, uv).g
-	if cascade_index < _previous_height_images.size():
-		var previous_image := _previous_height_images[cascade_index]
-		if previous_image != null and not previous_image.is_empty():
-			var previous_displacement := _sample_image_bilinear(previous_image, uv).g
-			displacement = lerpf(previous_displacement, displacement, _get_wave_blend_alpha())
+	var blend_state := params.get_spectrum_blend_state(cascade_index)
+	var active_displacement := _sample_displacement_layer(images, int(blend_state.x), uv)
+	var pending_displacement := _sample_displacement_layer(images, int(blend_state.y), uv)
+	var displacement := active_displacement.lerp(pending_displacement, blend_state.z)
 	return displacement * params.displacement_scale
+
+func _sample_displacement_layer(images: Array[Image], layer: int, uv: Vector2) -> Vector3:
+	if layer < 0 or layer >= images.size():
+		return Vector3.ZERO
+	var image := images[layer]
+	if image == null or image.is_empty():
+		return Vector3.ZERO
+	var color := _sample_image_bilinear(image, uv)
+	return Vector3(color.r, color.g, color.b)
 
 func _sample_image_bilinear(image: Image, uv: Vector2) -> Color:
 	var width := image.get_width()
@@ -485,6 +593,7 @@ func _clear_height_cache() -> void:
 
 func _clear_wave_generator() -> void:
 	_clear_height_cache()
+	_reset_surface_query_resources()
 	wave_generator = null
 	_has_wave_output = false
 	_last_wave_output_time = 0.0
@@ -667,11 +776,212 @@ func _ensure_unique_water_material() -> void:
 func _read_height_images(device: RenderingDevice, texture_rid: RID) -> Array[Image]:
 	var images : Array[Image] = []
 	if not texture_rid.is_valid(): return images
-	for i in parameters.size():
+	var layer_count := parameters.size() * SPECTRUM_SLOT_COUNT
+	for i in layer_count:
 		var data := device.texture_get_data(texture_rid, i)
-		if data.is_empty(): continue
-		images.push_back(Image.create_from_data(map_size, map_size, false, Image.FORMAT_RGBAH, data))
+		if data.is_empty():
+			images.push_back(Image.new())
+		else:
+			images.push_back(Image.create_from_data(map_size, map_size, false, Image.FORMAT_RGBAH, data))
 	return images
+
+func _sample_water_surface_batch_gpu(points: PackedVector3Array) -> Array[WaterSurfaceSample]:
+	if wave_generator == null or wave_generator.context == null:
+		return _create_invalid_surface_samples(points)
+
+	var context := wave_generator.context
+	var device := context.device
+	var ready_samples : Array[WaterSurfaceSample] = []
+	if _surface_query_has_pending_readback and _surface_query_sample_buffer != null:
+		var pending_byte_count := _surface_query_pending_points.size() * SURFACE_QUERY_BYTES_PER_SAMPLE
+		var pending_data : PackedByteArray = device.buffer_get_data(_surface_query_sample_buffer.rid, 0, pending_byte_count)
+		ready_samples = _unpack_surface_query_samples(_surface_query_pending_points, pending_data)
+		_surface_query_has_pending_readback = false
+
+	if not _ensure_surface_query_resources(points.size()):
+		return ready_samples if ready_samples.size() == points.size() else _create_invalid_surface_samples(points)
+
+	var point_data := _pack_surface_query_points(points)
+	var cascade_data := _pack_surface_query_cascades()
+	device.buffer_update(_surface_query_point_buffer.rid, 0, point_data.size(), point_data)
+	device.buffer_update(_surface_query_cascade_buffer.rid, 0, cascade_data.size(), cascade_data)
+
+	var current_displacement_rid : RID = wave_generator.descriptors[&'displacement_map'].rid
+	var previous_displacement_rid : RID = wave_generator.descriptors[&'previous_displacement_map'].rid
+	var uniform_set := _get_surface_query_uniform_set(current_displacement_rid, previous_displacement_rid)
+	if not uniform_set.is_valid():
+		return ready_samples if ready_samples.size() == points.size() else _create_invalid_surface_samples(points)
+
+	var groups := int(ceil(float(points.size()) / float(SURFACE_QUERY_WORKGROUP_SIZE)))
+	var compute_list := context.compute_list_begin()
+	device.compute_list_bind_compute_pipeline(compute_list, _surface_query_pipeline)
+	device.compute_list_bind_uniform_set(compute_list, uniform_set, 0)
+	device.compute_list_set_push_constant(
+		compute_list,
+		RenderingContext.create_push_constant([
+			points.size(),
+			mini(parameters.size(), MAX_CASCADES),
+			map_size,
+			water_level,
+			_get_wave_blend_alpha(),
+			maxf(_wave_blend_duration, 1.0 / 60.0),
+			0.25,
+			0.0,
+		]),
+		32
+	)
+	device.compute_list_dispatch(compute_list, groups, 1, 1)
+	context.compute_list_end()
+	# Ocean wave textures live on Godot's main RenderingDevice. Only local
+	# RenderingDevice instances may be manually submitted/synced; the main one is
+	# submitted by RenderingServer. Local-device fallback is kept for tests/tools.
+	if device != RenderingServer.get_rendering_device():
+		context.submit()
+		context.sync()
+		var byte_count := points.size() * SURFACE_QUERY_BYTES_PER_SAMPLE
+		var sample_data : PackedByteArray = device.buffer_get_data(_surface_query_sample_buffer.rid, 0, byte_count)
+		return _unpack_surface_query_samples(points, sample_data)
+
+	_surface_query_pending_points = points
+	_surface_query_has_pending_readback = true
+	return ready_samples if ready_samples.size() == points.size() else _create_invalid_surface_samples(points)
+
+func _ensure_surface_query_resources(point_count : int) -> bool:
+	if point_count <= 0:
+		return false
+	if wave_generator == null or wave_generator.context == null:
+		return false
+	if not wave_generator.descriptors.has(&'displacement_map') or not wave_generator.descriptors[&'displacement_map'].rid.is_valid():
+		return false
+	if not wave_generator.descriptors.has(&'previous_displacement_map') or not wave_generator.descriptors[&'previous_displacement_map'].rid.is_valid():
+		return false
+
+	var context := wave_generator.context
+	if not _surface_query_shader.is_valid():
+		_surface_query_shader = context.load_shader('res://addons/ocean_system/shaders/compute/surface_query.glsl')
+	if not _surface_query_pipeline.is_valid():
+		_surface_query_pipeline = context.deletion_queue.push(context.device.compute_pipeline_create(_surface_query_shader))
+
+	if point_count <= _surface_query_capacity and _surface_query_point_buffer != null:
+		return true
+
+	_surface_query_capacity = _get_surface_query_capacity(point_count)
+	_surface_query_point_buffer = context.create_storage_buffer(_surface_query_capacity * SURFACE_QUERY_BYTES_PER_POINT)
+	_surface_query_cascade_buffer = context.create_storage_buffer(MAX_CASCADES * SURFACE_QUERY_BYTES_PER_CASCADE)
+	_surface_query_sample_buffer = context.create_storage_buffer(_surface_query_capacity * SURFACE_QUERY_BYTES_PER_SAMPLE)
+	_surface_query_sets.clear()
+	return true
+
+func _get_surface_query_capacity(point_count : int) -> int:
+	var capacity := SURFACE_QUERY_WORKGROUP_SIZE
+	while capacity < point_count:
+		capacity *= 2
+	return capacity
+
+func _get_surface_query_uniform_set(current_displacement_rid : RID, previous_displacement_rid : RID) -> RID:
+	var key := "%s:%s" % [str(current_displacement_rid), str(previous_displacement_rid)]
+	if _surface_query_sets.has(key):
+		return _surface_query_sets[key]
+	var context := wave_generator.context
+	var uniform_set := context.create_descriptor_set([
+		_surface_query_point_buffer,
+		_surface_query_cascade_buffer,
+		_surface_query_sample_buffer,
+		wave_generator.descriptors[&'displacement_map'],
+		wave_generator.descriptors[&'previous_displacement_map'],
+	], _surface_query_shader, 0)
+	_surface_query_sets[key] = uniform_set
+	return uniform_set
+
+func _pack_surface_query_points(points: PackedVector3Array) -> PackedByteArray:
+	var data := PackedByteArray()
+	data.resize(points.size() * SURFACE_QUERY_BYTES_PER_POINT)
+	for i in points.size():
+		var offset := i * SURFACE_QUERY_BYTES_PER_POINT
+		var point := points[i]
+		data.encode_float(offset, point.x)
+		data.encode_float(offset + 4, point.y)
+		data.encode_float(offset + 8, point.z)
+		data.encode_float(offset + 12, 0.0)
+	return data
+
+func _pack_surface_query_cascades() -> PackedByteArray:
+	var data := PackedByteArray()
+	data.resize(MAX_CASCADES * SURFACE_QUERY_BYTES_PER_CASCADE)
+	for i in mini(parameters.size(), MAX_CASCADES):
+		var params := parameters[i]
+		if params == null:
+			continue
+		var uv_scale := Vector2.ONE / params.tile_length
+		var blend_state := params.get_spectrum_blend_state(i)
+		var offset := i * SURFACE_QUERY_BYTES_PER_CASCADE
+		data.encode_float(offset, uv_scale.x)
+		data.encode_float(offset + 4, uv_scale.y)
+		data.encode_float(offset + 8, params.displacement_scale)
+		data.encode_float(offset + 12, params.normal_scale)
+		data.encode_float(offset + 16, blend_state.x)
+		data.encode_float(offset + 20, blend_state.y)
+		data.encode_float(offset + 24, blend_state.z)
+		data.encode_float(offset + 28, 0.0)
+	return data
+
+func _unpack_surface_query_samples(points: PackedVector3Array, data: PackedByteArray) -> Array[WaterSurfaceSample]:
+	if data.size() < points.size() * SURFACE_QUERY_BYTES_PER_SAMPLE:
+		return _create_invalid_surface_samples(points)
+
+	var samples : Array[WaterSurfaceSample] = []
+	samples.resize(points.size())
+	for i in points.size():
+		var offset := i * SURFACE_QUERY_BYTES_PER_SAMPLE
+		var sample := WaterSurfaceSample.new()
+		sample.position = points[i]
+		sample.displacement = Vector3(
+			data.decode_float(offset),
+			data.decode_float(offset + 4),
+			data.decode_float(offset + 8)
+		)
+		sample.height = data.decode_float(offset + 12)
+		sample.normal = Vector3(
+			data.decode_float(offset + 16),
+			data.decode_float(offset + 20),
+			data.decode_float(offset + 24)
+		)
+		sample.valid = data.decode_float(offset + 28) > 0.5
+		sample.surface_velocity = Vector3(
+			data.decode_float(offset + 32),
+			data.decode_float(offset + 36),
+			data.decode_float(offset + 40)
+		)
+		sample.current_velocity = get_water_current(points[i])
+		samples[i] = sample
+	return samples
+
+func _create_invalid_surface_sample(world_position: Vector3) -> WaterSurfaceSample:
+	var sample := WaterSurfaceSample.new()
+	sample.position = world_position
+	sample.height = water_level
+	sample.normal = Vector3.UP
+	sample.current_velocity = get_water_current(world_position)
+	sample.valid = false
+	return sample
+
+func _create_invalid_surface_samples(points: PackedVector3Array) -> Array[WaterSurfaceSample]:
+	var samples : Array[WaterSurfaceSample] = []
+	samples.resize(points.size())
+	for i in points.size():
+		samples[i] = _create_invalid_surface_sample(points[i])
+	return samples
+
+func _reset_surface_query_resources() -> void:
+	_surface_query_capacity = 0
+	_surface_query_shader = RID()
+	_surface_query_pipeline = RID()
+	_surface_query_point_buffer = null
+	_surface_query_cascade_buffer = null
+	_surface_query_sample_buffer = null
+	_surface_query_sets.clear()
+	_surface_query_has_pending_readback = false
+	_surface_query_pending_points.clear()
 
 func _set_texture_rid(texture: Texture2DArrayRD, rid: RID) -> void:
 	texture.texture_rd_rid = RID()

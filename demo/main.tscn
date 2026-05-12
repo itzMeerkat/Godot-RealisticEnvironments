@@ -11,6 +11,11 @@
 [ext_resource type="PackedScene" uid="uid://bm4bg7uoyr0xy" path="res://systems/debug/ocean_debug_panel.tscn" id="9_gb4mm"]
 [ext_resource type="Script" uid="uid://btyuqnmfuyrr6" path="res://addons/wind_system/wind_system.gd" id="10_tfjfv"]
 [ext_resource type="PackedScene" path="res://addons/sky_system/sky_system.tscn" id="11_sky"]
+[ext_resource type="PackedScene" path="res://addons/current_system/current_system.tscn" id="12_current"]
+[ext_resource type="Script" uid="uid://cv6g660t6s5av" path="res://addons/buoyancy_system/buoyant_body.gd" id="13_buoyant"]
+[ext_resource type="Script" uid="uid://dw28d5srfncqp" path="res://addons/buoyancy_system/buoyancy_probe.gd" id="14_probe"]
+[ext_resource type="Script" uid="uid://sv1g7dnbjc2w" path="res://addons/buoyancy_system/buoyancy_debug_bounds.gd" id="15_bounds"]
+[ext_resource type="Script" uid="uid://bvoan7j4oppub" path="res://addons/buoyancy_system/floating_debug_body.gd" id="16_float_debug"]
 
 [sub_resource type="Curve" id="Curve_fdg1k"]
 _limits = [0.0, 2.0, 0.0, 1.0]
@@ -69,13 +74,13 @@ moon_energy_curve = SubResource("Curve_f8mb2")
 star_visibility_curve = SubResource("Curve_dls5p")
 ambient_energy_curve = SubResource("Curve_fdg1k")
 
-[sub_resource type="Texture2DArrayRD" id="Texture2DArrayRD_iscmt"]
+[sub_resource type="Texture2DArrayRD" id="Texture2DArrayRD_f8mb2"]
 
-[sub_resource type="Texture2DArrayRD" id="Texture2DArrayRD_nr2wj"]
+[sub_resource type="Texture2DArrayRD" id="Texture2DArrayRD_ykfgg"]
 
-[sub_resource type="Texture2DArrayRD" id="Texture2DArrayRD_fdg1k"]
+[sub_resource type="Texture2DArrayRD" id="Texture2DArrayRD_4bnku"]
 
-[sub_resource type="Texture2DArrayRD" id="Texture2DArrayRD_6g5ly"]
+[sub_resource type="Texture2DArrayRD" id="Texture2DArrayRD_dls5p"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_ycdy4"]
 render_priority = 1
@@ -103,12 +108,13 @@ shader_parameter/far_normal_strength = 0.14
 shader_parameter/far_foam_coverage = 0.24
 shader_parameter/far_foam_threshold_boost = 0.2
 shader_parameter/map_scales = PackedVector4Array(0.011363637, 0.011363637, 1, 1, 0.01754386, 0.01754386, 0.75, 1, 0.0625, 0.0625, 0, 0.25)
+shader_parameter/spectrum_blend_states = PackedVector4Array(0, 1, 0, 0, 2, 3, 0, 0, 4, 5, 0, 0)
 shader_parameter/num_cascades = 3
-shader_parameter/displacements = SubResource("Texture2DArrayRD_iscmt")
-shader_parameter/normals = SubResource("Texture2DArrayRD_nr2wj")
-shader_parameter/previous_displacements = SubResource("Texture2DArrayRD_fdg1k")
-shader_parameter/previous_normals = SubResource("Texture2DArrayRD_6g5ly")
-shader_parameter/wave_blend_alpha = 0.16211097973985256
+shader_parameter/displacements = SubResource("Texture2DArrayRD_f8mb2")
+shader_parameter/normals = SubResource("Texture2DArrayRD_ykfgg")
+shader_parameter/previous_displacements = SubResource("Texture2DArrayRD_4bnku")
+shader_parameter/previous_normals = SubResource("Texture2DArrayRD_dls5p")
+shader_parameter/wave_blend_alpha = 0.7845879999994106
 
 [sub_resource type="Resource" id="Resource_adqv5"]
 script = ExtResource("2_pw5n6")
@@ -141,6 +147,20 @@ spread = 0.4
 whitecap = 0.25
 foam_amount = 3.0
 
+[sub_resource type="BoxMesh" id="BoxMesh_float_demo"]
+size = Vector3(3, 1, 2)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_haa2m"]
+transparency = 1
+no_depth_test = true
+shading_mode = 0
+albedo_color = Color(1, 0.84, 0.12, 1)
+
+[sub_resource type="ImmediateMesh" id="ImmediateMesh_27lkm"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_float_demo"]
+size = Vector3(3, 1, 2)
+
 [node name="Main" type="Node3D" unique_id=1897186747]
 script = ExtResource("1_skarq")
 
@@ -153,9 +173,18 @@ ocean_path = NodePath("../Water")
 transform = Transform3D(-0.996195, -0.0151344, 0.0858316, 0, 0.984807, 0.173648, -0.0871557, 0.172987, -0.981061, 0, 10, -25)
 far = 8000.0
 script = ExtResource("4_v2yip")
+follow_target_path = NodePath("../FloatingBox")
+enable_follow_target = true
+follow_distance = 12.0
+follow_height = 5.0
+look_at_height = 0.4
 
 [node name="WindSystem" type="Node" parent="." unique_id=370380778]
 script = ExtResource("10_tfjfv")
+
+[node name="CurrentSystem" parent="." unique_id=927312905 instance=ExtResource("12_current")]
+current_speed = 0.35
+current_direction = 70.0
 
 [node name="Water" parent="." unique_id=1159832475 instance=ExtResource("7_s0x5e")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -45, 0, 475)
@@ -164,7 +193,66 @@ extra_cull_margin = 1000.0
 skeleton = NodePath("")
 use_external_wind = true
 wind_source_path = NodePath("../WindSystem")
+current_source_path = NodePath("../CurrentSystem")
 parameters = Array[ExtResource("2_pw5n6")]([SubResource("Resource_adqv5"), SubResource("Resource_luhq0"), SubResource("Resource_83u3u")])
+
+[node name="FloatingBox" type="RigidBody3D" parent="." unique_id=502070138]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -38, 1.2, 470)
+mass = 24.0
+script = ExtResource("16_float_debug")
+
+[node name="Mesh" type="MeshInstance3D" parent="FloatingBox" unique_id=863908204]
+mesh = SubResource("BoxMesh_float_demo")
+
+[node name="DebugBounds" type="MeshInstance3D" parent="FloatingBox" unique_id=351390678]
+sorting_offset = 1000.0
+material_override = SubResource("StandardMaterial3D_haa2m")
+cast_shadow = 0
+extra_cull_margin = 10000.0
+mesh = SubResource("ImmediateMesh_27lkm")
+script = ExtResource("15_bounds")
+size = Vector3(3.08, 1.08, 2.08)
+color = Color(1, 0.84, 0.12, 1)
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="FloatingBox" unique_id=1016489842]
+shape = SubResource("BoxShape3D_float_demo")
+
+[node name="BuoyantBody" type="Node" parent="FloatingBox" unique_id=887405480]
+script = ExtResource("13_buoyant")
+ocean_path = NodePath("../../Water")
+buoyancy_strength = 1.15
+
+[node name="ProbeFL" type="Marker3D" parent="FloatingBox" unique_id=328052977]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.96, 0.18, -0.64)
+script = ExtResource("14_probe")
+submersion_depth = 1.4
+vertical_damping = 3.0
+water_drag = 1.2
+current_drag = 1.6
+
+[node name="ProbeFR" type="Marker3D" parent="FloatingBox" unique_id=978469505]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.96, 0.18, -0.64)
+script = ExtResource("14_probe")
+submersion_depth = 1.4
+vertical_damping = 3.0
+water_drag = 1.2
+current_drag = 1.6
+
+[node name="ProbeBL" type="Marker3D" parent="FloatingBox" unique_id=954584825]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.96, 0.18, 0.64)
+script = ExtResource("14_probe")
+submersion_depth = 1.4
+vertical_damping = 3.0
+water_drag = 1.2
+current_drag = 1.6
+
+[node name="ProbeBR" type="Marker3D" parent="FloatingBox" unique_id=1876178936]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.96, 0.18, 0.64)
+script = ExtResource("14_probe")
+submersion_depth = 1.4
+vertical_damping = 3.0
+water_drag = 1.2
+current_drag = 1.6
 
 [node name="OceanAudioPlayer" type="AudioStreamPlayer" parent="." unique_id=1224032298]
 stream = ExtResource("6_jpklm")
