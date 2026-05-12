@@ -6,6 +6,7 @@ extends MeshInstance3D
 
 const WATER_MAT := preload('res://addons/ocean_system/mat_water.tres')
 const MAX_CASCADES := 8
+const MAX_HULL_CUTOUTS := 8
 const SPECTRUM_SLOT_COUNT := 2
 const SURFACE_QUERY_WORKGROUP_SIZE := 64
 const SURFACE_QUERY_BYTES_PER_POINT := 16
@@ -313,11 +314,13 @@ func _ready() -> void:
 	_set_water_shader_parameter(&'foam_intensity', foam_intensity)
 	_set_water_shader_parameter(&'foam_threshold', foam_threshold)
 	_set_water_shader_parameter(&'foam_softness', foam_softness)
+	_update_hull_cutouts()
 	_update_far_lod_shader_parameters()
 	_update_water_mesh()
 
 func _process(delta : float) -> void:
 	_update_follow_camera()
+	_update_hull_cutouts()
 	_update_external_wind_state()
 	# Update waves once every 1.0/updates_per_second.
 	if updates_per_second == 0 or time >= next_update_time:
@@ -760,6 +763,45 @@ func _update_far_lod_shader_parameters() -> void:
 	_set_water_shader_parameter(&'far_normal_strength', far_normal_strength)
 	_set_water_shader_parameter(&'far_foam_coverage', far_foam_coverage)
 	_set_water_shader_parameter(&'far_foam_threshold_boost', far_foam_threshold_boost)
+
+
+func _update_hull_cutouts() -> void:
+	if not is_inside_tree():
+		return
+
+	var centers := PackedVector4Array()
+	var axes := PackedVector4Array()
+	var shapes := PackedVector4Array()
+	centers.resize(MAX_HULL_CUTOUTS)
+	axes.resize(MAX_HULL_CUTOUTS)
+	shapes.resize(MAX_HULL_CUTOUTS)
+
+	var cutout_count := 0
+	for node in get_tree().get_nodes_in_group(&"water_hull_cutout"):
+		var cutout := node as WaterHullCutout
+		if cutout == null or not cutout.enabled:
+			continue
+		if cutout_count >= MAX_HULL_CUTOUTS:
+			break
+
+		var basis := cutout.global_transform.basis.orthonormalized()
+		var right := basis.x
+		var forward := basis.z
+		centers[cutout_count] = Vector4(
+			cutout.global_position.x,
+			cutout.global_position.y,
+			cutout.global_position.z,
+			cutout.feather
+		)
+		axes[cutout_count] = Vector4(right.x, right.z, forward.x, forward.z)
+		shapes[cutout_count] = Vector4(cutout.half_extents.x, cutout.half_extents.y, cutout.foam_amount, 0.0)
+		cutout_count += 1
+
+	_set_water_shader_parameter(&'hull_cutout_count', cutout_count)
+	_set_water_shader_parameter(&'hull_cutout_centers', centers)
+	_set_water_shader_parameter(&'hull_cutout_axes', axes)
+	_set_water_shader_parameter(&'hull_cutout_shapes', shapes)
+
 
 func _set_water_shader_parameter(parameter: StringName, value: Variant) -> void:
 	if material_override is ShaderMaterial:

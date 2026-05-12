@@ -6,6 +6,7 @@ render_mode world_vertex_coords, cull_disabled, shadows_disabled;
  */
 
 #define MAX_CASCADES 8
+#define MAX_HULL_CUTOUTS 8
 
 uniform vec4 water_color : source_color;
 uniform vec4 foam_color : source_color;
@@ -30,6 +31,10 @@ uniform float far_low_frequency_tile_length : hint_range(1.0, 512.0) = 64.0;
 uniform float far_normal_strength : hint_range(0.0, 2.0) = 0.14;
 uniform float far_foam_coverage : hint_range(0.0, 1.0) = 0.24;
 uniform float far_foam_threshold_boost : hint_range(0.0, 1.0) = 0.2;
+uniform int hull_cutout_count = 0;
+uniform vec4 hull_cutout_centers[MAX_HULL_CUTOUTS]; // xyz center, feather in meters
+uniform vec4 hull_cutout_axes[MAX_HULL_CUTOUTS];    // right.xz, forward.xz
+uniform vec4 hull_cutout_shapes[MAX_HULL_CUTOUTS];  // half width, half length, foam amount, unused
 
 group_uniforms cascade_data;
 uniform vec4 map_scales[MAX_CASCADES];               // Scales for displacement/normal maps. Packed: [uv scale, displacement scale, normal scale]
@@ -44,6 +49,7 @@ uniform float wave_blend_alpha = 1.0;
 varying float foam_factor;
 varying float distance_to_camera;
 varying float distance_lod;
+varying vec3 water_world_position;
 
 float get_distance_lod(float dist) {
 	if (!enable_far_lod) {
@@ -60,6 +66,18 @@ float get_cascade_lod_weight(vec4 scales, float lod) {
 	float tile_length = 1.0 / max(min(scales.x, scales.y), 0.0001);
 	float far_weight = smoothstep(far_low_frequency_tile_length * 0.55, far_low_frequency_tile_length * 1.35, tile_length);
 	return mix(1.0, far_weight, lod);
+}
+
+float get_hull_cutout_sdf(vec3 world_position, int index) {
+	vec4 center = hull_cutout_centers[index];
+	vec4 axes = hull_cutout_axes[index];
+	vec4 shape = hull_cutout_shapes[index];
+	vec2 delta = world_position.xz - center.xz;
+	vec2 right = normalize(axes.xy);
+	vec2 forward = normalize(axes.zw);
+	vec2 local = vec2(dot(delta, right), dot(delta, forward));
+	vec2 q = abs(local) - shape.xy;
+	return length(max(q, vec2(0.0))) + min(max(q.x, q.y), 0.0);
 }
 
 void vertex() {
@@ -85,10 +103,11 @@ void vertex() {
 		vec3 current_pending = texture(displacements, pending_coords).xyz;
 		vec3 active_displacement = mix(previous_active, current_active, wave_blend_alpha);
 		vec3 pending_displacement = mix(previous_pending, current_pending, wave_blend_alpha);
-		displacement += mix(active_displacement, pending_displacement, blend_state.z) * scales.z * cascade_weight;
+			displacement += mix(active_displacement, pending_displacement, blend_state.z) * scales.z * cascade_weight;
+		}
+		VERTEX += displacement;
+		water_world_position = VERTEX;
 	}
-	VERTEX += displacement;
-}
 
 /** Filter weights for a cubic B-spline. */
 vec4 cubic_weights(float a) {
@@ -122,6 +141,20 @@ vec4 texture_bicubic(in sampler2DArray sampler, in vec3 uvw) {
 }
 
 void fragment() {
+	float hull_sdf = 999999.0;
+	float hull_edge_foam = 0.0;
+	for (int i = 0; i < min(hull_cutout_count, MAX_HULL_CUTOUTS); ++i) {
+		float cutout_sdf = get_hull_cutout_sdf(water_world_position, i);
+		if (cutout_sdf < 0.0) {
+			discard;
+		}
+		vec4 center = hull_cutout_centers[i];
+		vec4 shape = hull_cutout_shapes[i];
+		float feather = max(center.w, 0.001);
+		hull_sdf = min(hull_sdf, cutout_sdf);
+		hull_edge_foam = max(hull_edge_foam, (1.0 - smoothstep(0.0, feather, cutout_sdf)) * shape.z);
+	}
+
 	float dist = distance_to_camera;
 	vec3 gradient = vec3(0);
 	float wave_slope = 0.0;
@@ -158,11 +191,12 @@ void fragment() {
 			gradient += normal_sample.xyw * vec3(scales.ww, 1.0) * cascade_weight;
 		}
 
-		float foam_signal = gradient.z * 0.75 * foam_intensity;
-		float foam_edge = foam_threshold + far_foam_threshold_boost * distance_lod;
-		float foam_distance_fade = mix(1.0, far_foam_coverage, distance_lod);
-		foam_factor = smoothstep(foam_edge, foam_edge + foam_softness, foam_signal) * exp(-dist*0.0075) * foam_distance_fade;
-		wave_slope = clamp(length(gradient.xy) * slope_roughness_strength, 0.0, 1.0);
+			float foam_signal = gradient.z * 0.75 * foam_intensity;
+			float foam_edge = foam_threshold + far_foam_threshold_boost * distance_lod;
+			float foam_distance_fade = mix(1.0, far_foam_coverage, distance_lod);
+			foam_factor = smoothstep(foam_edge, foam_edge + foam_softness, foam_signal) * exp(-dist*0.0075) * foam_distance_fade;
+			foam_factor = max(foam_factor, hull_edge_foam);
+			wave_slope = clamp(length(gradient.xy) * slope_roughness_strength, 0.0, 1.0);
 
 		float near_normal_fade = exp(-dist*0.0175);
 		float far_normal_fade = max(far_normal_strength * 0.35, 0.015);

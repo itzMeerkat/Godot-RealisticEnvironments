@@ -1,33 +1,54 @@
 @tool
 class_name FloatingDebugBody
 extends RigidBody3D
-## Debug helper that keeps a simple floating box, collision shape, buoyancy
-## probes, and always-visible bounds in sync from one exported size.
+## Debug helper for a floating rigid body. Enable auto_sync_debug_layout to
+## drive collision, debug bounds, probes, and mass from one exported size.
+
+@export var auto_sync_debug_layout := false :
+	set(value):
+		auto_sync_debug_layout = value
+		if auto_sync_debug_layout:
+			_apply_debug_size()
 
 @export var box_size := Vector3(3.0, 1.0, 2.0) :
 	set(value):
 		box_size = Vector3(maxf(value.x, 0.05), maxf(value.y, 0.05), maxf(value.z, 0.05))
-		_apply_debug_size()
+		if auto_sync_debug_layout:
+			_apply_debug_size()
 
 @export_range(0.0, 1.0, 0.01) var probe_inset_ratio := 0.18 :
 	set(value):
 		probe_inset_ratio = clampf(value, 0.0, 0.45)
-		_apply_debug_size()
+		if auto_sync_debug_layout:
+			_apply_debug_size()
 
 @export_range(-2.0, 2.0, 0.01) var probe_height_above_center := 0.18 :
 	set(value):
 		probe_height_above_center = value
-		_apply_debug_size()
+		if auto_sync_debug_layout:
+			_apply_debug_size()
 
 @export var auto_mass_from_size := true :
 	set(value):
 		auto_mass_from_size = value
-		_apply_debug_size()
+		if auto_sync_debug_layout:
+			_apply_debug_size()
 
 @export_range(0.01, 1000.0, 0.01, "or_greater") var density := 4.0 :
 	set(value):
 		density = maxf(value, 0.01)
-		_apply_debug_size()
+		if auto_sync_debug_layout:
+			_apply_debug_size()
+
+@export_group("Stability")
+@export var use_custom_center_of_mass := true :
+	set(value):
+		use_custom_center_of_mass = value
+		_apply_center_of_mass()
+@export var custom_center_of_mass := Vector3(0.0, -1.0, -1.0) :
+	set(value):
+		custom_center_of_mass = value
+		_apply_center_of_mass()
 
 @export_group("Debug History")
 @export var debug_draw_position_history := true :
@@ -52,7 +73,9 @@ var _history_material : StandardMaterial3D
 
 
 func _ready() -> void:
-	_apply_debug_size()
+	_apply_center_of_mass()
+	if auto_sync_debug_layout:
+		_apply_debug_size()
 	_ensure_history_nodes()
 
 
@@ -63,7 +86,7 @@ func _physics_process(_delta: float) -> void:
 
 
 func _notification(what: int) -> void:
-	if what == NOTIFICATION_CHILD_ORDER_CHANGED:
+	if auto_sync_debug_layout and what == NOTIFICATION_CHILD_ORDER_CHANGED:
 		_apply_debug_size()
 
 
@@ -98,6 +121,14 @@ func _apply_debug_size() -> void:
 
 	if auto_mass_from_size:
 		mass = maxf(box_size.x * box_size.y * box_size.z * density, 0.01)
+
+
+func _apply_center_of_mass() -> void:
+	if use_custom_center_of_mass:
+		center_of_mass_mode = RigidBody3D.CENTER_OF_MASS_MODE_CUSTOM
+		center_of_mass = custom_center_of_mass
+	else:
+		center_of_mass_mode = RigidBody3D.CENTER_OF_MASS_MODE_AUTO
 
 
 func _update_probe(name: StringName, x_sign: float, z_sign: float) -> void:

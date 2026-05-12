@@ -8,8 +8,11 @@ extends Node
 @export var auto_collect_child_probes := true
 @export var probe_paths : Array[NodePath] = []
 @export_range(0.0, 10.0, 0.01, "or_greater") var buoyancy_strength := 1.0
+@export_range(1.0, 2000.0, 1.0, "or_greater") var water_density := 1025.0
+@export var use_surface_normal_for_buoyancy := false
 @export_range(0.0, 10.0, 0.01, "or_greater") var surface_velocity_influence := 1.0
 @export_range(0.0, 10.0, 0.01, "or_greater") var current_influence := 1.0
+@export_range(0.0, 100.0, 0.1, "or_greater") var max_probe_acceleration := 35.0
 @export var apply_forces := true
 
 var rigid_body : RigidBody3D
@@ -45,10 +48,10 @@ func _physics_process(_delta : float) -> void:
 		return
 
 	var samples := ocean.sample_water_surface_batch(points)
-	var total_weight := _get_total_probe_weight(active_probes)
+	var total_volume := _get_total_effective_probe_volume(active_probes)
 	var gravity := float(ProjectSettings.get_setting("physics/3d/default_gravity", 9.8))
 	for i in active_probes.size():
-		_apply_probe_forces(active_probes[i], samples[i], total_weight, gravity)
+		_apply_probe_forces(active_probes[i], samples[i], total_volume, gravity)
 
 
 func refresh_probes() -> void:
@@ -84,39 +87,49 @@ func _collect_probe_descendants(node : Node) -> void:
 		_collect_probe_descendants(child)
 
 
-func _get_total_probe_weight(active_probes : Array[BuoyancyProbe]) -> float:
-	var total := 0.0
+func _get_total_effective_probe_volume(active_probes : Array[BuoyancyProbe]) -> float:
+	var total_volume := 0.0
 	for probe in active_probes:
-		total += maxf(probe.buoyancy_weight, 0.0)
-	return maxf(total, 0.0001)
+		total_volume += _get_effective_probe_volume(probe)
+	return maxf(total_volume, 0.0001)
 
 
-func _apply_probe_forces(probe : BuoyancyProbe, sample : WaterSurfaceSample, total_weight : float, gravity : float) -> void:
+func _get_effective_probe_volume(probe : BuoyancyProbe) -> float:
+	var dry_volume := maxf(probe.volume_cubic_meters, 0.0) * clampf(probe.buoyancy_efficiency, 0.0, 1.0)
+	return dry_volume * (1.0 - clampf(probe.flooding_fraction, 0.0, 1.0))
+
+
+func _apply_probe_forces(probe : BuoyancyProbe, sample : WaterSurfaceSample, total_volume : float, gravity : float) -> void:
 	var probe_position := probe.global_position
 	var depth := sample.height - probe_position.y
 	var submersion := clampf(depth / maxf(probe.submersion_depth, 0.001), 0.0, 1.0)
 
 	var offset := probe_position - rigid_body.global_position
 	var point_velocity := rigid_body.linear_velocity + rigid_body.angular_velocity.cross(offset)
-	var weight_ratio := maxf(probe.buoyancy_weight, 0.0) / total_weight
+	var effective_volume := _get_effective_probe_volume(probe)
+	var volume_ratio := effective_volume / total_volume
 	var water_velocity := sample.surface_velocity * surface_velocity_influence + sample.current_velocity * current_influence
 
-	var buoyancy_direction := sample.normal
-	if not sample.valid or buoyancy_direction.length_squared() <= 0.0001:
-		buoyancy_direction = Vector3.UP
-	else:
+	var buoyancy_direction := Vector3.UP
+	if use_surface_normal_for_buoyancy and sample.valid and sample.normal.length_squared() > 0.0001:
+		buoyancy_direction = sample.normal
 		buoyancy_direction = buoyancy_direction.normalized()
-	var buoyancy_force := buoyancy_direction * rigid_body.mass * gravity * buoyancy_strength * weight_ratio * submersion
+	var displaced_volume := effective_volume * submersion
+	var buoyancy_force := buoyancy_direction * water_density * gravity * buoyancy_strength * displaced_volume
 	var vertical_speed := point_velocity.dot(Vector3.UP) - water_velocity.dot(Vector3.UP)
-	var vertical_damping_force := -Vector3.UP * vertical_speed * probe.vertical_damping * rigid_body.mass * weight_ratio * submersion
+	var vertical_damping_force := -Vector3.UP * vertical_speed * probe.vertical_damping * rigid_body.mass * volume_ratio * submersion
 
 	var horizontal_point_velocity := Vector3(point_velocity.x, 0.0, point_velocity.z)
 	var horizontal_surface_velocity := Vector3(sample.surface_velocity.x, 0.0, sample.surface_velocity.z) * surface_velocity_influence
 	var horizontal_current_velocity := Vector3(sample.current_velocity.x, 0.0, sample.current_velocity.z) * current_influence
-	var water_drag_force := (horizontal_surface_velocity - horizontal_point_velocity) * probe.water_drag * rigid_body.mass * weight_ratio * submersion
-	var current_drag_force := (horizontal_current_velocity - horizontal_point_velocity) * probe.current_drag * rigid_body.mass * weight_ratio * submersion
+	var water_drag_force := (horizontal_surface_velocity - horizontal_point_velocity) * probe.water_drag * rigid_body.mass * volume_ratio * submersion
+	var current_drag_force := (horizontal_current_velocity - horizontal_point_velocity) * probe.current_drag * rigid_body.mass * volume_ratio * submersion
 
 	var total_force := buoyancy_force + vertical_damping_force + water_drag_force + current_drag_force
+	if max_probe_acceleration > 0.0:
+		var max_force := rigid_body.mass * volume_ratio * max_probe_acceleration
+		if max_force > 0.0 and total_force.length_squared() > max_force * max_force:
+			total_force = total_force.normalized() * max_force
 	probe.set_debug_state(Vector3(probe_position.x, sample.height, probe_position.z), total_force, sample.valid)
 	if submersion <= 0.0:
 		return

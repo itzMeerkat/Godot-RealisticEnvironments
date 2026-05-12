@@ -7,6 +7,7 @@ const PANEL_SIZE := Vector2(420, 560)
 var water : OceanSystem
 var wind_source : Node
 var sky_system : Node
+var buoyant_body : BuoyantBody
 
 var _panel : PanelContainer
 var _fps_label : Label
@@ -19,10 +20,16 @@ func _ready() -> void:
 	_build()
 
 
-func setup(ocean_system : OceanSystem, active_wind_source : Node = null, active_sky_system : Node = null) -> void:
+func setup(
+	ocean_system : OceanSystem,
+	active_wind_source : Node = null,
+	active_sky_system : Node = null,
+	active_buoyant_body : BuoyantBody = null
+) -> void:
 	water = ocean_system
 	wind_source = active_wind_source if active_wind_source != null else water.get_wind_source()
 	sky_system = active_sky_system
+	buoyant_body = active_buoyant_body
 	if _controls_ready:
 		_rebuild()
 
@@ -97,6 +104,10 @@ func _build() -> void:
 	if sky_system:
 		content.add_child(HSeparator.new())
 		_add_sky_controls(content)
+
+	if buoyant_body:
+		content.add_child(HSeparator.new())
+		_add_buoyancy_controls(content)
 
 	content.add_child(HSeparator.new())
 	_add_ocean_controls(content)
@@ -229,6 +240,24 @@ func _add_ocean_controls(parent : VBoxContainer) -> void:
 	foam_intensity.name = "FoamIntensity"
 	foam_threshold.name = "FoamThreshold"
 	foam_softness.name = "FoamSoftness"
+
+
+func _add_buoyancy_controls(parent : VBoxContainer) -> void:
+	var title := Label.new()
+	title.text = "Buoyancy"
+	title.add_theme_font_size_override("font_size", 15)
+	parent.add_child(title)
+
+	var use_normal := _add_check_row(parent, "Use Surface Normal", "When enabled, buoyancy pushes along the sampled water normal. When disabled, buoyancy pushes straight up for more stable boats.")
+	use_normal.name = "BuoyancyUseSurfaceNormal"
+	use_normal.toggled.connect(func(value : bool) -> void:
+		if not _is_syncing and buoyant_body:
+			buoyant_body.use_surface_normal_for_buoyancy = value
+	)
+
+	_add_bound_param(parent, "Buoyancy Strength", "Global multiplier for all buoyancy volume forces.", buoyant_body.buoyancy_strength, 0.0, 10.0, 0.01, func(value : float) -> void: buoyant_body.buoyancy_strength = value, true)
+	_add_bound_param(parent, "Water Density", "Seawater is usually around 1025 kg/m^3; freshwater is around 1000 kg/m^3.", buoyant_body.water_density, 1.0, 2000.0, 1.0, func(value : float) -> void: buoyant_body.water_density = value, true)
+	_add_bound_param(parent, "Max Probe Accel", "Caps each buoyancy volume's acceleration contribution to avoid numerical blowups.", buoyant_body.max_probe_acceleration, 0.0, 100.0, 0.1, func(value : float) -> void: buoyant_body.max_probe_acceleration = value, true)
 
 
 func _add_far_lod_controls(parent : VBoxContainer) -> void:
@@ -509,6 +538,8 @@ func _populate_values() -> void:
 		_set_named_spin("SkySunEnergy", sky_system.sun_energy_multiplier)
 		_set_named_spin("SkyMoonEnergy", sky_system.moon_energy_multiplier)
 		_set_named_spin("SkyStarBrightness", sky_system.star_brightness)
+	if buoyant_body:
+		_set_named_check("BuoyancyUseSurfaceNormal", buoyant_body.use_surface_normal_for_buoyancy)
 
 	_is_syncing = false
 

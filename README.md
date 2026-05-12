@@ -94,6 +94,9 @@ Each system folder includes a `HOW_TO_USE.md` file for setup instructions and a 
 
 Run the `demo/main.tscn`. You will see everything.
 
+Wooden boat model is from: https://sketchfab.com/3d-models/wooden-boat-55118b23a5494e4b81eed831b9f8c871
+
+
 ## License
 
 MIT license.

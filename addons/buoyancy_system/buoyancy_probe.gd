@@ -4,6 +4,9 @@ extends Marker3D
 ## A manually placed buoyancy sample point. Add these under a RigidBody3D and
 ## position them around the hull/bottom volume that should interact with water.
 
+@export_range(0.0, 1000.0, 0.01, "or_greater") var volume_cubic_meters := 1.0
+@export_range(0.0, 1.0, 0.01) var buoyancy_efficiency := 1.0
+@export_range(0.0, 1.0, 0.01) var flooding_fraction := 0.0
 @export_range(0.0, 100.0, 0.01, "or_greater") var buoyancy_weight := 1.0
 @export_range(0.01, 100.0, 0.01, "or_greater") var submersion_depth := 1.0
 @export_range(0.0, 100.0, 0.01, "or_greater") var vertical_damping := 2.0
