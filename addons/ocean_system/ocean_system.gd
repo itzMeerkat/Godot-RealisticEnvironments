@@ -6,7 +6,7 @@ extends MeshInstance3D
 
 const WATER_MAT := preload('res://addons/ocean_system/mat_water.tres')
 const MAX_CASCADES := 8
-const MAX_HULL_CUTOUTS := 8
+const MAX_HULL_CUTOUTS := 16
 const SPECTRUM_SLOT_COUNT := 2
 const SURFACE_QUERY_WORKGROUP_SIZE := 64
 const SURFACE_QUERY_BYTES_PER_POINT := 16
@@ -772,9 +772,13 @@ func _update_hull_cutouts() -> void:
 	var centers := PackedVector4Array()
 	var axes := PackedVector4Array()
 	var shapes := PackedVector4Array()
+	var verticals := PackedVector4Array()
+	var widths := PackedVector4Array()
 	centers.resize(MAX_HULL_CUTOUTS)
 	axes.resize(MAX_HULL_CUTOUTS)
 	shapes.resize(MAX_HULL_CUTOUTS)
+	verticals.resize(MAX_HULL_CUTOUTS)
+	widths.resize(MAX_HULL_CUTOUTS)
 
 	var cutout_count := 0
 	for node in get_tree().get_nodes_in_group(&"water_hull_cutout"):
@@ -795,12 +799,47 @@ func _update_hull_cutouts() -> void:
 		)
 		axes[cutout_count] = Vector4(right.x, right.z, forward.x, forward.z)
 		shapes[cutout_count] = Vector4(cutout.half_extents.x, cutout.half_extents.y, cutout.foam_amount, 0.0)
+		verticals[cutout_count] = Vector4(-100000.0, 100000.0, 1.0, 0.0)
+		widths[cutout_count] = Vector4(cutout.half_extents.x, cutout.half_extents.x, 0.0, 0.0)
 		cutout_count += 1
+
+	for node in get_tree().get_nodes_in_group(&"water_hull_volume"):
+		var hull_volume := node as HullVolume
+		if hull_volume == null or not hull_volume.enabled:
+			continue
+		for segment in hull_volume.get_exclusion_segments():
+			if cutout_count >= MAX_HULL_CUTOUTS:
+				break
+			var center : Vector3 = segment["center"]
+			var segment_right : Vector3 = segment["right"]
+			var segment_forward : Vector3 = segment["forward"]
+			var half_extents : Vector2 = segment["half_extents"]
+			var half_widths : Vector2 = segment["half_widths"]
+			centers[cutout_count] = Vector4(
+				center.x,
+				center.y,
+				center.z,
+				float(segment["feather"])
+			)
+			axes[cutout_count] = Vector4(segment_right.x, segment_right.z, segment_forward.x, segment_forward.z)
+			shapes[cutout_count] = Vector4(half_extents.x, half_extents.y, float(segment["foam_amount"]), 1.0)
+			widths[cutout_count] = Vector4(half_widths.x, half_widths.y, 0.0, 0.0)
+			verticals[cutout_count] = Vector4(
+				float(segment["min_y"]),
+				float(segment["max_y"]),
+				float(segment["height_feather"]),
+				0.0
+			)
+			cutout_count += 1
+		if cutout_count >= MAX_HULL_CUTOUTS:
+			break
 
 	_set_water_shader_parameter(&'hull_cutout_count', cutout_count)
 	_set_water_shader_parameter(&'hull_cutout_centers', centers)
 	_set_water_shader_parameter(&'hull_cutout_axes', axes)
 	_set_water_shader_parameter(&'hull_cutout_shapes', shapes)
+	_set_water_shader_parameter(&'hull_cutout_verticals', verticals)
+	_set_water_shader_parameter(&'hull_cutout_widths', widths)
 
 
 func _set_water_shader_parameter(parameter: StringName, value: Variant) -> void:

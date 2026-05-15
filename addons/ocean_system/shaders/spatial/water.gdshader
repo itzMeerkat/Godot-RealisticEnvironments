@@ -6,7 +6,7 @@ render_mode world_vertex_coords, cull_disabled, shadows_disabled;
  */
 
 #define MAX_CASCADES 8
-#define MAX_HULL_CUTOUTS 8
+#define MAX_HULL_CUTOUTS 16
 
 uniform vec4 water_color : source_color;
 uniform vec4 foam_color : source_color;
@@ -34,7 +34,9 @@ uniform float far_foam_threshold_boost : hint_range(0.0, 1.0) = 0.2;
 uniform int hull_cutout_count = 0;
 uniform vec4 hull_cutout_centers[MAX_HULL_CUTOUTS]; // xyz center, feather in meters
 uniform vec4 hull_cutout_axes[MAX_HULL_CUTOUTS];    // right.xz, forward.xz
-uniform vec4 hull_cutout_shapes[MAX_HULL_CUTOUTS];  // half width, half length, foam amount, unused
+uniform vec4 hull_cutout_shapes[MAX_HULL_CUTOUTS];  // max half width, half length, foam amount, shape type
+uniform vec4 hull_cutout_verticals[MAX_HULL_CUTOUTS]; // min y, max y, height feather, unused
+uniform vec4 hull_cutout_widths[MAX_HULL_CUTOUTS]; // start half width, end half width, unused, unused
 
 group_uniforms cascade_data;
 uniform vec4 map_scales[MAX_CASCADES];               // Scales for displacement/normal maps. Packed: [uv scale, displacement scale, normal scale]
@@ -72,12 +74,25 @@ float get_hull_cutout_sdf(vec3 world_position, int index) {
 	vec4 center = hull_cutout_centers[index];
 	vec4 axes = hull_cutout_axes[index];
 	vec4 shape = hull_cutout_shapes[index];
+	vec4 widths = hull_cutout_widths[index];
 	vec2 delta = world_position.xz - center.xz;
 	vec2 right = normalize(axes.xy);
 	vec2 forward = normalize(axes.zw);
 	vec2 local = vec2(dot(delta, right), dot(delta, forward));
-	vec2 q = abs(local) - shape.xy;
+	float half_length = max(shape.y, 0.001);
+	float half_width = shape.x;
+	if (shape.w > 0.5) {
+		float t = clamp(local.y / (half_length * 2.0) + 0.5, 0.0, 1.0);
+		half_width = mix(widths.x, widths.y, t);
+	}
+	vec2 q = vec2(abs(local.x) - half_width, abs(local.y) - half_length);
 	return length(max(q, vec2(0.0))) + min(max(q.x, q.y), 0.0);
+}
+
+float get_hull_cutout_height_mask(vec3 world_position, int index) {
+	vec4 vertical = hull_cutout_verticals[index];
+	float height_feather = max(vertical.z, 0.001);
+	return 1.0 - smoothstep(vertical.y, vertical.y + height_feather, world_position.y);
 }
 
 void vertex() {
@@ -141,18 +156,17 @@ vec4 texture_bicubic(in sampler2DArray sampler, in vec3 uvw) {
 }
 
 void fragment() {
-	float hull_sdf = 999999.0;
 	float hull_edge_foam = 0.0;
 	for (int i = 0; i < min(hull_cutout_count, MAX_HULL_CUTOUTS); ++i) {
 		float cutout_sdf = get_hull_cutout_sdf(water_world_position, i);
-		if (cutout_sdf < 0.0) {
+		float height_mask = get_hull_cutout_height_mask(water_world_position, i);
+		if (cutout_sdf < 0.0 && height_mask > 0.5) {
 			discard;
 		}
 		vec4 center = hull_cutout_centers[i];
 		vec4 shape = hull_cutout_shapes[i];
 		float feather = max(center.w, 0.001);
-		hull_sdf = min(hull_sdf, cutout_sdf);
-		hull_edge_foam = max(hull_edge_foam, (1.0 - smoothstep(0.0, feather, cutout_sdf)) * shape.z);
+		hull_edge_foam = max(hull_edge_foam, (1.0 - smoothstep(0.0, feather, cutout_sdf)) * shape.z * height_mask);
 	}
 
 	float dist = distance_to_camera;

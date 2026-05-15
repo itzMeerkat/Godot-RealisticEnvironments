@@ -24,7 +24,8 @@ intersections look acceptable.
   - Discards water fragments inside each hull cutout rectangle.
   - Adds foam near the cutout edge to hide the hard boundary.
 - `demo/floating_box.tscn`
-  - Contains a `FloatingBox/WaterHullCutout` node configured for the demo boat.
+  - Uses `HullVolume` from the buoyancy system for the demo boat. The legacy
+    `WaterHullCutout` path remains available for simple rectangular masks.
 
 ## How It Works
 
@@ -77,7 +78,7 @@ Use these properties on `WaterHullCutout`:
   - Increase this to hide artifacts.
   - Decrease this if the boat has too much white foam around it.
 
-For the current demo boat, `FloatingBox/WaterHullCutout` starts with:
+For a simple boat, a `WaterHullCutout` can start with:
 
 ```text
 half_extents = Vector2(3.6, 12.5)
@@ -87,7 +88,7 @@ foam_amount = 0.85
 
 ## Multiple Boats
 
-The shader supports up to `MAX_HULL_CUTOUTS` cutouts. The current value is `8`
+The shader supports up to `MAX_HULL_CUTOUTS` cutouts. The current value is `16`
 in both `ocean_system.gd` and `water.gdshader`.
 
 To support more boats:
@@ -112,6 +113,8 @@ For better visuals later:
 - Add a separate wake/foam emitter following the hull sides and stern.
 - Replace the rectangular footprint with several smaller cutouts for complex
   hulls.
+- Use `HullVolume` from the buoyancy system as the shared buoyancy and water
+  exclusion source for editable hull-shaped volumes.
 - Add a bow/stern-specific foam mask so the waterline reads less rectangular.
 - Use a low transparent waterline mesh on the boat to further hide the edge.
 

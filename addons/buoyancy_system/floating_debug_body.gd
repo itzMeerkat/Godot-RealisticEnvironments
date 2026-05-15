@@ -1,44 +1,8 @@
 @tool
 class_name FloatingDebugBody
 extends RigidBody3D
-## Debug helper for a floating rigid body. Enable auto_sync_debug_layout to
-## drive collision, debug bounds, probes, and mass from one exported size.
-
-@export var auto_sync_debug_layout := false :
-	set(value):
-		auto_sync_debug_layout = value
-		if auto_sync_debug_layout:
-			_apply_debug_size()
-
-@export var box_size := Vector3(3.0, 1.0, 2.0) :
-	set(value):
-		box_size = Vector3(maxf(value.x, 0.05), maxf(value.y, 0.05), maxf(value.z, 0.05))
-		if auto_sync_debug_layout:
-			_apply_debug_size()
-
-@export_range(0.0, 1.0, 0.01) var probe_inset_ratio := 0.18 :
-	set(value):
-		probe_inset_ratio = clampf(value, 0.0, 0.45)
-		if auto_sync_debug_layout:
-			_apply_debug_size()
-
-@export_range(-2.0, 2.0, 0.01) var probe_height_above_center := 0.18 :
-	set(value):
-		probe_height_above_center = value
-		if auto_sync_debug_layout:
-			_apply_debug_size()
-
-@export var auto_mass_from_size := true :
-	set(value):
-		auto_mass_from_size = value
-		if auto_sync_debug_layout:
-			_apply_debug_size()
-
-@export_range(0.01, 1000.0, 0.01, "or_greater") var density := 4.0 :
-	set(value):
-		density = maxf(value, 0.01)
-		if auto_sync_debug_layout:
-			_apply_debug_size()
+## Demo helper for a floating rigid body. It keeps stability settings and draws
+## a simple world-space position trail.
 
 @export_group("Stability")
 @export var use_custom_center_of_mass := true :
@@ -74,8 +38,6 @@ var _history_material : StandardMaterial3D
 
 func _ready() -> void:
 	_apply_center_of_mass()
-	if auto_sync_debug_layout:
-		_apply_debug_size()
 	_ensure_history_nodes()
 
 
@@ -85,64 +47,12 @@ func _physics_process(_delta: float) -> void:
 	_record_history_point()
 
 
-func _notification(what: int) -> void:
-	if auto_sync_debug_layout and what == NOTIFICATION_CHILD_ORDER_CHANGED:
-		_apply_debug_size()
-
-
-func _apply_debug_size() -> void:
-	if not is_inside_tree():
-		return
-
-	var mesh_instance := get_node_or_null("Mesh") as MeshInstance3D
-	if mesh_instance != null:
-		var box_mesh := mesh_instance.mesh as BoxMesh
-		if box_mesh == null:
-			box_mesh = BoxMesh.new()
-			mesh_instance.mesh = box_mesh
-		box_mesh.size = box_size
-
-	var collision := get_node_or_null("CollisionShape3D") as CollisionShape3D
-	if collision != null:
-		var box_shape := collision.shape as BoxShape3D
-		if box_shape == null:
-			box_shape = BoxShape3D.new()
-			collision.shape = box_shape
-		box_shape.size = box_size
-
-	var bounds := get_node_or_null("DebugBounds") as BuoyancyDebugBounds
-	if bounds != null:
-		bounds.size = box_size + Vector3(0.08, 0.08, 0.08)
-
-	_update_probe("ProbeFL", -1.0, -1.0)
-	_update_probe("ProbeFR",  1.0, -1.0)
-	_update_probe("ProbeBL", -1.0,  1.0)
-	_update_probe("ProbeBR",  1.0,  1.0)
-
-	if auto_mass_from_size:
-		mass = maxf(box_size.x * box_size.y * box_size.z * density, 0.01)
-
-
 func _apply_center_of_mass() -> void:
 	if use_custom_center_of_mass:
 		center_of_mass_mode = RigidBody3D.CENTER_OF_MASS_MODE_CUSTOM
 		center_of_mass = custom_center_of_mass
 	else:
 		center_of_mass_mode = RigidBody3D.CENTER_OF_MASS_MODE_AUTO
-
-
-func _update_probe(name: StringName, x_sign: float, z_sign: float) -> void:
-	var probe := get_node_or_null(NodePath(String(name))) as BuoyancyProbe
-	if probe == null:
-		return
-	var half := box_size * 0.5
-	var inset := Vector2(box_size.x, box_size.z) * probe_inset_ratio
-	probe.position = Vector3(
-		x_sign * maxf(half.x - inset.x, 0.0),
-		probe_height_above_center,
-		z_sign * maxf(half.z - inset.y, 0.0)
-	)
-	probe.submersion_depth = maxf(box_size.y * 1.4, 0.05)
 
 
 func clear_position_history() -> void:

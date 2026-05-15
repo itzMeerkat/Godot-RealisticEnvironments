@@ -2,136 +2,86 @@
 
 [ext_resource type="PackedScene" uid="uid://31tq5bov66g3" path="res://demo/boat/wooden_boat.glb" id="1_boat"]
 [ext_resource type="Script" uid="uid://bvoan7j4oppub" path="res://addons/buoyancy_system/floating_debug_body.gd" id="2_float_debug"]
-[ext_resource type="Script" uid="uid://sv1g7dnbjc2w" path="res://addons/buoyancy_system/buoyancy_debug_bounds.gd" id="3_bounds"]
 [ext_resource type="Script" uid="uid://cv6g660t6s5av" path="res://addons/buoyancy_system/buoyant_body.gd" id="4_buoyant"]
-[ext_resource type="Script" uid="uid://dw28d5srfncqp" path="res://addons/buoyancy_system/buoyancy_probe.gd" id="5_probe"]
-[ext_resource type="Script" path="res://addons/ocean_system/water_hull_cutout.gd" id="6_cutout"]
-
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_4l31g"]
-transparency = 1
-no_depth_test = true
-shading_mode = 0
-albedo_color = Color(1, 0.84, 0.12, 1)
-
-[sub_resource type="ImmediateMesh" id="ImmediateMesh_8dk2k"]
+[ext_resource type="Script" uid="uid://3lbjjewks1m8" path="res://addons/buoyancy_system/hull_volume.gd" id="6_hull_volume"]
+[ext_resource type="Script" uid="uid://uljc7183vyx4" path="res://addons/buoyancy_system/hull_volume_section.gd" id="7_hull_section"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_float_demo"]
 size = Vector3(6.5, 2.4, 25)
 
-[sub_resource type="ImmediateMesh" id="ImmediateMesh_35oko"]
+[sub_resource type="Resource" id="HullVolumeSection_bow"]
+script = ExtResource("7_hull_section")
+z_position = -14.5
+points = PackedVector2Array(-3, 0.2, -2, -2, 2, -2, 3, 0.2)
 
-[sub_resource type="ImmediateMesh" id="ImmediateMesh_kmnh5"]
+[sub_resource type="Resource" id="HullVolumeSection_mid"]
+script = ExtResource("7_hull_section")
+z_position = 5.0
+points = PackedVector2Array(-5, 0.35, -3, -2, 3, -2, 5, 0.35)
 
-[sub_resource type="ImmediateMesh" id="ImmediateMesh_0qq2w"]
+[sub_resource type="Resource" id="HullVolumeSection_stern"]
+script = ExtResource("7_hull_section")
+z_position = 18.0
+points = PackedVector2Array(-1.2, 0.15, -0.8, -2, 0.8, -2, 1.2, 0.15)
 
-[sub_resource type="ImmediateMesh" id="ImmediateMesh_4kjtq"]
+[sub_resource type="ImmediateMesh" id="ImmediateMesh_4l31g"]
 
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_ducaw"]
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_8dk2k"]
+transparency = 1
+no_depth_test = true
+shading_mode = 0
+albedo_color = Color(0.1, 0.8, 1, 0.55)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_35oko"]
 transparency = 1
 no_depth_test = true
 shading_mode = 0
 albedo_color = Color(0.2, 1, 0.45, 1)
 
-[sub_resource type="ImmediateMesh" id="ImmediateMesh_dr3n4"]
+[sub_resource type="ImmediateMesh" id="ImmediateMesh_kmnh5"]
 
 [node name="FloatingBox" type="RigidBody3D" unique_id=1779372444]
 mass = 200.0
+center_of_mass_mode = 1
+center_of_mass = Vector3(0, -1.4, -1.5)
 linear_damp = 0.2
 angular_damp = 1.8
 script = ExtResource("2_float_debug")
-auto_mass_from_size = false
 custom_center_of_mass = Vector3(0, -1.4, -1.5)
 
 [node name="Sketchfab_Scene" parent="." unique_id=2076375072 instance=ExtResource("1_boat")]
 transform = Transform3D(0.1, 0, 0, 0, 0.1, 0, 0, 0, 0.1, 0, -2.2113018, 0)
 
-[node name="DebugBounds" type="MeshInstance3D" parent="." unique_id=1023185705]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.2, -0.2, -2)
-sorting_offset = 1000.0
-material_override = SubResource("StandardMaterial3D_4l31g")
-cast_shadow = 0
-extra_cull_margin = 10000.0
-mesh = SubResource("ImmediateMesh_8dk2k")
-script = ExtResource("3_bounds")
-size = Vector3(7, 3, 26)
-color = Color(1, 0.84, 0.12, 1)
-
 [node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=25228791]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.2, -0.2, -2)
 shape = SubResource("BoxShape3D_float_demo")
 
-[node name="WaterHullCutout" type="Node3D" parent="." unique_id=1980283015]
+[node name="HullVolume" type="Node3D" parent="." unique_id=1980283015]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.2, 0, -2)
-script = ExtResource("6_cutout")
-half_extents = Vector2(3.6, 12.5)
+script = ExtResource("6_hull_volume")
+sections = Array[ExtResource("7_hull_section")]([SubResource("HullVolumeSection_bow"), SubResource("HullVolumeSection_mid"), SubResource("HullVolumeSection_stern")])
+buoyancy_efficiency = 0.004
+exclusion_margin = 0.45
+exclusion_height_above_origin = 0.35
+exclusion_height_below_origin = 2.5
+exclusion_height_feather = 0.3
 feather = 0.9
+
+[node name="DebugDraw" type="MeshInstance3D" parent="HullVolume" unique_id=1102676112]
+cast_shadow = 0
+extra_cull_margin = 10000.0
+mesh = SubResource("ImmediateMesh_4l31g")
+surface_material_override/0 = SubResource("StandardMaterial3D_8dk2k")
 
 [node name="BuoyantBody" type="Node" parent="." unique_id=1420237142]
 script = ExtResource("4_buoyant")
-use_surface_normal_for_buoyancy = false
 surface_velocity_influence = 0.6
 current_influence = 0.6
 max_probe_acceleration = 28.0
 
-[node name="ProbeFL" type="Marker3D" parent="." unique_id=974219295]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4.172822, -1.5464209, -12.8)
-script = ExtResource("5_probe")
-volume_cubic_meters = 0.065
-submersion_depth = 1.2
-vertical_damping = 1.4
-water_drag = 0.45
-current_drag = 0.65
-
-[node name="DebugDraw" type="MeshInstance3D" parent="ProbeFL" unique_id=797713110]
-cast_shadow = 0
-extra_cull_margin = 10000.0
-mesh = SubResource("ImmediateMesh_35oko")
-
-[node name="ProbeFR" type="Marker3D" parent="." unique_id=1465469389]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 4.691939, -1.5464209, -12.8)
-script = ExtResource("5_probe")
-volume_cubic_meters = 0.065
-submersion_depth = 1.2
-vertical_damping = 1.4
-water_drag = 0.45
-current_drag = 0.65
-
-[node name="DebugDraw" type="MeshInstance3D" parent="ProbeFR" unique_id=1901910504]
+[node name="PositionHistory" type="MeshInstance3D" parent="." unique_id=1495800927]
+top_level = true
+material_override = SubResource("StandardMaterial3D_35oko")
 cast_shadow = 0
 extra_cull_margin = 10000.0
 mesh = SubResource("ImmediateMesh_kmnh5")
-
-[node name="ProbeBL" type="Marker3D" parent="." unique_id=284884298]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3.9762235, -1.5464209, 8.8)
-script = ExtResource("5_probe")
-volume_cubic_meters = 0.065
-submersion_depth = 1.2
-vertical_damping = 1.4
-water_drag = 0.45
-current_drag = 0.65
-
-[node name="DebugDraw" type="MeshInstance3D" parent="ProbeBL" unique_id=1563771963]
-cast_shadow = 0
-extra_cull_margin = 10000.0
-mesh = SubResource("ImmediateMesh_0qq2w")
-
-[node name="ProbeBR" type="Marker3D" parent="." unique_id=1159939396]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 4.1732955, -1.5464209, 8.8)
-script = ExtResource("5_probe")
-volume_cubic_meters = 0.065
-submersion_depth = 1.2
-vertical_damping = 1.4
-water_drag = 0.45
-current_drag = 0.65
-
-[node name="DebugDraw" type="MeshInstance3D" parent="ProbeBR" unique_id=487552143]
-cast_shadow = 0
-extra_cull_margin = 10000.0
-mesh = SubResource("ImmediateMesh_4kjtq")
-
-[node name="PositionHistory" type="MeshInstance3D" parent="." unique_id=1495800927]
-top_level = true
-material_override = SubResource("StandardMaterial3D_ducaw")
-cast_shadow = 0
-extra_cull_margin = 10000.0
-mesh = SubResource("ImmediateMesh_dr3n4")
