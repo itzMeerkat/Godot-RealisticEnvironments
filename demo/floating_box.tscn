@@ -62,10 +62,11 @@ script = ExtResource("6_hull_volume")
 sections = Array[ExtResource("7_hull_section")]([SubResource("HullVolumeSection_bow"), SubResource("HullVolumeSection_mid"), SubResource("HullVolumeSection_stern")])
 buoyancy_efficiency = 0.004
 exclusion_margin = 0.45
-exclusion_height_above_origin = 0.35
+exclusion_height_above_origin = 4.92
 exclusion_height_below_origin = 2.5
 exclusion_height_feather = 0.3
 feather = 0.9
+foam_amount = 0.0
 
 [node name="DebugDraw" type="MeshInstance3D" parent="HullVolume" unique_id=1102676112]
 cast_shadow = 0
