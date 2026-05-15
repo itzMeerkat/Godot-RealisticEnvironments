@@ -10,7 +10,7 @@
 [ext_resource type="AudioStream" uid="uid://ck6vmandgjhy0" path="res://demo/media/wind_loop.wav" id="8_6r5si"]
 [ext_resource type="PackedScene" uid="uid://bm4bg7uoyr0xy" path="res://systems/debug/ocean_debug_panel.tscn" id="9_gb4mm"]
 [ext_resource type="Script" uid="uid://btyuqnmfuyrr6" path="res://addons/wind_system/wind_system.gd" id="10_tfjfv"]
-[ext_resource type="PackedScene" path="res://addons/sky_system/sky_system.tscn" id="11_sky"]
+[ext_resource type="PackedScene" uid="uid://ckdc57htjsaad" path="res://addons/sky_system/sky_system.tscn" id="11_sky"]
 [ext_resource type="PackedScene" path="res://addons/current_system/current_system.tscn" id="12_current"]
 [ext_resource type="PackedScene" uid="uid://b2pleaxvcdai8" path="res://demo/floating_box.tscn" id="13_floating_box"]
 
@@ -93,9 +93,9 @@ shader_parameter/normal_strength = 1.0
 shader_parameter/foam_intensity = 1.25
 shader_parameter/foam_threshold = 0.05
 shader_parameter/foam_softness = 0.35
-shader_parameter/planar_reflection_enabled = false
+shader_parameter/planar_reflection_enabled = true
 shader_parameter/planar_reflection_view_projection = Projection(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1)
-shader_parameter/planar_reflection_strength = 0.0
+shader_parameter/planar_reflection_strength = 0.42
 shader_parameter/planar_reflection_distortion = 0.018
 shader_parameter/planar_reflection_fresnel_power = 4.0
 shader_parameter/planar_reflection_plane_y = 0.0
@@ -123,7 +123,7 @@ shader_parameter/displacements = SubResource("Texture2DArrayRD_fdg1k")
 shader_parameter/normals = SubResource("Texture2DArrayRD_6g5ly")
 shader_parameter/previous_displacements = SubResource("Texture2DArrayRD_ucu34")
 shader_parameter/previous_normals = SubResource("Texture2DArrayRD_f8mb2")
-shader_parameter/wave_blend_alpha = 0.5597360000001139
+shader_parameter/wave_blend_alpha = 0.6285475309482141
 
 [sub_resource type="Resource" id="Resource_adqv5"]
 script = ExtResource("2_pw5n6")
@@ -182,6 +182,7 @@ current_direction = 70.0
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -45, 0, 475)
 material_override = SubResource("ShaderMaterial_ycdy4")
 extra_cull_margin = 1000.0
+gi_mode = 0
 skeleton = NodePath("")
 use_external_wind = true
 wind_source_path = NodePath("../WindSystem")

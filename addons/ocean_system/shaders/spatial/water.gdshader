@@ -246,7 +246,6 @@ void fragment() {
 		float reflected_geometry_mask = reflected_sample.a;
 		float reflection_amount = planar_reflection_strength * water_reflectance * foam_mask * reflection_in_bounds * reflected_geometry_mask;
 		base_albedo = mix(base_albedo, reflected_sample.rgb, reflection_amount);
-		EMISSION = reflected_sample.rgb * reflection_amount * 0.35;
 	}
 
 	ALBEDO = base_albedo;
