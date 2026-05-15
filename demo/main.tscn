@@ -93,6 +93,12 @@ shader_parameter/normal_strength = 1.0
 shader_parameter/foam_intensity = 1.25
 shader_parameter/foam_threshold = 0.05
 shader_parameter/foam_softness = 0.35
+shader_parameter/planar_reflection_enabled = false
+shader_parameter/planar_reflection_view_projection = Projection(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1)
+shader_parameter/planar_reflection_strength = 0.0
+shader_parameter/planar_reflection_distortion = 0.018
+shader_parameter/planar_reflection_fresnel_power = 4.0
+shader_parameter/planar_reflection_plane_y = 0.0
 shader_parameter/use_bicubic_normals = false
 shader_parameter/fragment_cascade_limit = 3
 shader_parameter/enable_far_lod = true
@@ -104,6 +110,12 @@ shader_parameter/far_low_frequency_tile_length = 64.0
 shader_parameter/far_normal_strength = 0.14
 shader_parameter/far_foam_coverage = 0.24
 shader_parameter/far_foam_threshold_boost = 0.2
+shader_parameter/hull_cutout_count = 2
+shader_parameter/hull_cutout_centers = PackedVector4Array(-451.30923, 1.6, 546.88055, 0.9, -451.30923, 1.6, 530.63055, 0.9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+shader_parameter/hull_cutout_axes = PackedVector4Array(-1, 8.742278e-08, -8.742278e-08, -1, -1, 8.742278e-08, -8.742278e-08, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+shader_parameter/hull_cutout_shapes = PackedVector4Array(5.45, 10.2, 0, 1, 5.45, 6.95, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+shader_parameter/hull_cutout_verticals = PackedVector4Array(-0.9, 6.52, 0.3, 0, -0.9, 6.52, 0.3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+shader_parameter/hull_cutout_widths = PackedVector4Array(3.45, 5.45, 0, 0, 5.45, 1.6500001, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 shader_parameter/map_scales = PackedVector4Array(0.011363637, 0.011363637, 1, 1, 0.01754386, 0.01754386, 0.75, 1, 0.0625, 0.0625, 0, 0.25)
 shader_parameter/spectrum_blend_states = PackedVector4Array(0, 1, 0, 0, 2, 3, 0, 0, 4, 5, 0, 0)
 shader_parameter/num_cascades = 3
@@ -111,7 +123,7 @@ shader_parameter/displacements = SubResource("Texture2DArrayRD_fdg1k")
 shader_parameter/normals = SubResource("Texture2DArrayRD_6g5ly")
 shader_parameter/previous_displacements = SubResource("Texture2DArrayRD_ucu34")
 shader_parameter/previous_normals = SubResource("Texture2DArrayRD_f8mb2")
-shader_parameter/wave_blend_alpha = 1.0
+shader_parameter/wave_blend_alpha = 0.5597360000001139
 
 [sub_resource type="Resource" id="Resource_adqv5"]
 script = ExtResource("2_pw5n6")
@@ -194,5 +206,4 @@ mass = 10.0
 player_controlled = true
 
 [node name="FloatingBox2" parent="." unique_id=1779372444 instance=ExtResource("13_floating_box")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -385.68594, 0, 526.4163)
-player_controlled = false
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -428.5996, 0, 535.4397)

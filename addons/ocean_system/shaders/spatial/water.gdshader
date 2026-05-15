@@ -20,6 +20,13 @@ uniform float normal_strength : hint_range(0.0, 1.0) = 1.0; // Global normal str
 uniform float foam_intensity : hint_range(0.0, 4.0) = 1.25;
 uniform float foam_threshold : hint_range(0.0, 2.0) = 0.05;
 uniform float foam_softness : hint_range(0.01, 2.0) = 0.35;
+uniform bool planar_reflection_enabled = false;
+uniform sampler2D planar_reflection_texture;
+uniform mat4 planar_reflection_view_projection;
+uniform float planar_reflection_strength : hint_range(0.0, 1.0) = 0.0;
+uniform float planar_reflection_distortion : hint_range(0.0, 0.08) = 0.018;
+uniform float planar_reflection_fresnel_power : hint_range(0.25, 8.0) = 4.0;
+uniform float planar_reflection_plane_y = 0.0;
 uniform bool use_bicubic_normals = false;
 uniform int fragment_cascade_limit : hint_range(1, 8) = 3;
 uniform bool enable_far_lod = true;
@@ -118,11 +125,11 @@ void vertex() {
 		vec3 current_pending = texture(displacements, pending_coords).xyz;
 		vec3 active_displacement = mix(previous_active, current_active, wave_blend_alpha);
 		vec3 pending_displacement = mix(previous_pending, current_pending, wave_blend_alpha);
-			displacement += mix(active_displacement, pending_displacement, blend_state.z) * scales.z * cascade_weight;
-		}
-		VERTEX += displacement;
-		water_world_position = VERTEX;
+		displacement += mix(active_displacement, pending_displacement, blend_state.z) * scales.z * cascade_weight;
 	}
+	VERTEX += displacement;
+	water_world_position = VERTEX;
+}
 
 /** Filter weights for a cubic B-spline. */
 vec4 cubic_weights(float a) {
@@ -205,12 +212,12 @@ void fragment() {
 			gradient += normal_sample.xyw * vec3(scales.ww, 1.0) * cascade_weight;
 		}
 
-			float foam_signal = gradient.z * 0.75 * foam_intensity;
-			float foam_edge = foam_threshold + far_foam_threshold_boost * distance_lod;
-			float foam_distance_fade = mix(1.0, far_foam_coverage, distance_lod);
-			foam_factor = smoothstep(foam_edge, foam_edge + foam_softness, foam_signal) * exp(-dist*0.0075) * foam_distance_fade;
-			foam_factor = max(foam_factor, hull_edge_foam);
-			wave_slope = clamp(length(gradient.xy) * slope_roughness_strength, 0.0, 1.0);
+		float foam_signal = gradient.z * 0.75 * foam_intensity;
+		float foam_edge = foam_threshold + far_foam_threshold_boost * distance_lod;
+		float foam_distance_fade = mix(1.0, far_foam_coverage, distance_lod);
+		foam_factor = smoothstep(foam_edge, foam_edge + foam_softness, foam_signal) * exp(-dist*0.0075) * foam_distance_fade;
+		foam_factor = max(foam_factor, hull_edge_foam);
+		wave_slope = clamp(length(gradient.xy) * slope_roughness_strength, 0.0, 1.0);
 
 		float near_normal_fade = exp(-dist*0.0175);
 		float far_normal_fade = max(far_normal_strength * 0.35, 0.015);
@@ -218,7 +225,31 @@ void fragment() {
 		NORMAL = (VIEW_MATRIX * vec4(normalize(vec3(-gradient.x, 1.0, -gradient.y)), 0.0)).xyz;
 	}
 
-	ALBEDO = mix(water_color.rgb, foam_color.rgb, foam_factor);
+	vec3 base_albedo = mix(water_color.rgb, foam_color.rgb, foam_factor);
+	if (planar_reflection_enabled && planar_reflection_strength > 0.0) {
+		vec3 reflection_project_position = vec3(water_world_position.x, planar_reflection_plane_y, water_world_position.z);
+		vec4 reflection_clip = planar_reflection_view_projection * vec4(reflection_project_position, 1.0);
+		float reflection_w = reflection_clip.w;
+		if (abs(reflection_w) < 0.0001) {
+			reflection_w = 0.0001;
+		}
+		vec2 reflection_uv = reflection_clip.xy / reflection_w * 0.5 + 0.5;
+		reflection_uv.y = 1.0 - reflection_uv.y;
+		reflection_uv += gradient.xy * planar_reflection_distortion;
+		vec2 reflection_bounds = step(vec2(0.0), reflection_uv) * step(reflection_uv, vec2(1.0));
+		float reflection_in_bounds = reflection_bounds.x * reflection_bounds.y * step(0.0001, reflection_clip.w);
+		vec4 reflected_sample = texture(planar_reflection_texture, reflection_uv);
+		float view_dot = clamp(dot(normalize(NORMAL), normalize(VIEW)), 0.0, 1.0);
+		float fresnel = pow(1.0 - view_dot, planar_reflection_fresnel_power);
+		float water_reflectance = 0.04 + 0.96 * fresnel;
+		float foam_mask = 1.0 - foam_factor * 0.85;
+		float reflected_geometry_mask = reflected_sample.a;
+		float reflection_amount = planar_reflection_strength * water_reflectance * foam_mask * reflection_in_bounds * reflected_geometry_mask;
+		base_albedo = mix(base_albedo, reflected_sample.rgb, reflection_amount);
+		EMISSION = reflected_sample.rgb * reflection_amount * 0.35;
+	}
+
+	ALBEDO = base_albedo;
 	METALLIC = 0.0;
 	ROUGHNESS = mix(clear_roughness, foam_roughness, max(foam_factor, wave_slope));
 	SPECULAR = mix(clear_specular, foam_specular, foam_factor);

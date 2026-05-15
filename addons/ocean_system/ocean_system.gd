@@ -5,6 +5,7 @@ extends MeshInstance3D
 ## managing wave generation pipelines.
 
 const WATER_MAT := preload('res://addons/ocean_system/mat_water.tres')
+const OCEAN_REFLECTION_RENDERER := preload('res://addons/ocean_system/ocean_reflection_renderer.gd')
 const MAX_CASCADES := 8
 const MAX_HULL_CUTOUTS := 16
 const SPECTRUM_SLOT_COUNT := 2
@@ -87,6 +88,48 @@ const EXTERNAL_WIND_SPECTRUM_REFRESH_INTERVAL := 0.5
 	set(value):
 		foam_softness = value
 		_set_water_shader_parameter(&'foam_softness', foam_softness)
+
+@export_group('Planar Reflections')
+## Renders a mirrored camera into a texture so floating objects can appear in the water.
+@export var enable_planar_reflections := true :
+	set(value):
+		enable_planar_reflections = value
+		_update_planar_reflection_settings()
+## Maximum side length for the reflection texture after resolution_scale is applied.
+@export_range(128, 4096, 1) var reflection_texture_size := 1024 :
+	set(value):
+		reflection_texture_size = value
+		_update_planar_reflection_settings()
+## Multiplier applied to the main viewport size when sizing the reflection texture.
+@export_range(0.1, 1.0, 0.05) var reflection_resolution_scale := 0.5 :
+	set(value):
+		reflection_resolution_scale = value
+		_update_planar_reflection_settings()
+## Overall reflected color contribution.
+@export_range(0.0, 1.0, 0.01) var reflection_strength := 0.42 :
+	set(value):
+		reflection_strength = value
+		_update_planar_reflection_settings()
+## UV perturbation from wave normals. Higher values make reflections more broken.
+@export_range(0.0, 0.08, 0.001) var reflection_distortion := 0.018 :
+	set(value):
+		reflection_distortion = value
+		_update_planar_reflection_settings()
+## Larger values keep reflections strongest at grazing angles.
+@export_range(0.25, 8.0, 0.05) var reflection_fresnel_power := 4.0 :
+	set(value):
+		reflection_fresnel_power = value
+		_update_planar_reflection_settings()
+## Visual layer assigned to this ocean so the reflection camera can exclude it.
+@export_range(1, 20, 1) var reflection_water_layer := 20 :
+	set(value):
+		reflection_water_layer = value
+		_update_planar_reflection_settings()
+## Objects visible to the reflection camera. The water layer is always removed.
+@export_flags_3d_render var reflection_cull_mask := 0xFFFFF :
+	set(value):
+		reflection_cull_mask = value
+		_update_planar_reflection_settings()
 
 @export_group('External Wind')
 ## When enabled, cascades read speed and direction from wind_source_path.
@@ -289,6 +332,7 @@ var _surface_query_sample_buffer
 var _surface_query_sets := {}
 var _surface_query_has_pending_readback := false
 var _surface_query_pending_points := PackedVector3Array()
+var _reflection_renderer : OceanReflectionRenderer
 
 func _init() -> void:
 	rng.set_seed(1234) # This seed gives big waves!
@@ -317,9 +361,12 @@ func _ready() -> void:
 	_update_hull_cutouts()
 	_update_far_lod_shader_parameters()
 	_update_water_mesh()
+	_setup_planar_reflections()
 
 func _process(delta : float) -> void:
 	_update_follow_camera()
+	if _reflection_renderer != null:
+		_reflection_renderer.set_water_level(water_level)
 	_update_hull_cutouts()
 	_update_external_wind_state()
 	# Update waves once every 1.0/updates_per_second.
@@ -763,6 +810,36 @@ func _update_far_lod_shader_parameters() -> void:
 	_set_water_shader_parameter(&'far_normal_strength', far_normal_strength)
 	_set_water_shader_parameter(&'far_foam_coverage', far_foam_coverage)
 	_set_water_shader_parameter(&'far_foam_threshold_boost', far_foam_threshold_boost)
+
+
+func _setup_planar_reflections() -> void:
+	if Engine.is_editor_hint():
+		return
+	if _reflection_renderer == null:
+		_reflection_renderer = OCEAN_REFLECTION_RENDERER.new()
+		_reflection_renderer.name = "OceanReflectionRenderer"
+		add_child(_reflection_renderer)
+	_reflection_renderer.setup(self, water_level)
+	_update_planar_reflection_settings()
+
+
+func _update_planar_reflection_settings() -> void:
+	if _reflection_renderer != null:
+		_reflection_renderer.enabled = enable_planar_reflections
+		_reflection_renderer.texture_size = reflection_texture_size
+		_reflection_renderer.resolution_scale = reflection_resolution_scale
+		_reflection_renderer.reflection_strength = reflection_strength
+		_reflection_renderer.reflection_distortion = reflection_distortion
+		_reflection_renderer.fresnel_power = reflection_fresnel_power
+		_reflection_renderer.water_layer = reflection_water_layer
+		_reflection_renderer.reflection_cull_mask = reflection_cull_mask
+		_reflection_renderer.setup(self, water_level)
+		return
+	_set_water_shader_parameter(&'planar_reflection_enabled', enable_planar_reflections)
+	_set_water_shader_parameter(&'planar_reflection_strength', reflection_strength if enable_planar_reflections else 0.0)
+	_set_water_shader_parameter(&'planar_reflection_distortion', reflection_distortion)
+	_set_water_shader_parameter(&'planar_reflection_fresnel_power', reflection_fresnel_power)
+	_set_water_shader_parameter(&'planar_reflection_plane_y', water_level)
 
 
 func _update_hull_cutouts() -> void:
