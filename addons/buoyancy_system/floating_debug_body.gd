@@ -4,6 +4,12 @@ extends RigidBody3D
 ## Demo helper for a floating rigid body. It keeps stability settings and draws
 ## a simple world-space position trail.
 
+@export_group("Control")
+@export var player_controlled := false :
+	set(value):
+		player_controlled = value
+		_apply_player_controlled_state()
+
 @export_group("Stability")
 @export var use_custom_center_of_mass := true :
 	set(value):
@@ -36,13 +42,18 @@ var _history_mesh := ImmediateMesh.new()
 var _history_material : StandardMaterial3D
 
 
+func _enter_tree() -> void:
+	_apply_player_controlled_state()
+
+
 func _ready() -> void:
 	_apply_center_of_mass()
 	_ensure_history_nodes()
+	_apply_player_controlled_state()
 
 
 func _physics_process(_delta: float) -> void:
-	if Engine.is_editor_hint() or not debug_draw_position_history:
+	if Engine.is_editor_hint() or not player_controlled or not debug_draw_position_history:
 		return
 	_record_history_point()
 
@@ -98,7 +109,7 @@ func _ensure_history_nodes() -> void:
 func _update_history_visibility() -> void:
 	if _history_mesh_instance == null:
 		return
-	_history_mesh_instance.visible = debug_draw_position_history
+	_history_mesh_instance.visible = player_controlled and debug_draw_position_history
 
 
 func _update_history_material() -> void:
@@ -125,3 +136,45 @@ func _rebuild_history_mesh() -> void:
 		_history_mesh.surface_add_vertex(_history_points[i + 1])
 	_history_mesh.surface_end()
 	_update_history_material()
+
+
+func _apply_player_controlled_state() -> void:
+	_update_history_visibility()
+
+	if not is_inside_tree():
+		return
+
+	for child in _find_descendants():
+		var hull_volume := child as HullVolume
+		if hull_volume == null:
+			continue
+		hull_volume.water_exclusion_enabled = player_controlled
+		hull_volume.debug_draw = player_controlled
+
+	for child in _find_descendants():
+		var cutout := child as WaterHullCutout
+		if cutout == null:
+			continue
+		cutout.enabled = player_controlled
+
+
+func _find_descendants() -> Array[Node]:
+	var descendants : Array[Node] = []
+	for child in get_children():
+		var child_node := child as Node
+		if child_node == null:
+			continue
+		descendants.push_back(child_node)
+		descendants.append_array(_find_descendants_for(child_node))
+	return descendants
+
+
+func _find_descendants_for(root: Node) -> Array[Node]:
+	var descendants : Array[Node] = []
+	for child in root.get_children():
+		var child_node := child as Node
+		if child_node == null:
+			continue
+		descendants.push_back(child_node)
+		descendants.append_array(_find_descendants_for(child_node))
+	return descendants

@@ -50,25 +50,28 @@ script = ExtResource("2_float_debug")
 custom_center_of_mass = Vector3(0, -1.4, -1.5)
 
 [node name="Sketchfab_Scene" parent="." unique_id=2076375072 instance=ExtResource("1_boat")]
-transform = Transform3D(0.1, 0, 0, 0, 0.1, 0, 0, 0, 0.1, 0, -2.2113018, 0)
+transform = Transform3D(-0.1, 0, -8.742278e-09, 0, 0.1, 0, 8.742278e-09, 0, -0.1, 0, -2.2113018, 0)
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=25228791]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.2, -0.2, -2)
 shape = SubResource("BoxShape3D_float_demo")
 
 [node name="HullVolume" type="Node3D" parent="." unique_id=1980283015]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.2, 0, -2)
+transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, -0.2, 0, 3.5549545)
 script = ExtResource("6_hull_volume")
 sections = Array[ExtResource("7_hull_section")]([SubResource("HullVolumeSection_bow"), SubResource("HullVolumeSection_mid"), SubResource("HullVolumeSection_stern")])
 buoyancy_efficiency = 0.004
+water_exclusion_enabled = false
 exclusion_margin = 0.45
 exclusion_height_above_origin = 4.92
 exclusion_height_below_origin = 2.5
 exclusion_height_feather = 0.3
 feather = 0.9
 foam_amount = 0.0
+debug_draw = false
 
 [node name="DebugDraw" type="MeshInstance3D" parent="HullVolume" unique_id=1102676112]
+visible = false
 cast_shadow = 0
 extra_cull_margin = 10000.0
 mesh = SubResource("ImmediateMesh_4l31g")
@@ -81,8 +84,17 @@ current_influence = 0.6
 max_probe_acceleration = 28.0
 
 [node name="PositionHistory" type="MeshInstance3D" parent="." unique_id=1495800927]
+visible = false
 top_level = true
 material_override = SubResource("StandardMaterial3D_35oko")
 cast_shadow = 0
 extra_cull_margin = 10000.0
 mesh = SubResource("ImmediateMesh_kmnh5")
+
+[node name="CameraTargets" type="Node3D" parent="." unique_id=299673246]
+
+[node name="ThirdPersonFocus" type="Marker3D" parent="CameraTargets" unique_id=154085413]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.45, -1.5)
+
+[node name="FirstPersonSeat" type="Marker3D" parent="CameraTargets" unique_id=691940768]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 5.9443974, 2.1455946)
