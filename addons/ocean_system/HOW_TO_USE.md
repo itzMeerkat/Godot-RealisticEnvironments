@@ -9,6 +9,8 @@
 ## 基本设置
 
 - `parameters`：波浪 cascade 列表。每个 `WaveCascadeParameters` 控制一个波浪尺度。
+- `tile_length` 使用米，`wind_speed` 使用 m/s，`fetch_length` 使用 km，`water_depth_meters`
+  使用米。保持这些值对应现实尺寸时，船体、浮力和波浪查询会处在同一尺度下。
 - `map_size`：每层 displacement/normal 贴图分辨率。越高越细，GPU 成本越高。
 - `ocean_radius`、`generated_inner_extent`、`generated_base_cell_size`、`generated_ring_count`：控制近处海面网格密度和范围。
 - `enable_far_lod`、`far_lod_radius`、`far_lod_blend_distance`：控制远海网格和远处细节淡出。

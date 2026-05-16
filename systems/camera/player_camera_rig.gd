@@ -70,7 +70,6 @@ var _last_look_input_time := -1000.0
 var _mode_initialized := false
 
 func _ready() -> void:
-	DemoInputActions.ensure_defaults()
 	_free_look_speed = free_look_velocity
 	_resolve_targets()
 	if current_on_ready:

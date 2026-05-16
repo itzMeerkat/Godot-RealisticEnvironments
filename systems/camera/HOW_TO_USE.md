@@ -35,14 +35,6 @@ Third person -> First person -> Free look -> Third person
 ```
 
 Hold right mouse to look. In free-look mode, movement is driven by Godot
-`InputMap` actions so projects can rebind them:
-
-- `camera_move_forward` / `camera_move_back`: `W/S`
-- `camera_move_left` / `camera_move_right`: `A/D`
-- `camera_move_down` / `camera_move_up`: `Q/E`
-- `camera_boost`: `Shift`
-
-`DemoInputActions.ensure_defaults()` registers these actions at runtime if the
-project settings were not refreshed yet. The demo scene also calls
-`ensure_project_settings_defaults()` in editor mode so the actions are written
-under Project Settings -> Input Map.
+`InputMap` actions so projects can rebind them under Project Settings -> Input
+Map. The included ocean demo keeps all bindings in `project.godot`; gameplay
+scripts only read action names and do not register key events at runtime.

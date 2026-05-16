@@ -115,7 +115,7 @@ profile = SubResource("Resource_oebik")
 environment = SubResource("Environment_dynamic")
 
 [node name="SunLight" type="DirectionalLight3D" parent="." unique_id=1793493974]
-transform = Transform3D(0.3846633, -0.4444384, 0.809017, 0, 0.8764539, 0.48148546, -0.92305696, -0.18520977, 0.33713973, 0, 0, 0)
+transform = Transform3D(0.3846633, -0.44443837, 0.809017, 0, 0.8764538, 0.48148546, -0.92305696, -0.18520975, 0.33713973, 0, 0, 0)
 light_color = Color(1, 0.96, 0.82, 1)
 light_energy = 0.8988355
 shadow_enabled = true

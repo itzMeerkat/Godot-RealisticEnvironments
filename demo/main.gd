@@ -19,7 +19,6 @@ func _init() -> void:
 
 func _ready() -> void:
 	if Engine.is_editor_hint():
-		DemoInputActions.ensure_project_settings_defaults()
 		return
 	_configure_player_boat()
 	debug_panel.setup(water, wind_system, sky_system, buoyant_body)

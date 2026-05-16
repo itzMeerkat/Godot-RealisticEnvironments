@@ -5,7 +5,6 @@ class_name WaveGenerator extends Node
 signal output_maps_swapped(current_displacement: RID, previous_displacement: RID, current_normal: RID, previous_normal: RID)
 
 const G := 9.81
-const DEPTH := 20.0
 const SPECTRUM_SLOT_COUNT := 2
 
 var map_size : int
@@ -113,9 +112,9 @@ func _update_spectrum_slot(compute_list : int, cascade_index : int, slot : int, 
 	if params.is_spectrum_slot_dirty(slot):
 		var alpha := JONSWAP_alpha(wind_speed, params.fetch_length*1e3)
 		var omega := JONSWAP_peak_angular_frequency(wind_speed, params.fetch_length*1e3)
-		pipelines[&'spectrum_compute'].call(context, compute_list, RenderingContext.create_push_constant([params.spectrum_seed.x, params.spectrum_seed.y, params.tile_length.x, params.tile_length.y, alpha, omega, wind_speed, deg_to_rad(wind_direction), DEPTH, params.swell, params.detail, params.spread, spectrum_layer]))
+		pipelines[&'spectrum_compute'].call(context, compute_list, RenderingContext.create_push_constant([params.spectrum_seed.x, params.spectrum_seed.y, params.tile_length.x, params.tile_length.y, alpha, omega, wind_speed, deg_to_rad(wind_direction), params.water_depth_meters, params.swell, params.detail, params.spread, spectrum_layer]))
 		params.mark_spectrum_slot_clean(slot)
-	pipelines[&'spectrum_modulate'].call(context, compute_list, RenderingContext.create_push_constant([params.tile_length.x, params.tile_length.y, DEPTH, params.time, spectrum_layer]))
+	pipelines[&'spectrum_modulate'].call(context, compute_list, RenderingContext.create_push_constant([params.tile_length.x, params.tile_length.y, params.water_depth_meters, params.time, spectrum_layer]))
 
 	## --- WAVE SPECTRA INVERSE FOURIER TRANSFORM ---
 	var fft_push_constant := RenderingContext.create_push_constant([spectrum_layer])

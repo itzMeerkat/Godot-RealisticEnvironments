@@ -275,7 +275,7 @@ const EXTERNAL_WIND_SPECTRUM_REFRESH_INTERVAL := 0.5
 		far_lod_curve = value
 		_update_far_lod_shader_parameters()
 ## Cascades shorter than this tile length fade out in far LOD.
-@export_range(1.0, 512.0, 1.0) var far_low_frequency_tile_length := 64.0 :
+@export_range(1.0, 512.0, 1.0) var far_low_frequency_tile_length := 32.0 :
 	set(value):
 		far_low_frequency_tile_length = value
 		_update_far_lod_shader_parameters()

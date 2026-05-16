@@ -1,47 +1,66 @@
 [gd_scene format=3 uid="uid://b2pleaxvcdai8"]
 
-[ext_resource type="PackedScene" uid="uid://31tq5bov66g3" path="res://demo/boat/wooden_boat.glb" id="1_boat"]
 [ext_resource type="Script" uid="uid://bvoan7j4oppub" path="res://addons/buoyancy_system/floating_debug_body.gd" id="2_float_debug"]
 [ext_resource type="Script" uid="uid://cv6g660t6s5av" path="res://addons/buoyancy_system/buoyant_body.gd" id="4_buoyant"]
 [ext_resource type="Script" uid="uid://3lbjjewks1m8" path="res://addons/buoyancy_system/hull_volume.gd" id="6_hull_volume"]
 [ext_resource type="Script" uid="uid://uljc7183vyx4" path="res://addons/buoyancy_system/hull_volume_section.gd" id="7_hull_section"]
+[ext_resource type="Script" uid="uid://dqtq4ra0qrhey" path="res://addons/buoyancy_system/water_reaction_body.gd" id="8_water_reaction_body"]
+[ext_resource type="PackedScene" uid="uid://c4ku7e1gt62nr" path="res://demo/assets/low_poly_boat/scene.gltf" id="9_0qq2w"]
+[ext_resource type="Script" uid="uid://8r402o0h2437" path="res://addons/buoyancy_system/water_reaction_probe.gd" id="9_water_reaction_probe"]
+[ext_resource type="Script" uid="uid://45rtsi7sixps" path="res://demo/boat/demo_rowing_controller.gd" id="10_rowing_controller"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_float_demo"]
 size = Vector3(6.5, 2.4, 25)
 
 [sub_resource type="Resource" id="HullVolumeSection_bow"]
 script = ExtResource("7_hull_section")
-z_position = -14.5
-points = PackedVector2Array(-3, 0.2, -2, -2, 2, -2, 3, 0.2)
-
-[sub_resource type="Resource" id="HullVolumeSection_mid"]
-script = ExtResource("7_hull_section")
-z_position = 5.0
-points = PackedVector2Array(-5, 0.35, -3, -2, 3, -2, 5, 0.35)
+z_position = 2.0
+points = PackedVector2Array(-0.35, 0.2, -0.35, -0.18, 0.35, -0.18, 0.35, 0.2)
 
 [sub_resource type="Resource" id="HullVolumeSection_stern"]
 script = ExtResource("7_hull_section")
-z_position = 18.0
-points = PackedVector2Array(-1.2, 0.15, -0.8, -2, 0.8, -2, 1.2, 0.15)
+z_position = 3.45
+points = PackedVector2Array(-0.6, 0.25, -0.6, -0.18, 0.6, -0.18, 0.6, 0.25)
 
-[sub_resource type="ImmediateMesh" id="ImmediateMesh_4l31g"]
+[sub_resource type="Resource" id="HullVolumeSection_mid"]
+script = ExtResource("7_hull_section")
+z_position = 4.89
+points = PackedVector2Array(-0.1, 0.2, -0.1, -0.18, 0.1, -0.18, 0.1, 0.2)
 
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_8dk2k"]
+[sub_resource type="ImmediateMesh" id="ImmediateMesh_kmnh5"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_0qq2w"]
 transparency = 1
 no_depth_test = true
 shading_mode = 0
 albedo_color = Color(0.1, 0.8, 1, 0.55)
 
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_35oko"]
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_4kjtq"]
 transparency = 1
 no_depth_test = true
 shading_mode = 0
 albedo_color = Color(0.2, 1, 0.45, 1)
 
-[sub_resource type="ImmediateMesh" id="ImmediateMesh_kmnh5"]
+[sub_resource type="ImmediateMesh" id="ImmediateMesh_ducaw"]
+
+[sub_resource type="ImmediateMesh" id="ImmediateMesh_dr3n4"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_htw60"]
+transparency = 1
+no_depth_test = true
+shading_mode = 0
+albedo_color = Color(1, 0.1, 0.9, 1)
+
+[sub_resource type="ImmediateMesh" id="ImmediateMesh_xu65i"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_82fpr"]
+transparency = 1
+no_depth_test = true
+shading_mode = 0
+albedo_color = Color(1, 0.1, 0.9, 1)
 
 [node name="FloatingBox" type="RigidBody3D" unique_id=1779372444]
-mass = 200.0
+mass = 50.0
 center_of_mass_mode = 1
 center_of_mass = Vector3(0, -1.4, -1.5)
 linear_damp = 0.2
@@ -49,24 +68,23 @@ angular_damp = 1.8
 script = ExtResource("2_float_debug")
 custom_center_of_mass = Vector3(0, -1.4, -1.5)
 
-[node name="Sketchfab_Scene" parent="." unique_id=2076375072 instance=ExtResource("1_boat")]
-transform = Transform3D(-0.1, 0, -8.742278e-09, 0, 0.1, 0, 8.742278e-09, 0, -0.1, 0, -2.2113018, 0)
-
 [node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=25228791]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.2, -0.2, -2)
 shape = SubResource("BoxShape3D_float_demo")
 
 [node name="HullVolume" type="Node3D" parent="." unique_id=1980283015]
-transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, -0.2, 0, 3.5549545)
+transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, 0, 0, 3.5)
 script = ExtResource("6_hull_volume")
-sections = Array[ExtResource("7_hull_section")]([SubResource("HullVolumeSection_bow"), SubResource("HullVolumeSection_mid"), SubResource("HullVolumeSection_stern")])
-buoyancy_efficiency = 0.004
+sections = Array[ExtResource("7_hull_section")]([SubResource("HullVolumeSection_bow"), SubResource("HullVolumeSection_stern"), SubResource("HullVolumeSection_mid")])
+submersion_depth = 0.35
+buoyancy_efficiency = 0.65
+vertical_damping = 60.0
 water_exclusion_enabled = false
-exclusion_margin = 0.45
-exclusion_height_above_origin = 4.92
-exclusion_height_below_origin = 2.5
-exclusion_height_feather = 0.3
-feather = 0.9
+exclusion_margin = 0.14
+exclusion_height_above_origin = 0.32
+exclusion_height_below_origin = 0.55
+exclusion_height_feather = 0.12
+feather = 0.28
 foam_amount = 0.0
 debug_draw = false
 
@@ -74,8 +92,8 @@ debug_draw = false
 visible = false
 cast_shadow = 0
 extra_cull_margin = 10000.0
-mesh = SubResource("ImmediateMesh_4l31g")
-surface_material_override/0 = SubResource("StandardMaterial3D_8dk2k")
+mesh = SubResource("ImmediateMesh_kmnh5")
+surface_material_override/0 = SubResource("StandardMaterial3D_0qq2w")
 
 [node name="BuoyantBody" type="Node" parent="." unique_id=1420237142]
 script = ExtResource("4_buoyant")
@@ -83,13 +101,29 @@ surface_velocity_influence = 0.6
 current_influence = 0.6
 max_probe_acceleration = 28.0
 
+[node name="WaterReactionBody" type="Node" parent="." unique_id=1676151644]
+script = ExtResource("8_water_reaction_body")
+probe_paths = Array[NodePath]([NodePath("Sketchfab_Scene2/Sketchfab_model/Wooden_boat_fbx/RootNode/paddle/WaterReactionProbe"), NodePath("Sketchfab_Scene2/Sketchfab_model/Wooden_boat_fbx/RootNode/paddle_001/WaterReactionProbe")])
+surface_velocity_influence = 0.6
+current_influence = 0.6
+
+[node name="RowingController" type="Node" parent="." unique_id=420140702]
+script = ExtResource("10_rowing_controller")
+left_probe_path = NodePath("../Sketchfab_Scene2/Sketchfab_model/Wooden_boat_fbx/RootNode/paddle/WaterReactionProbe")
+right_probe_path = NodePath("../Sketchfab_Scene2/Sketchfab_model/Wooden_boat_fbx/RootNode/paddle_001/WaterReactionProbe")
+animate_probes = false
+gate_probes_by_oar_actions = true
+left_oar_node_path = NodePath("../Sketchfab_Scene2/Sketchfab_model/Wooden_boat_fbx/RootNode/paddle")
+right_oar_node_path = NodePath("../Sketchfab_Scene2/Sketchfab_model/Wooden_boat_fbx/RootNode/paddle_001")
+recovery_lift = 2.65
+
 [node name="PositionHistory" type="MeshInstance3D" parent="." unique_id=1495800927]
-visible = false
 top_level = true
-material_override = SubResource("StandardMaterial3D_35oko")
+visible = false
+material_override = SubResource("StandardMaterial3D_4kjtq")
 cast_shadow = 0
 extra_cull_margin = 10000.0
-mesh = SubResource("ImmediateMesh_kmnh5")
+mesh = SubResource("ImmediateMesh_ducaw")
 
 [node name="CameraTargets" type="Node3D" parent="." unique_id=299673246]
 
@@ -97,4 +131,45 @@ mesh = SubResource("ImmediateMesh_kmnh5")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.45, -1.5)
 
 [node name="FirstPersonSeat" type="Marker3D" parent="CameraTargets" unique_id=691940768]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 5.9443974, 2.1455946)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.0338686, 0.18778801)
+
+[node name="Sketchfab_Scene2" parent="." unique_id=1101353392 instance=ExtResource("9_0qq2w")]
+transform = Transform3D(-1.3113417e-08, 0, 0.3, 0, 0.3, 0, -0.3, 0, -1.3113417e-08, 0, -0.2, 0)
+
+[node name="WaterReactionProbe" type="Marker3D" parent="Sketchfab_Scene2/Sketchfab_model/Wooden_boat_fbx/RootNode/paddle" parent_id_path=PackedInt32Array(1101353392, 421301386) index="1" unique_id=807028658]
+transform = Transform3D(1, 1.4210855e-14, 0, 0, 1.0000001, 2.9802322e-08, 0, -2.980232e-08, 1.0000001, -3.8146973e-06, 0.75124884, -4.775358)
+script = ExtResource("9_water_reaction_probe")
+enabled = false
+blade_area = 0.45
+local_blade_normal = Vector3(1, 0, 0)
+normal_drag = 3.0
+tangent_drag = 0.04
+force_multiplier = 0.08
+max_force = 600.0
+debug_probe_size = 0.55
+
+[node name="DebugDraw" type="MeshInstance3D" parent="Sketchfab_Scene2/Sketchfab_model/Wooden_boat_fbx/RootNode/paddle/WaterReactionProbe" unique_id=1740046331]
+cast_shadow = 0
+extra_cull_margin = 10000.0
+mesh = SubResource("ImmediateMesh_dr3n4")
+surface_material_override/0 = SubResource("StandardMaterial3D_htw60")
+
+[node name="WaterReactionProbe" type="Marker3D" parent="Sketchfab_Scene2/Sketchfab_model/Wooden_boat_fbx/RootNode/paddle_001" parent_id_path=PackedInt32Array(1101353392, 1143081544) index="1" unique_id=391052681]
+transform = Transform3D(1.0000001, 0, 0, -1.7763568e-15, 1, 2.980235e-08, 0, -2.9802294e-08, 1, 9.536743e-06, 0.5552149, -4.587216)
+script = ExtResource("9_water_reaction_probe")
+enabled = false
+blade_area = 0.45
+local_blade_normal = Vector3(1, 0, 0)
+normal_drag = 3.0
+tangent_drag = 0.04
+force_multiplier = 0.08
+max_force = 600.0
+debug_probe_size = 0.55
+
+[node name="DebugDraw" type="MeshInstance3D" parent="Sketchfab_Scene2/Sketchfab_model/Wooden_boat_fbx/RootNode/paddle_001/WaterReactionProbe" unique_id=750419793]
+cast_shadow = 0
+extra_cull_margin = 10000.0
+mesh = SubResource("ImmediateMesh_xu65i")
+surface_material_override/0 = SubResource("StandardMaterial3D_82fpr")
+
+[editable path="Sketchfab_Scene2"]

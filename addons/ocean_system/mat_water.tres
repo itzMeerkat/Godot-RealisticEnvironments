@@ -2,6 +2,14 @@
 
 [ext_resource type="Shader" uid="uid://cjhn8nkfr4mn0" path="res://addons/ocean_system/shaders/spatial/water.gdshader" id="1_uffek"]
 
+[sub_resource type="Texture2DArrayRD" id="Texture2DArrayRD_fdg1k"]
+
+[sub_resource type="Texture2DArrayRD" id="Texture2DArrayRD_6g5ly"]
+
+[sub_resource type="Texture2DArrayRD" id="Texture2DArrayRD_ucu34"]
+
+[sub_resource type="Texture2DArrayRD" id="Texture2DArrayRD_f8mb2"]
+
 [resource]
 render_priority = 1
 shader = ExtResource("1_uffek")
@@ -16,6 +24,12 @@ shader_parameter/normal_strength = 1.0
 shader_parameter/foam_intensity = 1.25
 shader_parameter/foam_threshold = 0.05
 shader_parameter/foam_softness = 0.35
+shader_parameter/planar_reflection_enabled = false
+shader_parameter/planar_reflection_view_projection = Projection(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1)
+shader_parameter/planar_reflection_strength = 0.0
+shader_parameter/planar_reflection_distortion = 0.018
+shader_parameter/planar_reflection_fresnel_power = 4.0
+shader_parameter/planar_reflection_plane_y = 0.0
 shader_parameter/use_bicubic_normals = false
 shader_parameter/fragment_cascade_limit = 3
 shader_parameter/enable_far_lod = true
@@ -23,11 +37,21 @@ shader_parameter/near_ocean_radius = 256.0
 shader_parameter/far_lod_radius = 7000.0
 shader_parameter/far_lod_blend_distance = 1400.0
 shader_parameter/far_lod_curve = 1.8
-shader_parameter/far_low_frequency_tile_length = 64.0
+shader_parameter/far_low_frequency_tile_length = 32.0
 shader_parameter/far_normal_strength = 0.14
 shader_parameter/far_foam_coverage = 0.24
 shader_parameter/far_foam_threshold_boost = 0.2
-shader_parameter/num_cascades = 0
-shader_parameter/wave_blend_alpha = 1.0
-shader_parameter/map_scales = PackedVector4Array(0.011363637, 0.011363637, 1, 1, 0.01754386, 0.01754386, 0.75, 1, 0.0625, 0.0625, 0, 0.25)
+shader_parameter/hull_cutout_count = 0
+shader_parameter/hull_cutout_centers = PackedVector4Array(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+shader_parameter/hull_cutout_axes = PackedVector4Array(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+shader_parameter/hull_cutout_shapes = PackedVector4Array(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+shader_parameter/hull_cutout_verticals = PackedVector4Array(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+shader_parameter/hull_cutout_widths = PackedVector4Array(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+shader_parameter/map_scales = PackedVector4Array(0.0078125, 0.0078125, 0.7, 1, 0.03125, 0.03125, 0.35, 0.8, 0.125, 0.125, 0.06, 0.45)
 shader_parameter/spectrum_blend_states = PackedVector4Array(0, 1, 0, 0, 2, 3, 0, 0, 4, 5, 0, 0)
+shader_parameter/num_cascades = 3
+shader_parameter/displacements = SubResource("Texture2DArrayRD_fdg1k")
+shader_parameter/normals = SubResource("Texture2DArrayRD_6g5ly")
+shader_parameter/previous_displacements = SubResource("Texture2DArrayRD_ucu34")
+shader_parameter/previous_normals = SubResource("Texture2DArrayRD_f8mb2")
+shader_parameter/wave_blend_alpha = 1.0

@@ -29,9 +29,6 @@ extends Camera3D
 var enable_camera_movement := true
 var _follow_target : Node3D
 
-func _ready() -> void:
-	DemoInputActions.ensure_defaults()
-
 func _input(event):
 	if not current:
 		return

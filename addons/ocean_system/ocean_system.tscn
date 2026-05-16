@@ -5,31 +5,41 @@
 [ext_resource type="Material" uid="uid://byumtcccq4ew3" path="res://addons/ocean_system/mat_water.tres" id="3_water_mat"]
 [sub_resource type="Resource" id="Resource_primary_swell"]
 script = ExtResource("2_params")
-tile_length = Vector2(88, 88)
-wind_speed = 10.0
+tile_length = Vector2(128, 128)
+displacement_scale = 0.7
+wind_speed = 6.0
 wind_direction = 20.0
-fetch_length = 150.0
-foam_amount = 8.0
+fetch_length = 12.0
+swell = 0.55
+spread = 0.35
+foam_amount = 2.0
 
 [sub_resource type="Resource" id="Resource_secondary_swell"]
 script = ExtResource("2_params")
-tile_length = Vector2(57, 57)
-displacement_scale = 0.75
-wind_speed = 5.0
+tile_length = Vector2(32, 32)
+displacement_scale = 0.35
+normal_scale = 0.8
+wind_speed = 6.0
 wind_direction = 15.0
-fetch_length = 150.0
-spread = 0.4
-foam_amount = 0.0
+wind_speed_multiplier = 1.15
+fetch_length = 4.0
+swell = 0.35
+spread = 0.55
+foam_amount = 1.0
 
 [sub_resource type="Resource" id="Resource_surface_detail"]
 script = ExtResource("2_params")
-tile_length = Vector2(16, 16)
-displacement_scale = 0.0
-normal_scale = 0.25
+tile_length = Vector2(8, 8)
+displacement_scale = 0.06
+normal_scale = 0.45
+wind_speed = 6.0
 wind_direction = 20.0
-spread = 0.4
-whitecap = 0.25
-foam_amount = 3.0
+wind_speed_multiplier = 1.6
+fetch_length = 1.5
+swell = 0.2
+spread = 0.65
+whitecap = 0.45
+foam_amount = 0.8
 
 [node name="OceanSystem" type="MeshInstance3D" unique_id=1912029964]
 process_priority = 100

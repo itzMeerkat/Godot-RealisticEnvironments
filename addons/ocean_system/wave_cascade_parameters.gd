@@ -43,6 +43,9 @@ const SPECTRUM_SLOT_COUNT := 2
 ## Denotes the distance from shoreline (in kilometers). Increasing makes waves steeper, but reduces their 'choppiness'.
 @export var fetch_length := 550.0 :
 	set(value): fetch_length = max(0.0001, value); mark_all_spectra_dirty()
+## Mean water depth in meters for this cascade's finite-depth spectrum.
+@export_range(0.1, 1000.0, 0.1, "or_greater") var water_depth_meters := 20.0 :
+	set(value): water_depth_meters = maxf(0.1, value); mark_all_spectra_dirty()
 ## Swell factor used by the wave spectrum. Higher values favor longer organized waves.
 @export_range(0, 2) var swell := 0.8 :
 	set(value): swell = value; mark_all_spectra_dirty()
