@@ -24,7 +24,7 @@ intersections look acceptable.
   - Discards water fragments inside each hull cutout rectangle.
   - Adds foam near the cutout edge to hide the hard boundary.
 - `demo/floating_box.tscn`
-  - Uses `HullVolume` from the buoyancy system for the demo boat. The legacy
+  - Uses `BuoyancyCellVolume` from the buoyancy system for the demo boat. The legacy
     `WaterHullCutout` path remains available for simple rectangular masks.
 
 ## How It Works
@@ -113,7 +113,7 @@ For better visuals later:
 - Add a separate wake/foam emitter following the hull sides and stern.
 - Replace the rectangular footprint with several smaller cutouts for complex
   hulls.
-- Use `HullVolume` from the buoyancy system as the shared buoyancy and water
+- Use `BuoyancyCellVolume` from the buoyancy system as the shared buoyancy and water
   exclusion source for editable hull-shaped volumes.
 - Add a bow/stern-specific foam mask so the waterline reads less rectangular.
 - Use a low transparent waterline mesh on the boat to further hide the edge.

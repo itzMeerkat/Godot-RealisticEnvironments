@@ -257,7 +257,7 @@ func _add_buoyancy_controls(parent : VBoxContainer) -> void:
 
 	_add_bound_param(parent, "Buoyancy Strength", "Global multiplier for all buoyancy volume forces.", buoyant_body.buoyancy_strength, 0.0, 10.0, 0.01, func(value : float) -> void: buoyant_body.buoyancy_strength = value, true)
 	_add_bound_param(parent, "Water Density", "Seawater is usually around 1025 kg/m^3; freshwater is around 1000 kg/m^3.", buoyant_body.water_density, 1.0, 2000.0, 1.0, func(value : float) -> void: buoyant_body.water_density = value, true)
-	_add_bound_param(parent, "Max Probe Accel", "Caps each buoyancy volume's acceleration contribution to avoid numerical blowups.", buoyant_body.max_probe_acceleration, 0.0, 100.0, 0.1, func(value : float) -> void: buoyant_body.max_probe_acceleration = value, true)
+	_add_bound_param(parent, "Max Cell Accel", "Caps each buoyancy cell's acceleration contribution to avoid numerical blowups.", buoyant_body.max_cell_acceleration, 0.0, 100.0, 0.1, func(value : float) -> void: buoyant_body.max_cell_acceleration = value, true)
 
 
 func _add_far_lod_controls(parent : VBoxContainer) -> void:

@@ -145,11 +145,11 @@ func _apply_player_controlled_state() -> void:
 		return
 
 	for child in _find_descendants():
-		var hull_volume := child as HullVolume
-		if hull_volume == null:
+		var cell_volume := child as Node
+		if cell_volume == null or not cell_volume.has_method(&"get_buoyancy_sample_points"):
 			continue
-		hull_volume.water_exclusion_enabled = player_controlled
-		hull_volume.debug_draw = player_controlled
+		cell_volume.set(&"water_exclusion_enabled", player_controlled)
+		cell_volume.set(&"debug_draw", player_controlled)
 
 	for child in _find_descendants():
 		var cutout := child as WaterHullCutout

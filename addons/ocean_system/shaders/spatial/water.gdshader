@@ -38,6 +38,9 @@ uniform float far_low_frequency_tile_length : hint_range(1.0, 512.0) = 32.0;
 uniform float far_normal_strength : hint_range(0.0, 2.0) = 0.14;
 uniform float far_foam_coverage : hint_range(0.0, 1.0) = 0.24;
 uniform float far_foam_threshold_boost : hint_range(0.0, 1.0) = 0.2;
+uniform bool water_interaction_enabled = true;
+uniform sampler2D interaction_height_map : repeat_disable, filter_linear;
+uniform vec4 interaction_map_origin_size = vec4(0.0, 0.0, 64.0, 1.0); // origin xz, world size, strength
 uniform int hull_cutout_count = 0;
 uniform vec4 hull_cutout_centers[MAX_HULL_CUTOUTS]; // xyz center, feather in meters
 uniform vec4 hull_cutout_axes[MAX_HULL_CUTOUTS];    // right.xz, forward.xz
@@ -102,6 +105,17 @@ float get_hull_cutout_height_mask(vec3 world_position, int index) {
 	return 1.0 - smoothstep(vertical.y, vertical.y + height_feather, world_position.y);
 }
 
+float sample_interaction_height(vec3 world_position) {
+	if (!water_interaction_enabled || interaction_map_origin_size.w <= 0.0) {
+		return 0.0;
+	}
+	vec2 uv = (world_position.xz - interaction_map_origin_size.xy) / max(interaction_map_origin_size.z, 0.001);
+	if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) {
+		return 0.0;
+	}
+	return texture(interaction_height_map, uv).r * interaction_map_origin_size.w;
+}
+
 void vertex() {
 	UV = VERTEX.xz;
 	distance_to_camera = length(VERTEX.xz - CAMERA_POSITION_WORLD.xz);
@@ -127,6 +141,7 @@ void vertex() {
 		vec3 pending_displacement = mix(previous_pending, current_pending, wave_blend_alpha);
 		displacement += mix(active_displacement, pending_displacement, blend_state.z) * scales.z * cascade_weight;
 	}
+	displacement.y += sample_interaction_height(VERTEX + displacement);
 	VERTEX += displacement;
 	water_world_position = VERTEX;
 }
@@ -180,6 +195,15 @@ void fragment() {
 	vec3 gradient = vec3(0);
 	float wave_slope = 0.0;
 	foam_factor = 0.0;
+	if (water_interaction_enabled && interaction_map_origin_size.w > 0.0) {
+		float e = max(interaction_map_origin_size.z / max(float(textureSize(interaction_height_map, 0).x), 1.0), 0.05);
+		float h_l = sample_interaction_height(water_world_position + vec3(-e, 0.0, 0.0));
+		float h_r = sample_interaction_height(water_world_position + vec3( e, 0.0, 0.0));
+		float h_b = sample_interaction_height(water_world_position + vec3(0.0, 0.0, -e));
+		float h_f = sample_interaction_height(water_world_position + vec3(0.0, 0.0,  e));
+		gradient.xy += vec2(h_r - h_l, h_f - h_b) * 0.5;
+		hull_edge_foam = max(hull_edge_foam, smoothstep(0.025, 0.18, abs(sample_interaction_height(water_world_position))));
+	}
 
 	if (num_cascades > 0) {
 		float map_size = float(textureSize(normals, 0).x);

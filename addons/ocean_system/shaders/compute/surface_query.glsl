@@ -36,6 +36,7 @@ layout(std430, set = 0, binding = 2) restrict writeonly buffer SampleBuffer {
 
 layout(rgba16f, set = 0, binding = 3) restrict readonly uniform image2DArray current_displacements;
 layout(rgba16f, set = 0, binding = 4) restrict readonly uniform image2DArray previous_displacements;
+layout(set = 0, binding = 5) uniform sampler2D interaction_height_map;
 
 layout(push_constant) restrict readonly uniform PushConstants {
 	uint point_count;
@@ -46,6 +47,10 @@ layout(push_constant) restrict readonly uniform PushConstants {
 	float wave_blend_duration;
 	float normal_sample_distance;
 	float _pad0;
+	float interaction_origin_x;
+	float interaction_origin_z;
+	float interaction_world_size;
+	float interaction_height_strength;
 };
 
 vec4 sample_current_layer_bilinear(int layer, vec2 uv) {
@@ -112,10 +117,21 @@ vec3 sample_previous_total_displacement(vec3 world_position) {
 	return displacement;
 }
 
+float sample_interaction_height(vec3 world_position) {
+	if (interaction_height_strength <= 0.0) {
+		return 0.0;
+	}
+	vec2 uv = (world_position.xz - vec2(interaction_origin_x, interaction_origin_z)) / max(interaction_world_size, 0.001);
+	if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) {
+		return 0.0;
+	}
+	return texture(interaction_height_map, uv).r * interaction_height_strength;
+}
+
 float sample_height(vec3 world_position) {
 	vec3 previous_displacement = sample_previous_total_displacement(world_position);
 	vec3 current_displacement = sample_current_total_displacement(world_position);
-	return water_level + mix(previous_displacement, current_displacement, wave_blend_alpha).y;
+	return water_level + mix(previous_displacement, current_displacement, wave_blend_alpha).y + sample_interaction_height(world_position);
 }
 
 void main() {
@@ -128,6 +144,7 @@ void main() {
 	vec3 previous_displacement = sample_previous_total_displacement(world_position);
 	vec3 current_displacement = sample_current_total_displacement(world_position);
 	vec3 visual_displacement = mix(previous_displacement, current_displacement, wave_blend_alpha);
+	visual_displacement.y += sample_interaction_height(world_position);
 
 	float e = max(normal_sample_distance, 0.001);
 	float h_l = sample_height(world_position + vec3(-e, 0.0, 0.0));
