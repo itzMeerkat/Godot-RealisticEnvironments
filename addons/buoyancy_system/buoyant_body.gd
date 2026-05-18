@@ -9,9 +9,9 @@ extends Node
 @export var cell_volume_paths : Array[NodePath] = []
 @export_range(0.0, 10.0, 0.01, "or_greater") var buoyancy_strength := 1.0
 @export_range(1.0, 2000.0, 1.0, "or_greater") var water_density := 1025.0
-@export var use_surface_normal_for_buoyancy := false
-@export_range(0.0, 10.0, 0.01, "or_greater") var surface_velocity_influence := 1.0
-@export_range(0.0, 10.0, 0.01, "or_greater") var current_influence := 1.0
+@export_range(0.0, 100.0, 0.01, "or_greater") var vertical_damping := 1.4
+@export_range(0.0, 100.0, 0.01, "or_greater") var longitudinal_water_drag := 0.45
+@export_range(0.0, 100.0, 0.01, "or_greater") var lateral_water_drag := 0.45
 @export_range(0.0, 100.0, 0.1, "or_greater") var max_cell_acceleration := 35.0
 @export var submit_water_interactions := true
 @export var apply_forces := true
@@ -48,14 +48,15 @@ func _physics_process(_delta : float) -> void:
 	if points.is_empty():
 		return
 
-	var samples := ocean.sample_water_surface_batch(points)
-	var sample_count := mini(sample_points.size(), samples.size())
-	if sample_count <= 0:
+	var samples := ocean.sample_water_surface_batch(points, self)
+	if samples.size() != sample_points.size():
 		return
 	var total_volume := _get_total_effective_sample_volume(sample_points)
 	var gravity := float(ProjectSettings.get_setting("physics/3d/default_gravity", 9.8))
-	for i in sample_count:
-		_apply_sample_forces(sample_points[i], samples[i], total_volume, gravity)
+	var total_external_force := Vector3.ZERO
+	for i in sample_points.size():
+		total_external_force += _apply_sample_forces(sample_points[i], samples[i], total_volume, gravity)
+	_update_body_debug(total_external_force, gravity)
 	if submit_water_interactions:
 		_submit_water_interactions(sample_points, samples)
 
@@ -116,37 +117,43 @@ func _get_effective_sample_volume(sample_point : Dictionary) -> float:
 	return dry_volume * (1.0 - clampf(float(sample_point.get("flooding_fraction", 0.0)), 0.0, 1.0))
 
 
-func _apply_sample_forces(sample_point : Dictionary, sample : WaterSurfaceSample, total_volume : float, gravity : float) -> void:
+func _apply_sample_forces(sample_point : Dictionary, sample : WaterSurfaceSample, total_volume : float, gravity : float) -> Vector3:
 	var sample_position : Vector3 = sample_point["world_position"]
-	var depth := sample.height - sample_position.y
-	var submersion_depth := float(sample_point.get("submersion_depth", 1.0))
-	var submersion := clampf(depth / maxf(submersion_depth, 0.001), 0.0, 1.0)
+	var submersion_depth := maxf(float(sample_point.get("submersion_depth", 1.0)), 0.001)
+	var cell_half_height := maxf(float(sample_point.get("cell_vertical_half_extent", submersion_depth * 0.5)), 0.0005)
+	var cell_bottom_y := sample_position.y - cell_half_height
+	var submersion := clampf((sample.height - cell_bottom_y) / submersion_depth, 0.0, 1.0)
 
 	var offset := sample_position - rigid_body.global_position
 	var point_velocity := rigid_body.linear_velocity + rigid_body.angular_velocity.cross(offset)
 	var effective_volume := _get_effective_sample_volume(sample_point)
 	var volume_ratio := effective_volume / total_volume
-	var water_velocity := sample.surface_velocity * surface_velocity_influence + sample.current_velocity * current_influence
+	var water_velocity := sample.surface_velocity
 
-	var buoyancy_direction := Vector3.UP
-	if use_surface_normal_for_buoyancy and sample.valid and sample.normal.length_squared() > 0.0001:
-		buoyancy_direction = sample.normal
-		buoyancy_direction = buoyancy_direction.normalized()
+	if sample.normal.length_squared() <= 0.0001:
+		return Vector3.ZERO
+	var buoyancy_direction := sample.normal.normalized()
 	var displaced_volume := effective_volume * submersion
 	var buoyancy_force := buoyancy_direction * water_density * gravity * buoyancy_strength * displaced_volume
 	var vertical_speed := point_velocity.dot(Vector3.UP) - water_velocity.dot(Vector3.UP)
-	var vertical_damping := float(sample_point.get("vertical_damping", 2.0))
-	var vertical_damping_force := -Vector3.UP * vertical_speed * vertical_damping * rigid_body.mass * volume_ratio * submersion
+	var vertical_damping_multiplier := float(sample_point.get("vertical_damping_multiplier", 1.0))
+	var vertical_damping_force := -Vector3.UP * vertical_speed * vertical_damping * vertical_damping_multiplier * rigid_body.mass * volume_ratio * submersion
 
 	var horizontal_point_velocity := Vector3(point_velocity.x, 0.0, point_velocity.z)
-	var horizontal_surface_velocity := Vector3(sample.surface_velocity.x, 0.0, sample.surface_velocity.z) * surface_velocity_influence
-	var horizontal_current_velocity := Vector3(sample.current_velocity.x, 0.0, sample.current_velocity.z) * current_influence
-	var water_drag := float(sample_point.get("water_drag", 1.0))
-	var current_drag := float(sample_point.get("current_drag", 1.0))
-	var water_drag_force := (horizontal_surface_velocity - horizontal_point_velocity) * water_drag * rigid_body.mass * volume_ratio * submersion
-	var current_drag_force := (horizontal_current_velocity - horizontal_point_velocity) * current_drag * rigid_body.mass * volume_ratio * submersion
+	var horizontal_surface_velocity := Vector3(sample.surface_velocity.x, 0.0, sample.surface_velocity.z)
+	var relative_horizontal_velocity := horizontal_surface_velocity - horizontal_point_velocity
+	var forward := -rigid_body.global_transform.basis.z
+	forward.y = 0.0
+	forward = forward.normalized() if forward.length_squared() > 0.0001 else Vector3.FORWARD
+	var right := rigid_body.global_transform.basis.x
+	right.y = 0.0
+	right = right.normalized() if right.length_squared() > 0.0001 else Vector3.RIGHT
+	var longitudinal_multiplier := float(sample_point.get("longitudinal_water_drag_multiplier", 1.0))
+	var lateral_multiplier := float(sample_point.get("lateral_water_drag_multiplier", 1.0))
+	var longitudinal_drag_force := forward * relative_horizontal_velocity.dot(forward) * longitudinal_water_drag * longitudinal_multiplier * rigid_body.mass * volume_ratio * submersion
+	var lateral_drag_force := right * relative_horizontal_velocity.dot(right) * lateral_water_drag * lateral_multiplier * rigid_body.mass * volume_ratio * submersion
 
-	var total_force := buoyancy_force + vertical_damping_force + water_drag_force + current_drag_force
+	var total_force := buoyancy_force + vertical_damping_force + longitudinal_drag_force + lateral_drag_force
 	if max_cell_acceleration > 0.0:
 		var max_force := rigid_body.mass * volume_ratio * max_cell_acceleration
 		if max_force > 0.0 and total_force.length_squared() > max_force * max_force:
@@ -159,13 +166,25 @@ func _apply_sample_forces(sample_point : Dictionary, sample : WaterSurfaceSample
 			sample_position,
 			Vector3(sample_position.x, sample.height, sample_position.z),
 			total_force,
-			sample.valid
+			true,
+			buoyancy_force,
+			submersion
 		)
-	elif source != null and source.has_method(&"set_debug_state"):
-		source.call(&"set_debug_state", Vector3(sample_position.x, sample.height, sample_position.z), total_force, sample.valid)
 	if submersion <= 0.0:
-		return
+		return Vector3.ZERO
 	rigid_body.apply_force(total_force, offset)
+	return total_force
+
+
+func _update_body_debug(total_external_force: Vector3, gravity: float) -> void:
+	if rigid_body == null:
+		return
+	var center_of_mass_world := rigid_body.global_transform * rigid_body.center_of_mass
+	var gravity_force := Vector3.DOWN * rigid_body.mass * gravity
+	for cell_volume in cell_volumes:
+		if cell_volume == null or not cell_volume.has_method(&"set_debug_body_state"):
+			continue
+		cell_volume.call(&"set_debug_body_state", center_of_mass_world, gravity_force, total_external_force, true)
 
 
 func _submit_water_interactions(sample_points: Array[Dictionary], samples: Array[WaterSurfaceSample]) -> void:

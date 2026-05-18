@@ -10,231 +10,211 @@
 [sub_resource type="BoxShape3D" id="BoxShape3D_float_demo"]
 size = Vector3(6.5, 2.4, 25)
 
+[sub_resource type="Resource" id="Resource_8dk2k"]
+script = ExtResource("3_8dk2k")
+local_center = Vector3(-1.0070028, 0.15142128, 2.3254352)
+size = Vector3(0.35997483, 1.263703, 0.7802018)
+density = 28.0
+buoyancy_efficiency = 0.65
+
 [sub_resource type="Resource" id="Resource_35oko"]
 script = ExtResource("3_8dk2k")
-local_center = Vector3(-0.7670196, -0.26981306, 2.455469)
-size = Vector3(0.83994126, 0.42123434, 1.040269)
-density = 280.0
+local_center = Vector3(-0.647028, 0.15142128, 2.3254352)
+size = Vector3(0.35997483, 1.263703, 0.7802018)
+density = 28.0
 buoyancy_efficiency = 0.65
-vertical_damping = 60.0
 
 [sub_resource type="Resource" id="Resource_kmnh5"]
 script = ExtResource("3_8dk2k")
-local_center = Vector3(0.07292163, -0.26981306, 2.455469)
-size = Vector3(0.83994126, 0.42123434, 1.040269)
-density = 280.0
+local_center = Vector3(-0.28705317, 0.15142128, 2.3254352)
+size = Vector3(0.35997483, 1.263703, 0.7802018)
+density = 28.0
 buoyancy_efficiency = 0.65
-vertical_damping = 60.0
 
 [sub_resource type="Resource" id="Resource_0qq2w"]
 script = ExtResource("3_8dk2k")
-local_center = Vector3(0.9128628, -0.26981306, 2.455469)
-size = Vector3(0.83994126, 0.42123434, 1.040269)
-density = 280.0
+local_center = Vector3(0.07292163, 0.15142128, 2.3254352)
+size = Vector3(0.35997483, 1.263703, 0.7802018)
+density = 28.0
 buoyancy_efficiency = 0.65
-vertical_damping = 60.0
 
 [sub_resource type="Resource" id="Resource_4kjtq"]
 script = ExtResource("3_8dk2k")
-local_center = Vector3(-0.7670196, 0.15142128, 2.455469)
-size = Vector3(0.83994126, 0.42123434, 1.040269)
-density = 280.0
+local_center = Vector3(0.4328965, 0.15142128, 2.3254352)
+size = Vector3(0.35997483, 1.263703, 0.7802018)
+density = 28.0
 buoyancy_efficiency = 0.65
-vertical_damping = 60.0
 
 [sub_resource type="Resource" id="Resource_ducaw"]
 script = ExtResource("3_8dk2k")
-local_center = Vector3(0.07292163, 0.15142128, 2.455469)
-size = Vector3(0.83994126, 0.42123434, 1.040269)
-density = 280.0
+local_center = Vector3(0.79287136, 0.15142128, 2.3254352)
+size = Vector3(0.35997483, 1.263703, 0.7802018)
+density = 28.0
 buoyancy_efficiency = 0.65
-vertical_damping = 60.0
 
 [sub_resource type="Resource" id="Resource_dr3n4"]
 script = ExtResource("3_8dk2k")
-local_center = Vector3(0.9128628, 0.15142128, 2.455469)
-size = Vector3(0.83994126, 0.42123434, 1.040269)
-density = 280.0
+local_center = Vector3(1.1528461, 0.15142128, 2.3254352)
+size = Vector3(0.35997483, 1.263703, 0.7802018)
+density = 28.0
 buoyancy_efficiency = 0.65
-vertical_damping = 60.0
 
 [sub_resource type="Resource" id="Resource_htw60"]
 script = ExtResource("3_8dk2k")
-local_center = Vector3(-0.7670196, 0.57265556, 2.455469)
-size = Vector3(0.83994126, 0.42123434, 1.040269)
-density = 280.0
+local_center = Vector3(-1.0070028, 0.15142128, 3.105637)
+size = Vector3(0.35997483, 1.263703, 0.7802018)
+density = 28.0
 buoyancy_efficiency = 0.65
-vertical_damping = 60.0
 
 [sub_resource type="Resource" id="Resource_xu65i"]
 script = ExtResource("3_8dk2k")
-local_center = Vector3(0.07292163, 0.57265556, 2.455469)
-size = Vector3(0.83994126, 0.42123434, 1.040269)
-density = 280.0
+local_center = Vector3(-0.647028, 0.15142128, 3.105637)
+size = Vector3(0.35997483, 1.263703, 0.7802018)
+density = 28.0
 buoyancy_efficiency = 0.65
-vertical_damping = 60.0
 
 [sub_resource type="Resource" id="Resource_82fpr"]
 script = ExtResource("3_8dk2k")
-local_center = Vector3(0.9128628, 0.57265556, 2.455469)
-size = Vector3(0.83994126, 0.42123434, 1.040269)
-density = 280.0
+local_center = Vector3(-0.28705317, 0.15142128, 3.105637)
+size = Vector3(0.35997483, 1.263703, 0.7802018)
+density = 28.0
 buoyancy_efficiency = 0.65
-vertical_damping = 60.0
 
 [sub_resource type="Resource" id="Resource_f5n33"]
 script = ExtResource("3_8dk2k")
-local_center = Vector3(-0.7670196, -0.26981306, 3.495738)
-size = Vector3(0.83994126, 0.42123434, 1.040269)
-density = 280.0
+local_center = Vector3(0.07292163, 0.15142128, 3.105637)
+size = Vector3(0.35997483, 1.263703, 0.7802018)
+density = 28.0
 buoyancy_efficiency = 0.65
-vertical_damping = 60.0
 
 [sub_resource type="Resource" id="Resource_r7vxl"]
 script = ExtResource("3_8dk2k")
-local_center = Vector3(0.07292163, -0.26981306, 3.495738)
-size = Vector3(0.83994126, 0.42123434, 1.040269)
-density = 280.0
+local_center = Vector3(0.4328965, 0.15142128, 3.105637)
+size = Vector3(0.35997483, 1.263703, 0.7802018)
+density = 28.0
 buoyancy_efficiency = 0.65
-vertical_damping = 60.0
 
 [sub_resource type="Resource" id="Resource_odp0u"]
 script = ExtResource("3_8dk2k")
-local_center = Vector3(0.9128628, -0.26981306, 3.495738)
-size = Vector3(0.83994126, 0.42123434, 1.040269)
-density = 280.0
+local_center = Vector3(0.79287136, 0.15142128, 3.105637)
+size = Vector3(0.35997483, 1.263703, 0.7802018)
+density = 28.0
 buoyancy_efficiency = 0.65
-vertical_damping = 60.0
 
 [sub_resource type="Resource" id="Resource_pgcpf"]
 script = ExtResource("3_8dk2k")
-local_center = Vector3(-0.7670196, 0.15142128, 3.495738)
-size = Vector3(0.83994126, 0.42123434, 1.040269)
-density = 280.0
+local_center = Vector3(1.1528461, 0.15142128, 3.105637)
+size = Vector3(0.35997483, 1.263703, 0.7802018)
+density = 28.0
 buoyancy_efficiency = 0.65
-vertical_damping = 60.0
 
 [sub_resource type="Resource" id="Resource_fo7e3"]
 script = ExtResource("3_8dk2k")
-local_center = Vector3(0.07292163, 0.15142128, 3.495738)
-size = Vector3(0.83994126, 0.42123434, 1.040269)
-density = 280.0
+local_center = Vector3(-1.0070028, 0.15142128, 3.885839)
+size = Vector3(0.35997483, 1.263703, 0.7802018)
+density = 28.0
 buoyancy_efficiency = 0.65
-vertical_damping = 60.0
 
 [sub_resource type="Resource" id="Resource_ndef8"]
 script = ExtResource("3_8dk2k")
-local_center = Vector3(0.9128628, 0.15142128, 3.495738)
-size = Vector3(0.83994126, 0.42123434, 1.040269)
-density = 280.0
+local_center = Vector3(-0.647028, 0.15142128, 3.885839)
+size = Vector3(0.35997483, 1.263703, 0.7802018)
+density = 28.0
 buoyancy_efficiency = 0.65
-vertical_damping = 60.0
 
 [sub_resource type="Resource" id="Resource_rt2ym"]
 script = ExtResource("3_8dk2k")
-local_center = Vector3(-0.7670196, 0.57265556, 3.495738)
-size = Vector3(0.83994126, 0.42123434, 1.040269)
-density = 280.0
+local_center = Vector3(-0.28705317, 0.15142128, 3.885839)
+size = Vector3(0.35997483, 1.263703, 0.7802018)
+density = 28.0
 buoyancy_efficiency = 0.65
-vertical_damping = 60.0
 
 [sub_resource type="Resource" id="Resource_sfe5m"]
 script = ExtResource("3_8dk2k")
-local_center = Vector3(0.07292163, 0.57265556, 3.495738)
-size = Vector3(0.83994126, 0.42123434, 1.040269)
-density = 280.0
+local_center = Vector3(0.07292163, 0.15142128, 3.885839)
+size = Vector3(0.35997483, 1.263703, 0.7802018)
+density = 28.0
 buoyancy_efficiency = 0.65
-vertical_damping = 60.0
 
 [sub_resource type="Resource" id="Resource_3sm6b"]
 script = ExtResource("3_8dk2k")
-local_center = Vector3(0.9128628, 0.57265556, 3.495738)
-size = Vector3(0.83994126, 0.42123434, 1.040269)
-density = 280.0
+local_center = Vector3(0.4328965, 0.15142128, 3.885839)
+size = Vector3(0.35997483, 1.263703, 0.7802018)
+density = 28.0
 buoyancy_efficiency = 0.65
-vertical_damping = 60.0
 
 [sub_resource type="Resource" id="Resource_lihre"]
 script = ExtResource("3_8dk2k")
-local_center = Vector3(-0.7670196, -0.26981306, 4.536007)
-size = Vector3(0.83994126, 0.42123434, 1.040269)
-density = 280.0
+local_center = Vector3(0.79287136, 0.15142128, 3.885839)
+size = Vector3(0.35997483, 1.263703, 0.7802018)
+density = 28.0
 buoyancy_efficiency = 0.65
-vertical_damping = 60.0
 
 [sub_resource type="Resource" id="Resource_6lar6"]
 script = ExtResource("3_8dk2k")
-local_center = Vector3(0.07292163, -0.26981306, 4.536007)
-size = Vector3(0.83994126, 0.42123434, 1.040269)
-density = 280.0
+local_center = Vector3(1.1528461, 0.15142128, 3.885839)
+size = Vector3(0.35997483, 1.263703, 0.7802018)
+density = 28.0
 buoyancy_efficiency = 0.65
-vertical_damping = 60.0
 
 [sub_resource type="Resource" id="Resource_klghn"]
 script = ExtResource("3_8dk2k")
-local_center = Vector3(0.9128628, -0.26981306, 4.536007)
-size = Vector3(0.83994126, 0.42123434, 1.040269)
-density = 280.0
+local_center = Vector3(-1.0070028, 0.15142128, 4.6660404)
+size = Vector3(0.35997483, 1.263703, 0.7802018)
+density = 28.0
 buoyancy_efficiency = 0.65
-vertical_damping = 60.0
 
 [sub_resource type="Resource" id="Resource_f3md0"]
 script = ExtResource("3_8dk2k")
-local_center = Vector3(-0.7670196, 0.15142128, 4.536007)
-size = Vector3(0.83994126, 0.42123434, 1.040269)
-density = 280.0
+local_center = Vector3(-0.647028, 0.15142128, 4.6660404)
+size = Vector3(0.35997483, 1.263703, 0.7802018)
+density = 28.0
 buoyancy_efficiency = 0.65
-vertical_damping = 60.0
 
 [sub_resource type="Resource" id="Resource_uqdwc"]
 script = ExtResource("3_8dk2k")
-local_center = Vector3(0.07292163, 0.15142128, 4.536007)
-size = Vector3(0.83994126, 0.42123434, 1.040269)
-density = 280.0
+local_center = Vector3(-0.28705317, 0.15142128, 4.6660404)
+size = Vector3(0.35997483, 1.263703, 0.7802018)
+density = 28.0
 buoyancy_efficiency = 0.65
-vertical_damping = 60.0
 
 [sub_resource type="Resource" id="Resource_f2spp"]
 script = ExtResource("3_8dk2k")
-local_center = Vector3(0.9128628, 0.15142128, 4.536007)
-size = Vector3(0.83994126, 0.42123434, 1.040269)
-density = 280.0
+local_center = Vector3(0.07292163, 0.15142128, 4.6660404)
+size = Vector3(0.35997483, 1.263703, 0.7802018)
+density = 28.0
 buoyancy_efficiency = 0.65
-vertical_damping = 60.0
 
 [sub_resource type="Resource" id="Resource_hhxne"]
 script = ExtResource("3_8dk2k")
-local_center = Vector3(-0.7670196, 0.57265556, 4.536007)
-size = Vector3(0.83994126, 0.42123434, 1.040269)
-density = 280.0
+local_center = Vector3(0.4328965, 0.15142128, 4.6660404)
+size = Vector3(0.35997483, 1.263703, 0.7802018)
+density = 28.0
 buoyancy_efficiency = 0.65
-vertical_damping = 60.0
 
 [sub_resource type="Resource" id="Resource_24ixn"]
 script = ExtResource("3_8dk2k")
-local_center = Vector3(0.07292163, 0.57265556, 4.536007)
-size = Vector3(0.83994126, 0.42123434, 1.040269)
-density = 280.0
+local_center = Vector3(0.79287136, 0.15142128, 4.6660404)
+size = Vector3(0.35997483, 1.263703, 0.7802018)
+density = 28.0
 buoyancy_efficiency = 0.65
-vertical_damping = 60.0
 
 [sub_resource type="Resource" id="Resource_1bnwl"]
 script = ExtResource("3_8dk2k")
-local_center = Vector3(0.9128628, 0.57265556, 4.536007)
-size = Vector3(0.83994126, 0.42123434, 1.040269)
-density = 280.0
+local_center = Vector3(1.1528461, 0.15142128, 4.6660404)
+size = Vector3(0.35997483, 1.263703, 0.7802018)
+density = 28.0
 buoyancy_efficiency = 0.65
-vertical_damping = 60.0
 
-[sub_resource type="ImmediateMesh" id="ImmediateMesh_qtsqx"]
+[sub_resource type="ImmediateMesh" id="ImmediateMesh_odp0u"]
 
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_7iqgi"]
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_pgcpf"]
 transparency = 1
 no_depth_test = true
 shading_mode = 0
 albedo_color = Color(0.2, 1, 0.45, 1)
 
-[sub_resource type="ImmediateMesh" id="ImmediateMesh_undve"]
+[sub_resource type="ImmediateMesh" id="ImmediateMesh_fo7e3"]
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_c1vbo"]
 resource_name = "Boat_texture"
@@ -399,14 +379,12 @@ blend_shape_mode = 0
 shadow_mesh = SubResource("ArrayMesh_opm05")
 
 [node name="FloatingBox" type="RigidBody3D" unique_id=1779372444]
-mass = 2782.5317
+mass = 278.2532
 center_of_mass_mode = 1
-center_of_mass = Vector3(0.07292158, 0.15142125, 3.4957373)
+center_of_mass = Vector3(-0.07292196, 0.21799773, 0.0042619705)
 linear_damp = 0.2
 angular_damp = 1.8
 script = ExtResource("2_float_debug")
-use_custom_center_of_mass = false
-custom_center_of_mass = Vector3(0, -1.4, -1.5)
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=25228791]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.2, -0.2, -2)
@@ -417,12 +395,11 @@ shape = SubResource("BoxShape3D_float_demo")
 transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, 0, 0.06657648, 3.5)
 script = ExtResource("6_cell_volume")
 source_model_path = NodePath("../Sketchfab_Scene2")
-voxel_size = Vector3(0.9, 0.45, 1.2)
+voxel_size = Vector3(0.4, 2, 1)
 max_generated_cells = 640
-default_density = 280.0
-cells = Array[Resource]([SubResource("Resource_35oko"), SubResource("Resource_kmnh5"), SubResource("Resource_0qq2w"), SubResource("Resource_4kjtq"), SubResource("Resource_ducaw"), SubResource("Resource_dr3n4"), SubResource("Resource_htw60"), SubResource("Resource_xu65i"), SubResource("Resource_82fpr"), SubResource("Resource_f5n33"), SubResource("Resource_r7vxl"), SubResource("Resource_odp0u"), SubResource("Resource_pgcpf"), SubResource("Resource_fo7e3"), SubResource("Resource_ndef8"), SubResource("Resource_rt2ym"), SubResource("Resource_sfe5m"), SubResource("Resource_3sm6b"), SubResource("Resource_lihre"), SubResource("Resource_6lar6"), SubResource("Resource_klghn"), SubResource("Resource_f3md0"), SubResource("Resource_uqdwc"), SubResource("Resource_f2spp"), SubResource("Resource_hhxne"), SubResource("Resource_24ixn"), SubResource("Resource_1bnwl")])
+default_density = 28.0
+cells = Array[Resource]([SubResource("Resource_8dk2k"), SubResource("Resource_35oko"), SubResource("Resource_kmnh5"), SubResource("Resource_0qq2w"), SubResource("Resource_4kjtq"), SubResource("Resource_ducaw"), SubResource("Resource_dr3n4"), SubResource("Resource_htw60"), SubResource("Resource_xu65i"), SubResource("Resource_82fpr"), SubResource("Resource_f5n33"), SubResource("Resource_r7vxl"), SubResource("Resource_odp0u"), SubResource("Resource_pgcpf"), SubResource("Resource_fo7e3"), SubResource("Resource_ndef8"), SubResource("Resource_rt2ym"), SubResource("Resource_sfe5m"), SubResource("Resource_3sm6b"), SubResource("Resource_lihre"), SubResource("Resource_6lar6"), SubResource("Resource_klghn"), SubResource("Resource_f3md0"), SubResource("Resource_uqdwc"), SubResource("Resource_f2spp"), SubResource("Resource_hhxne"), SubResource("Resource_24ixn"), SubResource("Resource_1bnwl")])
 default_buoyancy_efficiency = 0.65
-default_vertical_damping = 60.0
 water_exclusion_enabled = false
 exclusion_margin = 0.14
 exclusion_height_above_origin = 0.32
@@ -433,21 +410,24 @@ foam_amount = 0.0
 debug_draw = false
 
 [node name="DebugDraw" type="MeshInstance3D" parent="BuoyancyCellVolume" unique_id=1102676112]
+visible = false
 cast_shadow = 0
 extra_cull_margin = 10000.0
-mesh = SubResource("ImmediateMesh_qtsqx")
+mesh = SubResource("ImmediateMesh_odp0u")
 
 [node name="BuoyantBody" type="Node" parent="." unique_id=1420237142]
 script = ExtResource("4_buoyant")
 rigid_body_path = NodePath("..")
+vertical_damping = 60.0
+submit_water_interactions = false
 
 [node name="PositionHistory" type="MeshInstance3D" parent="." unique_id=1495800927]
 top_level = true
 visible = false
-material_override = SubResource("StandardMaterial3D_7iqgi")
+material_override = SubResource("StandardMaterial3D_pgcpf")
 cast_shadow = 0
 extra_cull_margin = 10000.0
-mesh = SubResource("ImmediateMesh_undve")
+mesh = SubResource("ImmediateMesh_fo7e3")
 
 [node name="CameraTargets" type="Node3D" parent="." unique_id=299673246]
 

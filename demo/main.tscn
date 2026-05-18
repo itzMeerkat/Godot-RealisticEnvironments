@@ -11,7 +11,6 @@
 [ext_resource type="PackedScene" uid="uid://bm4bg7uoyr0xy" path="res://systems/debug/ocean_debug_panel.tscn" id="9_gb4mm"]
 [ext_resource type="Script" uid="uid://btyuqnmfuyrr6" path="res://addons/wind_system/wind_system.gd" id="10_tfjfv"]
 [ext_resource type="PackedScene" uid="uid://ckdc57htjsaad" path="res://addons/sky_system/sky_system.tscn" id="11_sky"]
-[ext_resource type="PackedScene" path="res://addons/current_system/current_system.tscn" id="12_current"]
 [ext_resource type="PackedScene" uid="uid://b2pleaxvcdai8" path="res://demo/floating_box.tscn" id="13_floating_box"]
 
 [sub_resource type="Curve" id="Curve_fdg1k"]
@@ -182,10 +181,6 @@ cycle_mode_action = &"cycle_camera_mode"
 script = ExtResource("10_tfjfv")
 wind_speed = 6.0
 
-[node name="CurrentSystem" parent="." unique_id=927312905 instance=ExtResource("12_current")]
-current_speed = 0.35
-current_direction = 70.0
-
 [node name="Water" parent="." unique_id=1159832475 instance=ExtResource("7_s0x5e")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -45, 0, 475)
 material_override = SubResource("ShaderMaterial_ycdy4")
@@ -194,7 +189,6 @@ gi_mode = 0
 skeleton = NodePath("")
 use_external_wind = true
 wind_source_path = NodePath("../WindSystem")
-current_source_path = NodePath("../CurrentSystem")
 parameters = Array[ExtResource("2_pw5n6")]([SubResource("Resource_adqv5"), SubResource("Resource_luhq0"), SubResource("Resource_83u3u")])
 
 [node name="OceanAudioPlayer" type="AudioStreamPlayer" parent="." unique_id=1224032298]

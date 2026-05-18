@@ -147,18 +147,6 @@ const EXTERNAL_WIND_SPECTRUM_REFRESH_INTERVAL := 0.5
 		_reset_external_wind_tracking()
 		_mark_spectra_dirty()
 
-@export_group('Ocean Current')
-## Optional node that exposes get_current_vector_3d(world_position). Currents are
-## independent from wind and wave direction.
-@export var current_source_path : NodePath :
-	set(value):
-		current_source_path = value
-		current_source = null
-## Fallback current speed in meters per second when current_source_path is empty.
-@export_range(0.0, 100.0, 0.01, "or_greater") var fallback_current_speed := 0.0
-## Fallback current heading in degrees. 0 points along +Z; 90 points along +X.
-@export_range(-360.0, 360.0, 1.0) var fallback_current_direction := 0.0
-
 ## Parameters for wave cascades. Each item represents one wave scale.
 ## Adding/removing cascades recreates the compute pipelines.
 @export var parameters : Array[WaveCascadeParameters] :
@@ -332,7 +320,6 @@ var rng = RandomNumberGenerator.new()
 var time := 0.0
 var next_update_time := 0.0
 var wind_source : Node
-var current_source : Node
 var _last_external_wind_speed := -1.0
 var _last_external_wind_direction := -999999.0
 var _last_external_wind_spectrum_time := -1.0e20
@@ -356,9 +343,12 @@ var _surface_query_point_buffer
 var _surface_query_cascade_buffer
 var _surface_query_sample_buffer
 var _surface_query_sets := {}
-var _surface_query_sampler := RID()
-var _surface_query_has_pending_readback := false
+var _surface_query_queued_requests := {}
+var _surface_query_pending_requests : Array[Dictionary] = []
 var _surface_query_pending_points := PackedVector3Array()
+var _surface_query_cached_results := {}
+var _surface_query_has_pending_readback := false
+var _surface_query_pending_draw_frame := -1
 var _reflection_renderer : OceanReflectionRenderer
 var interaction_height_texture : ImageTexture
 var _interaction_current_image : Image
@@ -376,7 +366,6 @@ func _ready() -> void:
 	if not Engine.is_editor_hint():
 		_ensure_unique_water_material()
 	_resolve_wind_source()
-	_resolve_current_source()
 	_set_water_shader_parameter(&'water_color', water_color)
 	_set_water_shader_parameter(&'foam_color', foam_color)
 	_set_water_shader_parameter(&'wave_blend_alpha', 1.0)
@@ -413,6 +402,7 @@ func _process(delta : float) -> void:
 		_update_water(update_delta)
 	time += delta
 	_update_wave_blend_alpha()
+	_dispatch_surface_query_requests()
 
 func _setup_wave_generator() -> void:
 	if parameters.size() <= 0:
@@ -512,30 +502,18 @@ func get_water_normal(world_position: Vector3) -> Vector3:
 	var h_f := get_water_height(world_position + Vector3(0, 0,  e))
 	return Vector3(h_l - h_r, 2.0 * e, h_b - h_f).normalized()
 
-func get_water_current(world_position: Vector3) -> Vector3:
-	var source := get_current_source()
-	if source != null:
-		if source.has_method(&'get_current_vector_3d'):
-			var current_3d : Vector3 = source.call(&'get_current_vector_3d', world_position)
-			return current_3d
-		if source.has_method(&'get_current_vector_2d'):
-			var current_2d : Vector2 = source.call(&'get_current_vector_2d', world_position)
-			return Vector3(current_2d.x, 0.0, current_2d.y)
-	var radians := deg_to_rad(fallback_current_direction)
-	return Vector3(sin(radians), 0.0, cos(radians)) * fallback_current_speed
-
 func sample_water_surface(world_position: Vector3) -> WaterSurfaceSample:
 	var points := PackedVector3Array()
 	points.push_back(world_position)
 	var samples := sample_water_surface_batch(points)
 	if samples.is_empty():
-		return _create_invalid_surface_sample(world_position)
+		return null
 	return samples[0]
 
-func sample_water_surface_batch(points: PackedVector3Array) -> Array[WaterSurfaceSample]:
+func sample_water_surface_batch(points: PackedVector3Array, request_owner: Object = null) -> Array[WaterSurfaceSample]:
 	if points.is_empty():
-		return []
-	return _sample_water_surface_batch_gpu(points)
+		return _empty_surface_samples()
+	return _sample_water_surface_batch_gpu(points, request_owner)
 
 func should_use_external_wind() -> bool:
 	return use_external_wind and get_wind_source() != null
@@ -544,11 +522,6 @@ func get_wind_source() -> Node:
 	if wind_source == null:
 		_resolve_wind_source()
 	return wind_source
-
-func get_current_source() -> Node:
-	if current_source == null:
-		_resolve_current_source()
-	return current_source
 
 func get_external_wind_speed() -> float:
 	var external_wind := get_wind_source()
@@ -572,11 +545,6 @@ func _resolve_wind_source() -> void:
 	if wind_source_path.is_empty():
 		return
 	wind_source = get_node_or_null(wind_source_path)
-
-func _resolve_current_source() -> void:
-	if current_source_path.is_empty():
-		return
-	current_source = get_node_or_null(current_source_path)
 
 func _update_external_wind_state() -> void:
 	if not should_use_external_wind():
@@ -1001,7 +969,7 @@ func _ensure_water_interaction_field() -> void:
 	_interaction_previous_image.fill(Color(0.0, 0.0, 0.0, 1.0))
 	_interaction_next_image.fill(Color(0.0, 0.0, 0.0, 1.0))
 	interaction_height_texture = ImageTexture.create_from_image(_interaction_current_image)
-	_surface_query_sets.clear()
+	_clear_surface_query_uniform_sets()
 
 
 func _reset_water_interaction_field() -> void:
@@ -1009,7 +977,7 @@ func _reset_water_interaction_field() -> void:
 	_interaction_current_image = null
 	_interaction_previous_image = null
 	_interaction_next_image = null
-	_surface_query_sets.clear()
+	_clear_surface_query_uniform_sets()
 	if is_inside_tree():
 		_ensure_water_interaction_field()
 		_update_water_interaction_shader_parameters()
@@ -1126,23 +1094,70 @@ func _read_height_images(device: RenderingDevice, texture_rid: RID) -> Array[Ima
 			images.push_back(Image.create_from_data(map_size, map_size, false, Image.FORMAT_RGBAH, data))
 	return images
 
-func _sample_water_surface_batch_gpu(points: PackedVector3Array) -> Array[WaterSurfaceSample]:
+func _sample_water_surface_batch_gpu(points: PackedVector3Array, request_owner: Object = null) -> Array[WaterSurfaceSample]:
+	_read_surface_query_results_if_ready()
+	var owner_key := _get_surface_query_owner_key(request_owner)
+	_surface_query_queued_requests[owner_key] = {
+		"points": points,
+	}
+	var cached_samples : Array[WaterSurfaceSample] = _surface_query_cached_results.get(owner_key, _empty_surface_samples())
+	if cached_samples.size() != points.size():
+		return _empty_surface_samples()
+	return cached_samples
+
+
+func _get_surface_query_owner_key(request_owner: Object) -> int:
+	return 0 if request_owner == null else request_owner.get_instance_id()
+
+
+func _dispatch_surface_query_requests() -> void:
+	_read_surface_query_results_if_ready()
+	if _surface_query_has_pending_readback or _surface_query_queued_requests.is_empty():
+		return
 	if wave_generator == null or wave_generator.context == null:
-		return _create_invalid_surface_samples(points)
+		if parameters.size() > 0:
+			_setup_wave_generator()
+	if wave_generator == null or wave_generator.context == null:
+		return
+
+	var total_count := 0
+	for request in _surface_query_queued_requests.values():
+		var request_points : PackedVector3Array = request.get("points", PackedVector3Array())
+		total_count += request_points.size()
+	if total_count <= 0:
+		_surface_query_queued_requests.clear()
+		return
+	if not _ensure_surface_query_resources(total_count):
+		return
+
+	var combined_points := PackedVector3Array()
+	combined_points.resize(total_count)
+	var dispatch_requests : Array[Dictionary] = []
+	var offset := 0
+	for owner_key in _surface_query_queued_requests.keys():
+		var request : Dictionary = _surface_query_queued_requests[owner_key]
+		var request_points : PackedVector3Array = request.get("points", PackedVector3Array())
+		var count := request_points.size()
+		if count <= 0:
+			continue
+		for i in count:
+			combined_points[offset + i] = request_points[i]
+		dispatch_requests.push_back({
+			"owner_key": int(owner_key),
+			"offset": offset,
+			"count": count,
+		})
+		offset += count
+	if offset <= 0:
+		_surface_query_queued_requests.clear()
+		return
+	if offset != total_count:
+		combined_points.resize(offset)
+		total_count = offset
 
 	var context := wave_generator.context
 	var device := context.device
-	var ready_samples : Array[WaterSurfaceSample] = []
-	if _surface_query_has_pending_readback and _surface_query_sample_buffer != null:
-		var pending_byte_count := _surface_query_pending_points.size() * SURFACE_QUERY_BYTES_PER_SAMPLE
-		var pending_data : PackedByteArray = device.buffer_get_data(_surface_query_sample_buffer.rid, 0, pending_byte_count)
-		ready_samples = _unpack_surface_query_samples(_surface_query_pending_points, pending_data)
-		_surface_query_has_pending_readback = false
-
-	if not _ensure_surface_query_resources(points.size()):
-		return ready_samples if ready_samples.size() == points.size() else _create_invalid_surface_samples(points)
-
-	var point_data := _pack_surface_query_points(points)
+	var point_data := _pack_surface_query_points(combined_points)
 	var cascade_data := _pack_surface_query_cascades()
 	device.buffer_update(_surface_query_point_buffer.rid, 0, point_data.size(), point_data)
 	device.buffer_update(_surface_query_cascade_buffer.rid, 0, cascade_data.size(), cascade_data)
@@ -1151,9 +1166,9 @@ func _sample_water_surface_batch_gpu(points: PackedVector3Array) -> Array[WaterS
 	var previous_displacement_rid : RID = wave_generator.descriptors[&'previous_displacement_map'].rid
 	var uniform_set := _get_surface_query_uniform_set(current_displacement_rid, previous_displacement_rid)
 	if not uniform_set.is_valid():
-		return ready_samples if ready_samples.size() == points.size() else _create_invalid_surface_samples(points)
+		return
 
-	var groups := int(ceil(float(points.size()) / float(SURFACE_QUERY_WORKGROUP_SIZE)))
+	var groups := int(ceil(float(total_count) / float(SURFACE_QUERY_WORKGROUP_SIZE)))
 	var interaction_origin := _get_interaction_map_origin()
 	var compute_list := context.compute_list_begin()
 	device.compute_list_bind_compute_pipeline(compute_list, _surface_query_pipeline)
@@ -1161,7 +1176,7 @@ func _sample_water_surface_batch_gpu(points: PackedVector3Array) -> Array[WaterS
 	device.compute_list_set_push_constant(
 		compute_list,
 		RenderingContext.create_push_constant([
-			points.size(),
+			total_count,
 			mini(parameters.size(), MAX_CASCADES),
 			map_size,
 			water_level,
@@ -1178,19 +1193,52 @@ func _sample_water_surface_batch_gpu(points: PackedVector3Array) -> Array[WaterS
 	)
 	device.compute_list_dispatch(compute_list, groups, 1, 1)
 	context.compute_list_end()
-	# Ocean wave textures live on Godot's main RenderingDevice. Only local
-	# RenderingDevice instances may be manually submitted/synced; the main one is
-	# submitted by RenderingServer. Local-device fallback is kept for tests/tools.
+
 	if device != RenderingServer.get_rendering_device():
 		context.submit()
 		context.sync()
-		var byte_count := points.size() * SURFACE_QUERY_BYTES_PER_SAMPLE
+		var byte_count := total_count * SURFACE_QUERY_BYTES_PER_SAMPLE
 		var sample_data : PackedByteArray = device.buffer_get_data(_surface_query_sample_buffer.rid, 0, byte_count)
-		return _unpack_surface_query_samples(points, sample_data)
+		_store_surface_query_results(combined_points, dispatch_requests, sample_data)
+		_surface_query_queued_requests.clear()
+		return
 
-	_surface_query_pending_points = points
+	_surface_query_pending_points = combined_points
+	_surface_query_pending_requests = dispatch_requests
+	_surface_query_pending_draw_frame = Engine.get_frames_drawn()
 	_surface_query_has_pending_readback = true
-	return ready_samples if ready_samples.size() == points.size() else _create_invalid_surface_samples(points)
+	_surface_query_queued_requests.clear()
+
+
+func _read_surface_query_results_if_ready() -> void:
+	if not _surface_query_has_pending_readback or _surface_query_sample_buffer == null:
+		return
+	if wave_generator == null or wave_generator.context == null:
+		return
+	var device := wave_generator.context.device
+	if device == RenderingServer.get_rendering_device() and Engine.get_frames_drawn() <= _surface_query_pending_draw_frame:
+		return
+	var byte_count := _surface_query_pending_points.size() * SURFACE_QUERY_BYTES_PER_SAMPLE
+	var sample_data : PackedByteArray = device.buffer_get_data(_surface_query_sample_buffer.rid, 0, byte_count)
+	_store_surface_query_results(_surface_query_pending_points, _surface_query_pending_requests, sample_data)
+	_surface_query_has_pending_readback = false
+	_surface_query_pending_points.clear()
+	_surface_query_pending_requests.clear()
+
+
+func _store_surface_query_results(points: PackedVector3Array, requests: Array[Dictionary], data: PackedByteArray) -> void:
+	var samples := _unpack_surface_query_samples(points, data)
+	if samples.size() != points.size():
+		return
+	for request in requests:
+		var owner_key := int(request.get("owner_key", 0))
+		var offset := int(request.get("offset", 0))
+		var count := int(request.get("count", 0))
+		var owner_samples : Array[WaterSurfaceSample] = []
+		for i in count:
+			owner_samples.push_back(samples[offset + i])
+		_surface_query_cached_results[owner_key] = owner_samples
+
 
 func _ensure_surface_query_resources(point_count : int) -> bool:
 	if point_count <= 0:
@@ -1207,22 +1255,16 @@ func _ensure_surface_query_resources(point_count : int) -> bool:
 		_surface_query_shader = context.load_shader('res://addons/ocean_system/shaders/compute/surface_query.glsl')
 	if not _surface_query_pipeline.is_valid():
 		_surface_query_pipeline = context.deletion_queue.push(context.device.compute_pipeline_create(_surface_query_shader))
-	if not _surface_query_sampler.is_valid():
-		var sampler_state := RDSamplerState.new()
-		sampler_state.min_filter = RenderingDevice.SAMPLER_FILTER_LINEAR
-		sampler_state.mag_filter = RenderingDevice.SAMPLER_FILTER_LINEAR
-		sampler_state.repeat_u = RenderingDevice.SAMPLER_REPEAT_MODE_CLAMP_TO_EDGE
-		sampler_state.repeat_v = RenderingDevice.SAMPLER_REPEAT_MODE_CLAMP_TO_EDGE
-		_surface_query_sampler = context.deletion_queue.push(context.device.sampler_create(sampler_state))
-
 	if point_count <= _surface_query_capacity and _surface_query_point_buffer != null:
 		return true
 
-	_surface_query_capacity = _get_surface_query_capacity(point_count)
-	_surface_query_point_buffer = context.create_storage_buffer(_surface_query_capacity * SURFACE_QUERY_BYTES_PER_POINT)
+	var capacity := _get_surface_query_capacity(point_count)
+	_surface_query_capacity = capacity
+	_surface_query_point_buffer = context.create_storage_buffer(capacity * SURFACE_QUERY_BYTES_PER_POINT)
 	_surface_query_cascade_buffer = context.create_storage_buffer(MAX_CASCADES * SURFACE_QUERY_BYTES_PER_CASCADE)
-	_surface_query_sample_buffer = context.create_storage_buffer(_surface_query_capacity * SURFACE_QUERY_BYTES_PER_SAMPLE)
+	_surface_query_sample_buffer = context.create_storage_buffer(capacity * SURFACE_QUERY_BYTES_PER_SAMPLE)
 	_surface_query_sets.clear()
+	_surface_query_has_pending_readback = false
 	return true
 
 func _get_surface_query_capacity(point_count : int) -> int:
@@ -1232,13 +1274,9 @@ func _get_surface_query_capacity(point_count : int) -> int:
 	return capacity
 
 func _get_surface_query_uniform_set(current_displacement_rid : RID, previous_displacement_rid : RID) -> RID:
-	_ensure_water_interaction_field()
-	var interaction_rid := interaction_height_texture.get_rid() if interaction_height_texture != null else RID()
-	var key := "%s:%s:%s" % [str(current_displacement_rid), str(previous_displacement_rid), str(interaction_rid)]
+	var key := "%s:%s" % [str(current_displacement_rid), str(previous_displacement_rid)]
 	if _surface_query_sets.has(key):
 		return _surface_query_sets[key]
-	if not interaction_rid.is_valid() or not _surface_query_sampler.is_valid():
-		return RID()
 	var device := wave_generator.context.device
 	var uniforms : Array[RDUniform] = []
 	_add_surface_query_uniform(uniforms, 0, _surface_query_point_buffer.type, [_surface_query_point_buffer.rid])
@@ -1246,7 +1284,6 @@ func _get_surface_query_uniform_set(current_displacement_rid : RID, previous_dis
 	_add_surface_query_uniform(uniforms, 2, _surface_query_sample_buffer.type, [_surface_query_sample_buffer.rid])
 	_add_surface_query_uniform(uniforms, 3, wave_generator.descriptors[&'displacement_map'].type, [current_displacement_rid])
 	_add_surface_query_uniform(uniforms, 4, wave_generator.descriptors[&'previous_displacement_map'].type, [previous_displacement_rid])
-	_add_surface_query_uniform(uniforms, 5, RenderingDevice.UNIFORM_TYPE_SAMPLER_WITH_TEXTURE, [_surface_query_sampler, interaction_rid])
 	var uniform_set := wave_generator.context.deletion_queue.push(device.uniform_set_create(uniforms, _surface_query_shader, 0))
 	_surface_query_sets[key] = uniform_set
 	return uniform_set
@@ -1294,7 +1331,7 @@ func _pack_surface_query_cascades() -> PackedByteArray:
 
 func _unpack_surface_query_samples(points: PackedVector3Array, data: PackedByteArray) -> Array[WaterSurfaceSample]:
 	if data.size() < points.size() * SURFACE_QUERY_BYTES_PER_SAMPLE:
-		return _create_invalid_surface_samples(points)
+		return _empty_surface_samples()
 
 	var samples : Array[WaterSurfaceSample] = []
 	samples.resize(points.size())
@@ -1313,31 +1350,24 @@ func _unpack_surface_query_samples(points: PackedVector3Array, data: PackedByteA
 			data.decode_float(offset + 20),
 			data.decode_float(offset + 24)
 		)
-		sample.valid = data.decode_float(offset + 28) > 0.5
 		sample.surface_velocity = Vector3(
 			data.decode_float(offset + 32),
 			data.decode_float(offset + 36),
 			data.decode_float(offset + 40)
 		)
-		sample.current_velocity = get_water_current(points[i])
 		samples[i] = sample
 	return samples
 
-func _create_invalid_surface_sample(world_position: Vector3) -> WaterSurfaceSample:
-	var sample := WaterSurfaceSample.new()
-	sample.position = world_position
-	sample.height = water_level
-	sample.normal = Vector3.UP
-	sample.current_velocity = get_water_current(world_position)
-	sample.valid = false
-	return sample
 
-func _create_invalid_surface_samples(points: PackedVector3Array) -> Array[WaterSurfaceSample]:
+func _empty_surface_samples() -> Array[WaterSurfaceSample]:
 	var samples : Array[WaterSurfaceSample] = []
-	samples.resize(points.size())
-	for i in points.size():
-		samples[i] = _create_invalid_surface_sample(points[i])
 	return samples
+
+
+func _clear_surface_query_uniform_sets() -> void:
+	_surface_query_sets.clear()
+	_surface_query_has_pending_readback = false
+
 
 func _reset_surface_query_resources() -> void:
 	_surface_query_capacity = 0
@@ -1347,9 +1377,12 @@ func _reset_surface_query_resources() -> void:
 	_surface_query_cascade_buffer = null
 	_surface_query_sample_buffer = null
 	_surface_query_sets.clear()
-	_surface_query_sampler = RID()
-	_surface_query_has_pending_readback = false
+	_surface_query_queued_requests.clear()
+	_surface_query_pending_requests.clear()
 	_surface_query_pending_points.clear()
+	_surface_query_cached_results.clear()
+	_surface_query_has_pending_readback = false
+	_surface_query_pending_draw_frame = -1
 
 func _set_texture_rid(texture: Texture2DArrayRD, rid: RID) -> void:
 	texture.texture_rd_rid = RID()

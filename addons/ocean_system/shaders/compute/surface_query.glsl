@@ -18,7 +18,7 @@ struct CascadeData {
 
 struct SurfaceSample {
 	vec4 displacement_height; // xyz = visual displacement, w = height
-	vec4 normal_valid;        // xyz = normal, w = valid
+	vec4 normal_data;         // xyz = normal, w = unused
 	vec4 surface_velocity;    // xyz = displacement velocity, w = unused
 };
 
@@ -36,7 +36,6 @@ layout(std430, set = 0, binding = 2) restrict writeonly buffer SampleBuffer {
 
 layout(rgba16f, set = 0, binding = 3) restrict readonly uniform image2DArray current_displacements;
 layout(rgba16f, set = 0, binding = 4) restrict readonly uniform image2DArray previous_displacements;
-layout(set = 0, binding = 5) uniform sampler2D interaction_height_map;
 
 layout(push_constant) restrict readonly uniform PushConstants {
 	uint point_count;
@@ -118,14 +117,7 @@ vec3 sample_previous_total_displacement(vec3 world_position) {
 }
 
 float sample_interaction_height(vec3 world_position) {
-	if (interaction_height_strength <= 0.0) {
-		return 0.0;
-	}
-	vec2 uv = (world_position.xz - vec2(interaction_origin_x, interaction_origin_z)) / max(interaction_world_size, 0.001);
-	if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) {
-		return 0.0;
-	}
-	return texture(interaction_height_map, uv).r * interaction_height_strength;
+	return 0.0;
 }
 
 float sample_height(vec3 world_position) {
@@ -155,6 +147,6 @@ void main() {
 	vec3 velocity = (current_displacement - previous_displacement) / max(wave_blend_duration, 1.0 / 60.0);
 
 	samples[index].displacement_height = vec4(visual_displacement, water_level + visual_displacement.y);
-	samples[index].normal_valid = vec4(normal, 1.0);
+	samples[index].normal_data = vec4(normal, 0.0);
 	samples[index].surface_velocity = vec4(velocity, 0.0);
 }

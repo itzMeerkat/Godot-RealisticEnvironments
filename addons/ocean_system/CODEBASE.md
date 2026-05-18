@@ -69,8 +69,8 @@ compute pass 顺序是：
 
 开启 `enable_height_queries` 后，系统会按 `height_query_updates_per_second` 将 GPU displacement texture 读回 `_height_images`。缓存图像包含每个 cascade 的 active/pending 两层。`get_water_height()` 和 `get_water_displacement()` 在 CPU 侧双线性采样缓存图像，同时应用 spectrum blend 和 wave output blend。`get_water_surface_velocity()` 用当前/上一 displacement 缓存估算表面速度。`get_water_normal()` 用周围高度差估算法线。
 
-`sample_water_surface()` 和 `sample_water_surface_batch()` 返回高度、法线、位移、表面速度与独立海流速度。批量接口使用 `surface_query.glsl` GPU point-query 后端：调用方上传世界坐标 buffer，compute shader 直接采样当前/上一帧 displacement texture array，并只读回每个点的 `WaterSurfaceSample` 数据。浮力系统走该路径，不依赖 `enable_height_queries`。
+`sample_water_surface()` 和 `sample_water_surface_batch()` 通过 GPU point-query 返回高度、法线、位移与表面速度。批量接口使用 `surface_query.glsl`：调用方提交世界坐标与 owner，`OceanSystem` 在 `_process()` 中把本帧所有 owner 的请求合并到一个大 point buffer，一次 compute dispatch 后只读回一个 sample buffer，再按 offset/count 分发缓存结果。浮力系统走该路径，不依赖 `enable_height_queries`；当主 RenderingDevice 的异步结果尚未就绪时返回空结果，不生成静水替代样本。
 
 ## 依赖边界
 
-Ocean System 不直接依赖 Wind System、Current System 或 Sky System。外部风源只要求提供 `get_wind_speed()`、`get_wind_direction_degrees()`，或同名属性。外部海流源只要求提供 `get_current_vector_3d(world_position)`。Sky 对 ocean 颜色的写入也是通过普通属性名完成。
+Ocean System 不直接依赖 Wind System 或 Sky System。外部风源只要求提供 `get_wind_speed()`、`get_wind_direction_degrees()`，或同名属性。Sky 对 ocean 颜色的写入也是通过普通属性名完成。

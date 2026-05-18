@@ -10,16 +10,6 @@ extends RigidBody3D
 		player_controlled = value
 		_apply_player_controlled_state()
 
-@export_group("Stability")
-@export var use_custom_center_of_mass := true :
-	set(value):
-		use_custom_center_of_mass = value
-		_apply_center_of_mass()
-@export var custom_center_of_mass := Vector3(0.0, -1.0, -1.0) :
-	set(value):
-		custom_center_of_mass = value
-		_apply_center_of_mass()
-
 @export_group("Debug History")
 @export var debug_draw_position_history := true :
 	set(value):
@@ -47,7 +37,6 @@ func _enter_tree() -> void:
 
 
 func _ready() -> void:
-	_apply_center_of_mass()
 	_ensure_history_nodes()
 	_apply_player_controlled_state()
 
@@ -56,14 +45,6 @@ func _physics_process(_delta: float) -> void:
 	if Engine.is_editor_hint() or not player_controlled or not debug_draw_position_history:
 		return
 	_record_history_point()
-
-
-func _apply_center_of_mass() -> void:
-	if use_custom_center_of_mass:
-		center_of_mass_mode = RigidBody3D.CENTER_OF_MASS_MODE_CUSTOM
-		center_of_mass = custom_center_of_mass
-	else:
-		center_of_mass_mode = RigidBody3D.CENTER_OF_MASS_MODE_AUTO
 
 
 func clear_position_history() -> void:

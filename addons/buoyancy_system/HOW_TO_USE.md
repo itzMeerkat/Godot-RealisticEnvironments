@@ -3,11 +3,10 @@
 ## Setup
 
 1. Add an `OceanSystem` to the scene.
-2. Add a `CurrentSystem` if objects should drift with ocean current.
-3. Add a `RigidBody3D` for the floating object.
-4. Add `BuoyantBody` as a child of the rigid body.
-5. Add `BuoyancyCellVolume` under the rigid body.
-6. Assign `source_model_path`, choose `voxel_size`, then toggle
+2. Add a `RigidBody3D` for the floating object.
+3. Add `BuoyantBody` as a child of the rigid body.
+4. Add `BuoyancyCellVolume` under the rigid body.
+5. Assign `source_model_path`, choose `voxel_size`, then toggle
    `generate_cells_now` in the Inspector to fill the source model's bounds with
    editable cells.
 
@@ -16,6 +15,11 @@ enabled cell contributes volume, density-derived mass, buoyancy, drag, and
 debug data. When `apply_mass_to_rigid_body` is enabled on the cell volume, the
 parent rigid body's mass and center of mass are calculated from the enabled
 cells.
+
+`BuoyantBody` owns global water response tuning such as vertical damping,
+longitudinal water drag, and lateral water drag. Each cell only stores
+multipliers for those values, so the whole body can be tuned globally while
+specific cells can still be made more or less resistant.
 
 The buoyancy implementation uses OceanSystem's GPU batched surface query API.
 It does not require `enable_height_queries`; sample points are uploaded to a

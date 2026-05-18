@@ -33,19 +33,19 @@ extends Resource
 		flooding_fraction = clampf(value, 0.0, 1.0)
 		emit_changed()
 
-@export_range(0.0, 100.0, 0.01, "or_greater") var vertical_damping := 1.4 :
+@export_range(0.0, 100.0, 0.01, "or_greater") var vertical_damping_multiplier := 1.0 :
 	set(value):
-		vertical_damping = maxf(value, 0.0)
+		vertical_damping_multiplier = maxf(value, 0.0)
 		emit_changed()
 
-@export_range(0.0, 100.0, 0.01, "or_greater") var water_drag := 0.45 :
+@export_range(0.0, 100.0, 0.01, "or_greater") var longitudinal_water_drag_multiplier := 1.0 :
 	set(value):
-		water_drag = maxf(value, 0.0)
+		longitudinal_water_drag_multiplier = maxf(value, 0.0)
 		emit_changed()
 
-@export_range(0.0, 100.0, 0.01, "or_greater") var current_drag := 0.65 :
+@export_range(0.0, 100.0, 0.01, "or_greater") var lateral_water_drag_multiplier := 1.0 :
 	set(value):
-		current_drag = maxf(value, 0.0)
+		lateral_water_drag_multiplier = maxf(value, 0.0)
 		emit_changed()
 
 

@@ -7,7 +7,11 @@ extends Node3D
 const DEFAULT_CELL_COLOR := Color(0.1, 0.8, 1.0, 0.18)
 const DISABLED_CELL_COLOR := Color(0.25, 0.25, 0.25, 0.08)
 const WATERLINE_CELL_COLOR := Color(0.1, 0.7, 1.0, 0.9)
-const FORCE_COLOR := Color(1.0, 0.25, 0.1, 1.0)
+const BUOYANCY_FORCE_COLOR := Color(0.1, 0.95, 0.35, 1.0)
+const TOTAL_FORCE_COLOR := Color(1.0, 0.25, 0.1, 1.0)
+const BODY_GRAVITY_COLOR := Color(1.0, 0.2, 0.05, 1.0)
+const BODY_NET_FORCE_COLOR := Color(1.0, 0.9, 0.15, 1.0)
+const CENTER_OF_MASS_COLOR := Color(1.0, 1.0, 1.0, 1.0)
 const INTERACTION_SOURCE_LIMIT := 6
 const BUOYANCY_CELL := preload("res://addons/buoyancy_system/buoyancy_cell.gd")
 
@@ -41,9 +45,9 @@ const BUOYANCY_CELL := preload("res://addons/buoyancy_system/buoyancy_cell.gd")
 @export_group("Buoyancy Defaults")
 @export_range(0.0, 1.0, 0.01) var default_buoyancy_efficiency := 1.0
 @export_range(0.0, 1.0, 0.01) var default_flooding_fraction := 0.0
-@export_range(0.0, 100.0, 0.01, "or_greater") var default_vertical_damping := 1.4
-@export_range(0.0, 100.0, 0.01, "or_greater") var default_water_drag := 0.45
-@export_range(0.0, 100.0, 0.01, "or_greater") var default_current_drag := 0.65
+@export_range(0.0, 100.0, 0.01, "or_greater") var default_vertical_damping_multiplier := 1.0
+@export_range(0.0, 100.0, 0.01, "or_greater") var default_longitudinal_water_drag_multiplier := 1.0
+@export_range(0.0, 100.0, 0.01, "or_greater") var default_lateral_water_drag_multiplier := 1.0
 
 @export_group("Mass")
 @export var apply_mass_to_rigid_body := true :
@@ -89,13 +93,27 @@ const BUOYANCY_CELL := preload("res://addons/buoyancy_system/buoyancy_cell.gd")
 	set(value):
 		debug_force_scale = maxf(value, 0.001)
 		_queue_debug_rebuild()
+@export_range(0.001, 10.0, 0.001, "or_greater") var debug_body_force_scale := 0.004 :
+	set(value):
+		debug_body_force_scale = maxf(value, 0.001)
+		_queue_debug_rebuild()
+@export_range(0.01, 10.0, 0.01, "or_greater") var debug_center_of_mass_size := 0.35 :
+	set(value):
+		debug_center_of_mass_size = maxf(value, 0.01)
+		_queue_debug_rebuild()
 
 var _debug_mesh_instance : MeshInstance3D
 var _debug_mesh := ImmediateMesh.new()
 var _cell_material : StandardMaterial3D
 var _waterline_material : StandardMaterial3D
-var _force_material : StandardMaterial3D
+var _buoyancy_force_material : StandardMaterial3D
+var _total_force_material : StandardMaterial3D
+var _body_gravity_material : StandardMaterial3D
+var _body_net_force_material : StandardMaterial3D
+var _center_of_mass_material : StandardMaterial3D
 var _debug_sample_states : Array[Dictionary] = []
+var _debug_body_state := {}
+var _debug_line_vertices := PackedVector3Array()
 var _debug_rebuild_queued := false
 
 
@@ -113,6 +131,7 @@ func _ready() -> void:
 	_connect_cell_signals()
 	_ensure_debug_nodes()
 	_apply_mass_to_parent()
+	call_deferred(&"_apply_mass_to_parent")
 	_rebuild_debug_mesh()
 
 
@@ -152,9 +171,9 @@ func generate_cells_from_source() -> void:
 				cell.density = default_density
 				cell.buoyancy_efficiency = default_buoyancy_efficiency
 				cell.flooding_fraction = default_flooding_fraction
-				cell.vertical_damping = default_vertical_damping
-				cell.water_drag = default_water_drag
-				cell.current_drag = default_current_drag
+				cell.vertical_damping_multiplier = default_vertical_damping_multiplier
+				cell.longitudinal_water_drag_multiplier = default_longitudinal_water_drag_multiplier
+				cell.lateral_water_drag_multiplier = default_lateral_water_drag_multiplier
 				generated.push_back(cell)
 	cells = generated
 	_connect_cell_signals()
@@ -169,20 +188,22 @@ func get_buoyancy_sample_points() -> Array[Dictionary]:
 	_debug_sample_states.clear()
 	_debug_sample_states.resize(cells.size())
 	for i in cells.size():
-		var cell := cells[i]
+		var cell := cells[i] as BuoyancyCell
 		if cell == null or not cell.enabled:
 			continue
+		var vertical_half_extent := _get_cell_vertical_half_extent(cell)
 		samples.push_back({
 			"world_position": global_transform * cell.local_center,
 			"local_position": cell.local_center,
-			"volume_cubic_meters": float(cell.call(&"get_volume")),
-			"mass_kg": float(cell.call(&"get_mass")),
+			"volume_cubic_meters": cell.get_volume(),
+			"mass_kg": cell.get_mass(),
 			"buoyancy_efficiency": cell.buoyancy_efficiency,
 			"flooding_fraction": cell.flooding_fraction,
-			"submersion_depth": maxf(cell.size.y, 0.001),
-			"vertical_damping": cell.vertical_damping,
-			"water_drag": cell.water_drag,
-			"current_drag": cell.current_drag,
+			"submersion_depth": maxf(vertical_half_extent * 2.0, 0.001),
+			"cell_vertical_half_extent": vertical_half_extent,
+			"vertical_damping_multiplier": cell.vertical_damping_multiplier,
+			"longitudinal_water_drag_multiplier": cell.longitudinal_water_drag_multiplier,
+			"lateral_water_drag_multiplier": cell.lateral_water_drag_multiplier,
 			"source": self,
 			"source_sample_index": i,
 		})
@@ -191,27 +212,30 @@ func get_buoyancy_sample_points() -> Array[Dictionary]:
 
 func get_total_volume() -> float:
 	var volume := 0.0
-	for cell in cells:
+	for i in cells.size():
+		var cell := cells[i] as BuoyancyCell
 		if cell != null and cell.enabled:
-			volume += float(cell.call(&"get_volume"))
+			volume += cell.get_volume()
 	return volume
 
 
 func get_total_mass() -> float:
 	var mass := 0.0
-	for cell in cells:
-		if cell != null:
-			mass += float(cell.call(&"get_mass"))
+	for i in cells.size():
+		var cell := cells[i] as BuoyancyCell
+		if cell != null and cell.enabled:
+			mass += cell.get_mass()
 	return mass * mass_scale
 
 
 func get_center_of_mass() -> Vector3:
 	var weighted_center := Vector3.ZERO
 	var total_mass := 0.0
-	for cell in cells:
+	for i in cells.size():
+		var cell := cells[i] as BuoyancyCell
 		if cell == null or not cell.enabled:
 			continue
-		var mass := float(cell.call(&"get_mass"))
+		var mass := cell.get_mass()
 		weighted_center += cell.local_center * mass
 		total_mass += mass
 	if total_mass <= 0.0001:
@@ -273,13 +297,14 @@ func get_water_interaction_sources(sample_points: Array, surface_samples: Array,
 		var world_position : Vector3 = sample_point["world_position"]
 		var local_position : Vector3 = sample_point.get("local_position", to_local(world_position))
 		var cell_height := maxf(float(sample_point.get("submersion_depth", voxel_size.y)), 0.001)
-		var depth := water_sample.height - world_position.y
-		var submersion := clampf(depth / cell_height, 0.0, 1.0)
+		var cell_half_height := maxf(float(sample_point.get("cell_vertical_half_extent", cell_height * 0.5)), 0.0005)
+		var cell_bottom_y := world_position.y - cell_half_height
+		var submersion := clampf((water_sample.height - cell_bottom_y) / cell_height, 0.0, 1.0)
 		if submersion <= 0.02:
 			continue
 		var offset := world_position - rigid_body.global_position
 		var point_velocity := rigid_body.linear_velocity + rigid_body.angular_velocity.cross(offset)
-		var water_velocity := water_sample.surface_velocity + water_sample.current_velocity
+		var water_velocity := water_sample.surface_velocity
 		var relative_velocity := point_velocity - water_velocity
 		var speed := relative_velocity.length()
 		if speed < interaction_velocity_threshold:
@@ -325,7 +350,15 @@ func get_water_interaction_sources(sample_points: Array, surface_samples: Array,
 	return sources
 
 
-func set_debug_sample_state(sample_index: int, sample_position: Vector3, water_position: Vector3, force: Vector3, has_sample: bool) -> void:
+func set_debug_sample_state(
+	sample_index: int,
+	sample_position: Vector3,
+	water_position: Vector3,
+	force: Vector3,
+	has_sample: bool,
+	buoyancy_force := Vector3.ZERO,
+	submersion := 0.0
+) -> void:
 	if sample_index < 0:
 		return
 	while _debug_sample_states.size() <= sample_index:
@@ -335,6 +368,18 @@ func set_debug_sample_state(sample_index: int, sample_position: Vector3, water_p
 		"water_position": water_position,
 		"force": force,
 		"has_sample": has_sample,
+		"buoyancy_force": buoyancy_force,
+		"submersion": submersion,
+	}
+	_queue_debug_rebuild()
+
+
+func set_debug_body_state(center_of_mass_world: Vector3, gravity_force: Vector3, external_force: Vector3, has_state: bool) -> void:
+	_debug_body_state = {
+		"center_of_mass_world": center_of_mass_world,
+		"gravity_force": gravity_force,
+		"external_force": external_force,
+		"has_state": has_state,
 	}
 	_queue_debug_rebuild()
 
@@ -386,7 +431,8 @@ func _get_aabb_corners(bounds: AABB) -> Array[Vector3]:
 
 
 func _connect_cell_signals() -> void:
-	for cell in cells:
+	for i in cells.size():
+		var cell := cells[i] as BuoyancyCell
 		if cell == null:
 			continue
 		if not cell.changed.is_connected(_on_cell_changed):
@@ -409,13 +455,14 @@ func _apply_mass_to_parent() -> void:
 		return
 	body.mass = total_mass
 	body.center_of_mass_mode = RigidBody3D.CENTER_OF_MASS_MODE_CUSTOM
-	body.center_of_mass = get_center_of_mass()
+	body.center_of_mass = transform * get_center_of_mass()
 
 
 func _get_enabled_cell_bounds() -> AABB:
 	var bounds := AABB()
 	var has_bounds := false
-	for cell in cells:
+	for i in cells.size():
+		var cell := cells[i] as BuoyancyCell
 		if cell == null or not cell.enabled:
 			continue
 		var half_size : Vector3 = cell.size * 0.5
@@ -426,6 +473,17 @@ func _get_enabled_cell_bounds() -> AABB:
 		else:
 			bounds = bounds.merge(cell_bounds)
 	return bounds if has_bounds else AABB()
+
+
+func _get_cell_vertical_half_extent(cell: Resource) -> float:
+	var half_size : Vector3 = cell.size * 0.5
+	var basis := global_transform.basis
+	return maxf(
+		absf(basis.x.y) * half_size.x
+		+ absf(basis.y.y) * half_size.y
+		+ absf(basis.z.y) * half_size.z,
+		0.0005
+	)
 
 
 func _get_interaction_zone_index(local_position: Vector3, bounds: AABB, zone_count: int) -> int:
@@ -494,15 +552,16 @@ func _update_debug_materials() -> void:
 		_cell_material = _create_debug_material(DEFAULT_CELL_COLOR)
 	if _waterline_material == null:
 		_waterline_material = _create_debug_material(WATERLINE_CELL_COLOR)
-	if _force_material == null:
-		_force_material = _create_debug_material(FORCE_COLOR)
-	if _debug_mesh_instance != null:
-		if _debug_mesh.get_surface_count() > 0:
-			_debug_mesh_instance.set_surface_override_material(0, _cell_material)
-		if _debug_mesh.get_surface_count() > 1:
-			_debug_mesh_instance.set_surface_override_material(1, _waterline_material)
-		if _debug_mesh.get_surface_count() > 2:
-			_debug_mesh_instance.set_surface_override_material(2, _force_material)
+	if _buoyancy_force_material == null:
+		_buoyancy_force_material = _create_debug_material(BUOYANCY_FORCE_COLOR)
+	if _total_force_material == null:
+		_total_force_material = _create_debug_material(TOTAL_FORCE_COLOR)
+	if _body_gravity_material == null:
+		_body_gravity_material = _create_debug_material(BODY_GRAVITY_COLOR)
+	if _body_net_force_material == null:
+		_body_net_force_material = _create_debug_material(BODY_NET_FORCE_COLOR)
+	if _center_of_mass_material == null:
+		_center_of_mass_material = _create_debug_material(CENTER_OF_MASS_COLOR)
 
 
 func _create_debug_material(color: Color) -> StandardMaterial3D:
@@ -521,27 +580,86 @@ func _rebuild_debug_mesh() -> void:
 	_debug_mesh.clear_surfaces()
 	if not debug_draw:
 		return
+	_update_debug_materials()
 
-	_debug_mesh.surface_begin(Mesh.PRIMITIVE_LINES)
-	var drawn := 0
-	for cell in cells:
-		if cell == null:
-			continue
-		if drawn >= debug_max_cells:
-			break
-		_add_cell_box(cell)
-		drawn += 1
-	_debug_mesh.surface_end()
+	if _has_debug_cells():
+		var drawn := 0
+		_begin_debug_lines()
+		for i in cells.size():
+			var cell := cells[i] as BuoyancyCell
+			if cell == null:
+				continue
+			if drawn >= debug_max_cells:
+				break
+			_add_cell_box(cell)
+			drawn += 1
+		_commit_debug_lines(_cell_material)
 
 	if _has_debug_sample_lines():
-		_debug_mesh.surface_begin(Mesh.PRIMITIVE_LINES)
+		_begin_debug_lines()
 		_add_debug_water_lines()
-		_debug_mesh.surface_end()
+		_commit_debug_lines(_waterline_material)
 
-		_debug_mesh.surface_begin(Mesh.PRIMITIVE_LINES)
-		_add_debug_force_lines()
-		_debug_mesh.surface_end()
-	_update_debug_materials()
+	if _has_debug_sample_lines() and _has_debug_buoyancy_forces():
+		_begin_debug_lines()
+		_add_debug_buoyancy_force_lines()
+		_commit_debug_lines(_buoyancy_force_material)
+
+	if _has_debug_sample_lines() and _has_debug_total_forces():
+		_begin_debug_lines()
+		_add_debug_total_force_lines()
+		_commit_debug_lines(_total_force_material)
+
+	if _has_debug_body_state():
+		_begin_debug_lines()
+		_add_debug_center_of_mass()
+		_commit_debug_lines(_center_of_mass_material)
+
+	if _has_debug_body_state():
+		_begin_debug_lines()
+		_add_debug_body_gravity()
+		_commit_debug_lines(_body_gravity_material)
+
+	if _has_debug_body_state():
+		_begin_debug_lines()
+		_add_debug_body_net_force()
+		_commit_debug_lines(_body_net_force_material)
+
+
+func _begin_debug_lines() -> void:
+	_debug_line_vertices.clear()
+
+
+func _add_debug_vertex(vertex: Vector3) -> void:
+	_debug_line_vertices.push_back(vertex)
+
+
+func _commit_debug_lines(material: Material) -> void:
+	if _debug_line_vertices.is_empty():
+		return
+	if _debug_line_vertices.size() % 2 != 0:
+		return
+	_debug_mesh.surface_begin(Mesh.PRIMITIVE_LINES)
+	for vertex in _debug_line_vertices:
+		_debug_mesh.surface_add_vertex(vertex)
+	_debug_mesh.surface_end()
+	_set_last_surface_material(material)
+
+
+func _set_last_surface_material(material: Material) -> void:
+	if _debug_mesh_instance == null:
+		return
+	var surface_index := _debug_mesh.get_surface_count() - 1
+	if surface_index >= 0:
+		_debug_mesh_instance.set_surface_override_material(surface_index, material)
+
+
+func _has_debug_cells() -> bool:
+	for i in cells.size():
+		var cell := cells[i] as BuoyancyCell
+		if cell != null:
+			return true
+	return false
 
 
 func _add_cell_box(cell: Resource) -> void:
@@ -563,13 +681,35 @@ func _add_cell_box(cell: Resource) -> void:
 		0, 4, 1, 5, 2, 6, 3, 7,
 	]
 	for i in range(0, edges.size(), 2):
-		_debug_mesh.surface_add_vertex(corners[edges[i]])
-		_debug_mesh.surface_add_vertex(corners[edges[i + 1]])
+		_add_debug_vertex(corners[edges[i]])
+		_add_debug_vertex(corners[edges[i + 1]])
 
 
 func _has_debug_sample_lines() -> bool:
 	for sample_state in _debug_sample_states:
 		if sample_state is Dictionary and not sample_state.is_empty() and bool(sample_state.get("has_sample", false)):
+			return true
+	return false
+
+
+func _has_debug_buoyancy_forces() -> bool:
+	for sample_state in _debug_sample_states:
+		if not (sample_state is Dictionary):
+			continue
+		if sample_state.is_empty() or not bool(sample_state.get("has_sample", false)):
+			continue
+		if float(sample_state.get("submersion", 0.0)) > 0.0 and Vector3(sample_state.get("buoyancy_force", Vector3.ZERO)).length_squared() > 0.0001:
+			return true
+	return false
+
+
+func _has_debug_total_forces() -> bool:
+	for sample_state in _debug_sample_states:
+		if not (sample_state is Dictionary):
+			continue
+		if sample_state.is_empty() or not bool(sample_state.get("has_sample", false)):
+			continue
+		if float(sample_state.get("submersion", 0.0)) > 0.0 and Vector3(sample_state.get("force", Vector3.ZERO)).length_squared() > 0.0001:
 			return true
 	return false
 
@@ -582,19 +722,94 @@ func _add_debug_water_lines() -> void:
 			continue
 		var sample_position : Vector3 = sample_state["sample_position"]
 		var water_position : Vector3 = sample_state["water_position"]
-		_debug_mesh.surface_add_vertex(to_local(sample_position))
-		_debug_mesh.surface_add_vertex(to_local(water_position))
+		_add_debug_vertex(to_local(sample_position))
+		_add_debug_vertex(to_local(water_position))
 
 
-func _add_debug_force_lines() -> void:
+func _add_debug_buoyancy_force_lines() -> void:
 	for sample_state in _debug_sample_states:
 		if not (sample_state is Dictionary):
 			continue
 		if sample_state.is_empty() or not bool(sample_state.get("has_sample", false)):
 			continue
-		var water_position : Vector3 = sample_state["water_position"]
+		var submersion := float(sample_state.get("submersion", 0.0))
+		if submersion <= 0.0:
+			continue
+		var sample_position : Vector3 = sample_state["sample_position"]
+		var buoyancy_force : Vector3 = sample_state.get("buoyancy_force", Vector3.ZERO)
+		_add_debug_arrow(sample_position, buoyancy_force, debug_force_scale)
+
+
+func _add_debug_total_force_lines() -> void:
+	for sample_state in _debug_sample_states:
+		if not (sample_state is Dictionary):
+			continue
+		if sample_state.is_empty() or not bool(sample_state.get("has_sample", false)):
+			continue
+		var submersion := float(sample_state.get("submersion", 0.0))
+		if submersion <= 0.0:
+			continue
+		var sample_position : Vector3 = sample_state["sample_position"]
 		var force : Vector3 = sample_state["force"]
-		var start_local := to_local(water_position)
-		var end_local := to_local(water_position + force * debug_force_scale)
-		_debug_mesh.surface_add_vertex(start_local)
-		_debug_mesh.surface_add_vertex(end_local)
+		_add_debug_arrow(sample_position, force, debug_force_scale)
+
+
+func _has_debug_body_state() -> bool:
+	return _debug_body_state is Dictionary and not _debug_body_state.is_empty() and bool(_debug_body_state.get("has_state", false))
+
+
+func _add_debug_center_of_mass() -> void:
+	var center_world : Vector3 = _debug_body_state["center_of_mass_world"]
+	var center := to_local(center_world)
+	var size := debug_center_of_mass_size
+	_add_debug_vertex(center + Vector3.LEFT * size)
+	_add_debug_vertex(center + Vector3.RIGHT * size)
+	_add_debug_vertex(center + Vector3.DOWN * size)
+	_add_debug_vertex(center + Vector3.UP * size)
+	_add_debug_vertex(center + Vector3.FORWARD * size)
+	_add_debug_vertex(center + Vector3.BACK * size)
+
+
+func _add_debug_body_gravity() -> void:
+	var center_world : Vector3 = _debug_body_state["center_of_mass_world"]
+	var gravity_force : Vector3 = _debug_body_state["gravity_force"]
+	_add_debug_arrow(center_world, gravity_force, debug_body_force_scale)
+
+
+func _add_debug_body_net_force() -> void:
+	var center_world : Vector3 = _debug_body_state["center_of_mass_world"]
+	var external_force : Vector3 = _debug_body_state["external_force"]
+	_add_debug_arrow(center_world, external_force, debug_body_force_scale)
+
+
+func _add_debug_arrow(start_world: Vector3, force: Vector3, scale: float) -> void:
+	if force.length_squared() <= 0.0001:
+		return
+	var start_local := to_local(start_world)
+	var end_local := to_local(start_world + force * scale)
+	_add_debug_vertex(start_local)
+	_add_debug_vertex(end_local)
+	_add_arrowhead(end_local, start_local)
+
+
+func _add_arrowhead(end_local: Vector3, start_local: Vector3) -> void:
+	var direction := end_local - start_local
+	if direction.length_squared() <= 0.0001:
+		return
+	direction = direction.normalized()
+	var side := direction.cross(Vector3.UP)
+	if side.length_squared() <= 0.0001:
+		side = direction.cross(Vector3.RIGHT)
+	side = side.normalized()
+	var up := side.cross(direction).normalized()
+	var length := minf(end_local.distance_to(start_local) * 0.22, 0.45)
+	var width := length * 0.45
+	var base := end_local - direction * length
+	_add_debug_vertex(end_local)
+	_add_debug_vertex(base + side * width)
+	_add_debug_vertex(end_local)
+	_add_debug_vertex(base - side * width)
+	_add_debug_vertex(end_local)
+	_add_debug_vertex(base + up * width)
+	_add_debug_vertex(end_local)
+	_add_debug_vertex(base - up * width)
