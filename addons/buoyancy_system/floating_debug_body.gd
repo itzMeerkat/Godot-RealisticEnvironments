@@ -137,8 +137,6 @@ func _apply_player_controlled_state() -> void:
 		var cell_volume := child as Node
 		if cell_volume == null or not cell_volume.has_method(&"get_buoyancy_sample_points"):
 			continue
-		if sync_child_water_cutout_with_player_control:
-			cell_volume.set(&"water_exclusion_enabled", player_controlled)
 		if sync_child_buoyancy_debug_with_player_control:
 			cell_volume.set(&"debug_draw", player_controlled)
 
@@ -148,6 +146,12 @@ func _apply_player_controlled_state() -> void:
 			continue
 		if sync_child_water_cutout_with_player_control:
 			cutout.enabled = player_controlled
+
+	for child in _find_descendants():
+		if not child.is_in_group(&"water_cutout_provider"):
+			continue
+		if sync_child_water_cutout_with_player_control:
+			child.set(&"enabled", player_controlled)
 
 	for child in _find_descendants():
 		var buoyant_body := child as BuoyantBody

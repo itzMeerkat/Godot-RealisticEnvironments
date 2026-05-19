@@ -7,7 +7,9 @@
 [ext_resource type="Texture2D" uid="uid://cnka7kjj757t5" path="res://demo/assets/low_poly_boat/textures/Boat_texture_baseColor.png" id="7_0qq2w"]
 [ext_resource type="Texture2D" uid="uid://bt8xx2jqtfm35" path="res://demo/assets/low_poly_boat/textures/Paddle_texture_baseColor.png" id="8_4kjtq"]
 [ext_resource type="Script" uid="uid://batvq42pf87f8" path="res://systems/boat/boat_water_interactor.gd" id="9_interactor"]
+[ext_resource type="Script" uid="uid://b6lxmry2dw37v" path="res://addons/ocean_system/water_cutout_hull_lod.gd" id="10_4kjtq"]
 [ext_resource type="Script" uid="uid://cnn1xqo6ypdf2" path="res://systems/boat/simple_boat_controller.gd" id="10_controller"]
+[ext_resource type="Script" uid="uid://cmuawoxl763gk" path="res://addons/ocean_system/water_cutout_trapezoid.gd" id="11_ducaw"]
 [ext_resource type="Script" uid="uid://u6lgimj01c85" path="res://systems/boat/boat_wake_trail.gd" id="11_wake_trail"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_float_demo"]
@@ -383,6 +385,30 @@ _surfaces = [{
 blend_shape_mode = 0
 shadow_mesh = SubResource("ArrayMesh_opm05")
 
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_htw60"]
+transparency = 1
+no_depth_test = true
+shading_mode = 0
+albedo_color = Color(0.2, 0.7, 1, 0.9)
+
+[sub_resource type="ImmediateMesh" id="ImmediateMesh_xu65i"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_82fpr"]
+transparency = 1
+no_depth_test = true
+shading_mode = 0
+albedo_color = Color(0.2, 0.7, 1, 0.9)
+
+[sub_resource type="ImmediateMesh" id="ImmediateMesh_f5n33"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_r7vxl"]
+transparency = 1
+no_depth_test = true
+shading_mode = 0
+albedo_color = Color(0.2, 0.7, 1, 0.9)
+
+[sub_resource type="ImmediateMesh" id="ImmediateMesh_odp0u"]
+
 [node name="FloatingBox" type="RigidBody3D" unique_id=1779372444]
 mass = 37.9692
 center_of_mass_mode = 1
@@ -405,23 +431,20 @@ voxel_size = Vector3(0.4, 0.4, 0.4)
 max_generated_cells = 640
 default_density = 28.0
 default_buoyancy_efficiency = 0.65
-exclusion_margin = 0.0
-exclusion_height_above_origin = 1.06
-exclusion_height_below_origin = 0.0
-exclusion_height_feather = 0.001
-feather = 0.0
-foam_amount = 0.0
 interaction_strength = 0.025
 interaction_radius_scale = 0.65
 max_interaction_sources = 4
+debug_draw = false
 
 [node name="DebugDraw" type="MeshInstance3D" parent="BuoyancyCellVolume" unique_id=1102676112]
+visible = false
 cast_shadow = 0
 extra_cull_margin = 10000.0
 mesh = SubResource("ImmediateMesh_4kjtq")
 surface_material_override/0 = SubResource("StandardMaterial3D_ducaw")
 
 [node name="GeneratedCells" type="Node3D" parent="BuoyancyCellVolume" unique_id=1914061068]
+visible = false
 
 [node name="Cell_000" type="MeshInstance3D" parent="BuoyancyCellVolume/GeneratedCells" unique_id=1252850296]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.3841858e-07, 0.2025339, 2.1303847)
@@ -829,3 +852,47 @@ transform = Transform3D(4.674053, 0, 0, 3.7279733e-16, -29.180271, 23.307066, -4
 [node name="paddle_Paddle_texture_0" type="MeshInstance3D" parent="Sketchfab_Scene2/Sketchfab_model/Wooden_boat_fbx/RootNode/RPaddlePivot/paddle" unique_id=133253028]
 mesh = SubResource("ArrayMesh_ypxba")
 skeleton = NodePath("")
+
+[node name="Node3D" type="Node3D" parent="." unique_id=1081755234]
+script = ExtResource("10_4kjtq")
+source_model_path = NodePath("../Sketchfab_Scene2/Sketchfab_model/Wooden_boat_fbx/RootNode/Boat")
+bow_is_positive_z = false
+
+[node name="GeneratedCutouts" type="Node3D" parent="Node3D" unique_id=527542490]
+
+[node name="BowCutout" type="MeshInstance3D" parent="Node3D/GeneratedCutouts" unique_id=1257665222]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5.9604645e-08, 0.12600522, -0.91157913)
+material_override = SubResource("StandardMaterial3D_htw60")
+cast_shadow = 0
+extra_cull_margin = 10000.0
+mesh = SubResource("ImmediateMesh_xu65i")
+script = ExtResource("11_ducaw")
+half_length = 0.4
+start_half_width = 0.15000000000000002
+end_half_width = 0.45
+vertical_min_offset = -0.3500000000000014
+feather = 1.275
+
+[node name="MidCutout_01" type="MeshInstance3D" parent="Node3D/GeneratedCutouts" unique_id=1539674491]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.1920929e-07, 0.11121094, 0.004262328)
+material_override = SubResource("StandardMaterial3D_82fpr")
+cast_shadow = 0
+extra_cull_margin = 10000.0
+mesh = SubResource("ImmediateMesh_f5n33")
+script = ExtResource("11_ducaw")
+half_length = 0.5201345284779867
+start_half_width = 0.5
+end_half_width = 0.55
+vertical_min_offset = -0.3500000000000014
+
+[node name="SternCutout" type="MeshInstance3D" parent="Node3D/GeneratedCutouts" unique_id=1637740154]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.12505408, 1.0445313)
+material_override = SubResource("StandardMaterial3D_r7vxl")
+cast_shadow = 0
+extra_cull_margin = 10000.0
+mesh = SubResource("ImmediateMesh_odp0u")
+script = ExtResource("11_ducaw")
+half_length = 0.5201345284779867
+start_half_width = 0.5
+end_half_width = 0.35000000000000003
+vertical_min_offset = -0.3500000000000014

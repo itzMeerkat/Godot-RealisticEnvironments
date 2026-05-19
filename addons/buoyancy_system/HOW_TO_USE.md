@@ -31,6 +31,10 @@ The buoyancy implementation uses OceanSystem's GPU batched surface query API.
 It does not require `enable_height_queries`; sample points are uploaded to a
 small GPU buffer and only compact surface data is read back.
 
+Visual water cutout is intentionally separate from buoyancy. Add
+`WaterCutoutHullLOD` or `WaterHullCutout` under the floating object when the
+ocean surface needs to be hidden inside the hull.
+
 ## Water Interaction
 
 `BuoyancyCellVolume` also aggregates submerged cells into a small number of

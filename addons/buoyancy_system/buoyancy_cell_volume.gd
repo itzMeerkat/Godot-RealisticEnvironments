@@ -2,7 +2,7 @@
 class_name BuoyancyCellVolume
 extends Node3D
 ## Cell-based displacement volume used as the source of truth for buoyancy,
-## mass, center of mass, water cutout, and local water interaction.
+## mass, center of mass, and local water interaction.
 
 const DEFAULT_CELL_COLOR := Color(0.1, 0.8, 1.0, 0.18)
 const DISABLED_CELL_COLOR := Color(0.25, 0.25, 0.25, 0.08)
@@ -58,15 +58,6 @@ const BUOYANCY_CELL_NODE := preload("res://addons/buoyancy_system/buoyancy_cell_
 	set(value):
 		center_of_mass_offset = value
 		_apply_mass_to_parent()
-
-@export_group("Water Cutout")
-@export var water_exclusion_enabled := true
-@export_range(0.0, 10.0, 0.01, "or_greater") var exclusion_margin := 0.25
-@export_range(0.0, 10.0, 0.01, "or_greater") var exclusion_height_above_origin := 0.45
-@export_range(0.0, 10.0, 0.01, "or_greater") var exclusion_height_below_origin := 2.0
-@export_range(0.001, 10.0, 0.01, "or_greater") var exclusion_height_feather := 0.35
-@export_range(0.0, 4.0, 0.01, "or_greater") var feather := 0.65
-@export_range(0.0, 1.0, 0.01) var foam_amount := 0.75
 
 @export_group("Water Interaction")
 @export var water_interaction_enabled := true
@@ -249,31 +240,6 @@ func get_center_of_mass() -> Vector3:
 	if total_mass <= 0.0001:
 		return center_of_mass_offset
 	return weighted_center / total_mass + center_of_mass_offset
-
-
-func get_exclusion_segments() -> Array[Dictionary]:
-	var segments : Array[Dictionary] = []
-	if not enabled or not water_exclusion_enabled:
-		return segments
-	var bounds := _get_enabled_cell_bounds()
-	if bounds.size.length_squared() <= 0.0001:
-		return segments
-	var center := bounds.get_center()
-	var half_extents := Vector2(bounds.size.x * 0.5 + exclusion_margin, bounds.size.z * 0.5 + exclusion_margin)
-	var center_world := global_transform * center
-	segments.push_back({
-		"center": center_world,
-		"right": global_transform.basis.x.normalized(),
-		"forward": global_transform.basis.z.normalized(),
-		"half_extents": half_extents,
-		"half_widths": Vector2(half_extents.x, half_extents.x),
-		"min_y": center_world.y - exclusion_height_below_origin,
-		"max_y": center_world.y + exclusion_height_above_origin,
-		"height_feather": exclusion_height_feather,
-		"feather": feather,
-		"foam_amount": foam_amount,
-	})
-	return segments
 
 
 func get_water_interaction_sources(sample_points: Array, surface_samples: Array, rigid_body: RigidBody3D) -> Array[Dictionary]:

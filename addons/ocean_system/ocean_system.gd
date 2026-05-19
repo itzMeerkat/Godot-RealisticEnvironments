@@ -905,11 +905,11 @@ func _update_hull_cutouts() -> void:
 		widths[cutout_count] = Vector4(cutout.half_extents.x, cutout.half_extents.x, 0.0, 0.0)
 		cutout_count += 1
 
-	for node in get_tree().get_nodes_in_group(&"buoyancy_cell_volume"):
-		var cell_volume := node as Node
-		if cell_volume == null or not bool(cell_volume.get(&"enabled")) or not cell_volume.has_method(&"get_exclusion_segments"):
+	for node in get_tree().get_nodes_in_group(&"water_cutout_provider"):
+		var cutout_provider := node as Node
+		if cutout_provider == null or not bool(cutout_provider.get(&"enabled")) or not cutout_provider.has_method(&"get_exclusion_segments"):
 			continue
-		for segment in cell_volume.get_exclusion_segments():
+		for segment in cutout_provider.get_exclusion_segments():
 			if cutout_count >= MAX_HULL_CUTOUTS:
 				break
 			var center : Vector3 = segment["center"]
