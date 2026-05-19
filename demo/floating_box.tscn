@@ -1,220 +1,273 @@
 [gd_scene format=4 uid="uid://b2pleaxvcdai8"]
 
 [ext_resource type="Script" uid="uid://bvoan7j4oppub" path="res://addons/buoyancy_system/floating_debug_body.gd" id="2_float_debug"]
-[ext_resource type="Script" uid="uid://iukb7b58s7a7" path="res://addons/buoyancy_system/buoyancy_cell.gd" id="3_8dk2k"]
+[ext_resource type="Script" uid="uid://obesevate4xe" path="res://addons/buoyancy_system/buoyancy_cell_node.gd" id="3_0qq2w"]
 [ext_resource type="Script" uid="uid://cv6g660t6s5av" path="res://addons/buoyancy_system/buoyant_body.gd" id="4_buoyant"]
 [ext_resource type="Script" uid="uid://ianh08wohto0" path="res://addons/buoyancy_system/buoyancy_cell_volume.gd" id="6_cell_volume"]
 [ext_resource type="Texture2D" uid="uid://cnka7kjj757t5" path="res://demo/assets/low_poly_boat/textures/Boat_texture_baseColor.png" id="7_0qq2w"]
 [ext_resource type="Texture2D" uid="uid://bt8xx2jqtfm35" path="res://demo/assets/low_poly_boat/textures/Paddle_texture_baseColor.png" id="8_4kjtq"]
+[ext_resource type="Script" uid="uid://batvq42pf87f8" path="res://systems/boat/boat_water_interactor.gd" id="9_interactor"]
+[ext_resource type="Script" uid="uid://cnn1xqo6ypdf2" path="res://systems/boat/simple_boat_controller.gd" id="10_controller"]
+[ext_resource type="Script" uid="uid://u6lgimj01c85" path="res://systems/boat/boat_wake_trail.gd" id="11_wake_trail"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_float_demo"]
 size = Vector3(6.5, 2.4, 25)
 
-[sub_resource type="Resource" id="Resource_8dk2k"]
-script = ExtResource("3_8dk2k")
-local_center = Vector3(-1.0070028, 0.15142128, 2.3254352)
-size = Vector3(0.35997483, 1.263703, 0.7802018)
-density = 28.0
-buoyancy_efficiency = 0.65
+[sub_resource type="ImmediateMesh" id="ImmediateMesh_4kjtq"]
 
-[sub_resource type="Resource" id="Resource_35oko"]
-script = ExtResource("3_8dk2k")
-local_center = Vector3(-0.647028, 0.15142128, 2.3254352)
-size = Vector3(0.35997483, 1.263703, 0.7802018)
-density = 28.0
-buoyancy_efficiency = 0.65
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_ducaw"]
+transparency = 1
+no_depth_test = true
+shading_mode = 0
+albedo_color = Color(0.1, 0.8, 1, 0.18)
 
-[sub_resource type="Resource" id="Resource_kmnh5"]
-script = ExtResource("3_8dk2k")
-local_center = Vector3(-0.28705317, 0.15142128, 2.3254352)
-size = Vector3(0.35997483, 1.263703, 0.7802018)
-density = 28.0
-buoyancy_efficiency = 0.65
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_0qq2w"]
+transparency = 1
+no_depth_test = true
+shading_mode = 0
+albedo_color = Color(0.1, 0.8, 1, 0.22)
 
-[sub_resource type="Resource" id="Resource_0qq2w"]
-script = ExtResource("3_8dk2k")
-local_center = Vector3(0.07292163, 0.15142128, 2.3254352)
-size = Vector3(0.35997483, 1.263703, 0.7802018)
-density = 28.0
-buoyancy_efficiency = 0.65
+[sub_resource type="ImmediateMesh" id="ImmediateMesh_ducaw"]
 
-[sub_resource type="Resource" id="Resource_4kjtq"]
-script = ExtResource("3_8dk2k")
-local_center = Vector3(0.4328965, 0.15142128, 2.3254352)
-size = Vector3(0.35997483, 1.263703, 0.7802018)
-density = 28.0
-buoyancy_efficiency = 0.65
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_dr3n4"]
+transparency = 1
+no_depth_test = true
+shading_mode = 0
+albedo_color = Color(0.1, 0.8, 1, 0.22)
 
-[sub_resource type="Resource" id="Resource_ducaw"]
-script = ExtResource("3_8dk2k")
-local_center = Vector3(0.79287136, 0.15142128, 2.3254352)
-size = Vector3(0.35997483, 1.263703, 0.7802018)
-density = 28.0
-buoyancy_efficiency = 0.65
+[sub_resource type="ImmediateMesh" id="ImmediateMesh_htw60"]
 
-[sub_resource type="Resource" id="Resource_dr3n4"]
-script = ExtResource("3_8dk2k")
-local_center = Vector3(1.1528461, 0.15142128, 2.3254352)
-size = Vector3(0.35997483, 1.263703, 0.7802018)
-density = 28.0
-buoyancy_efficiency = 0.65
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_xu65i"]
+transparency = 1
+no_depth_test = true
+shading_mode = 0
+albedo_color = Color(0.1, 0.8, 1, 0.22)
 
-[sub_resource type="Resource" id="Resource_htw60"]
-script = ExtResource("3_8dk2k")
-local_center = Vector3(-1.0070028, 0.15142128, 3.105637)
-size = Vector3(0.35997483, 1.263703, 0.7802018)
-density = 28.0
-buoyancy_efficiency = 0.65
+[sub_resource type="ImmediateMesh" id="ImmediateMesh_82fpr"]
 
-[sub_resource type="Resource" id="Resource_xu65i"]
-script = ExtResource("3_8dk2k")
-local_center = Vector3(-0.647028, 0.15142128, 3.105637)
-size = Vector3(0.35997483, 1.263703, 0.7802018)
-density = 28.0
-buoyancy_efficiency = 0.65
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_f5n33"]
+transparency = 1
+no_depth_test = true
+shading_mode = 0
+albedo_color = Color(0.1, 0.8, 1, 0.22)
 
-[sub_resource type="Resource" id="Resource_82fpr"]
-script = ExtResource("3_8dk2k")
-local_center = Vector3(-0.28705317, 0.15142128, 3.105637)
-size = Vector3(0.35997483, 1.263703, 0.7802018)
-density = 28.0
-buoyancy_efficiency = 0.65
+[sub_resource type="ImmediateMesh" id="ImmediateMesh_r7vxl"]
 
-[sub_resource type="Resource" id="Resource_f5n33"]
-script = ExtResource("3_8dk2k")
-local_center = Vector3(0.07292163, 0.15142128, 3.105637)
-size = Vector3(0.35997483, 1.263703, 0.7802018)
-density = 28.0
-buoyancy_efficiency = 0.65
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_odp0u"]
+transparency = 1
+no_depth_test = true
+shading_mode = 0
+albedo_color = Color(0.1, 0.8, 1, 0.22)
 
-[sub_resource type="Resource" id="Resource_r7vxl"]
-script = ExtResource("3_8dk2k")
-local_center = Vector3(0.4328965, 0.15142128, 3.105637)
-size = Vector3(0.35997483, 1.263703, 0.7802018)
-density = 28.0
-buoyancy_efficiency = 0.65
+[sub_resource type="ImmediateMesh" id="ImmediateMesh_pgcpf"]
 
-[sub_resource type="Resource" id="Resource_odp0u"]
-script = ExtResource("3_8dk2k")
-local_center = Vector3(0.79287136, 0.15142128, 3.105637)
-size = Vector3(0.35997483, 1.263703, 0.7802018)
-density = 28.0
-buoyancy_efficiency = 0.65
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_fo7e3"]
+transparency = 1
+no_depth_test = true
+shading_mode = 0
+albedo_color = Color(0.1, 0.8, 1, 0.22)
 
-[sub_resource type="Resource" id="Resource_pgcpf"]
-script = ExtResource("3_8dk2k")
-local_center = Vector3(1.1528461, 0.15142128, 3.105637)
-size = Vector3(0.35997483, 1.263703, 0.7802018)
-density = 28.0
-buoyancy_efficiency = 0.65
+[sub_resource type="ImmediateMesh" id="ImmediateMesh_ndef8"]
 
-[sub_resource type="Resource" id="Resource_fo7e3"]
-script = ExtResource("3_8dk2k")
-local_center = Vector3(-1.0070028, 0.15142128, 3.885839)
-size = Vector3(0.35997483, 1.263703, 0.7802018)
-density = 28.0
-buoyancy_efficiency = 0.65
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_rt2ym"]
+transparency = 1
+no_depth_test = true
+shading_mode = 0
+albedo_color = Color(0.1, 0.8, 1, 0.22)
 
-[sub_resource type="Resource" id="Resource_ndef8"]
-script = ExtResource("3_8dk2k")
-local_center = Vector3(-0.647028, 0.15142128, 3.885839)
-size = Vector3(0.35997483, 1.263703, 0.7802018)
-density = 28.0
-buoyancy_efficiency = 0.65
+[sub_resource type="ImmediateMesh" id="ImmediateMesh_sfe5m"]
 
-[sub_resource type="Resource" id="Resource_rt2ym"]
-script = ExtResource("3_8dk2k")
-local_center = Vector3(-0.28705317, 0.15142128, 3.885839)
-size = Vector3(0.35997483, 1.263703, 0.7802018)
-density = 28.0
-buoyancy_efficiency = 0.65
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_3sm6b"]
+transparency = 1
+no_depth_test = true
+shading_mode = 0
+albedo_color = Color(0.1, 0.8, 1, 0.22)
 
-[sub_resource type="Resource" id="Resource_sfe5m"]
-script = ExtResource("3_8dk2k")
-local_center = Vector3(0.07292163, 0.15142128, 3.885839)
-size = Vector3(0.35997483, 1.263703, 0.7802018)
-density = 28.0
-buoyancy_efficiency = 0.65
+[sub_resource type="ImmediateMesh" id="ImmediateMesh_lihre"]
 
-[sub_resource type="Resource" id="Resource_3sm6b"]
-script = ExtResource("3_8dk2k")
-local_center = Vector3(0.4328965, 0.15142128, 3.885839)
-size = Vector3(0.35997483, 1.263703, 0.7802018)
-density = 28.0
-buoyancy_efficiency = 0.65
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_6lar6"]
+transparency = 1
+no_depth_test = true
+shading_mode = 0
+albedo_color = Color(0.1, 0.8, 1, 0.22)
 
-[sub_resource type="Resource" id="Resource_lihre"]
-script = ExtResource("3_8dk2k")
-local_center = Vector3(0.79287136, 0.15142128, 3.885839)
-size = Vector3(0.35997483, 1.263703, 0.7802018)
-density = 28.0
-buoyancy_efficiency = 0.65
+[sub_resource type="ImmediateMesh" id="ImmediateMesh_klghn"]
 
-[sub_resource type="Resource" id="Resource_6lar6"]
-script = ExtResource("3_8dk2k")
-local_center = Vector3(1.1528461, 0.15142128, 3.885839)
-size = Vector3(0.35997483, 1.263703, 0.7802018)
-density = 28.0
-buoyancy_efficiency = 0.65
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_f3md0"]
+transparency = 1
+no_depth_test = true
+shading_mode = 0
+albedo_color = Color(0.1, 0.8, 1, 0.22)
 
-[sub_resource type="Resource" id="Resource_klghn"]
-script = ExtResource("3_8dk2k")
-local_center = Vector3(-1.0070028, 0.15142128, 4.6660404)
-size = Vector3(0.35997483, 1.263703, 0.7802018)
-density = 28.0
-buoyancy_efficiency = 0.65
+[sub_resource type="ImmediateMesh" id="ImmediateMesh_uqdwc"]
 
-[sub_resource type="Resource" id="Resource_f3md0"]
-script = ExtResource("3_8dk2k")
-local_center = Vector3(-0.647028, 0.15142128, 4.6660404)
-size = Vector3(0.35997483, 1.263703, 0.7802018)
-density = 28.0
-buoyancy_efficiency = 0.65
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_f2spp"]
+transparency = 1
+no_depth_test = true
+shading_mode = 0
+albedo_color = Color(0.1, 0.8, 1, 0.22)
 
-[sub_resource type="Resource" id="Resource_uqdwc"]
-script = ExtResource("3_8dk2k")
-local_center = Vector3(-0.28705317, 0.15142128, 4.6660404)
-size = Vector3(0.35997483, 1.263703, 0.7802018)
-density = 28.0
-buoyancy_efficiency = 0.65
+[sub_resource type="ImmediateMesh" id="ImmediateMesh_hhxne"]
 
-[sub_resource type="Resource" id="Resource_f2spp"]
-script = ExtResource("3_8dk2k")
-local_center = Vector3(0.07292163, 0.15142128, 4.6660404)
-size = Vector3(0.35997483, 1.263703, 0.7802018)
-density = 28.0
-buoyancy_efficiency = 0.65
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_24ixn"]
+transparency = 1
+no_depth_test = true
+shading_mode = 0
+albedo_color = Color(0.1, 0.8, 1, 0.22)
 
-[sub_resource type="Resource" id="Resource_hhxne"]
-script = ExtResource("3_8dk2k")
-local_center = Vector3(0.4328965, 0.15142128, 4.6660404)
-size = Vector3(0.35997483, 1.263703, 0.7802018)
-density = 28.0
-buoyancy_efficiency = 0.65
+[sub_resource type="ImmediateMesh" id="ImmediateMesh_1bnwl"]
 
-[sub_resource type="Resource" id="Resource_24ixn"]
-script = ExtResource("3_8dk2k")
-local_center = Vector3(0.79287136, 0.15142128, 4.6660404)
-size = Vector3(0.35997483, 1.263703, 0.7802018)
-density = 28.0
-buoyancy_efficiency = 0.65
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_qtsqx"]
+transparency = 1
+no_depth_test = true
+shading_mode = 0
+albedo_color = Color(0.1, 0.8, 1, 0.22)
 
-[sub_resource type="Resource" id="Resource_1bnwl"]
-script = ExtResource("3_8dk2k")
-local_center = Vector3(1.1528461, 0.15142128, 4.6660404)
-size = Vector3(0.35997483, 1.263703, 0.7802018)
-density = 28.0
-buoyancy_efficiency = 0.65
+[sub_resource type="ImmediateMesh" id="ImmediateMesh_7iqgi"]
 
-[sub_resource type="ImmediateMesh" id="ImmediateMesh_odp0u"]
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_undve"]
+transparency = 1
+no_depth_test = true
+shading_mode = 0
+albedo_color = Color(0.1, 0.8, 1, 0.22)
 
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_pgcpf"]
+[sub_resource type="ImmediateMesh" id="ImmediateMesh_o26tx"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_ndwj0"]
+transparency = 1
+no_depth_test = true
+shading_mode = 0
+albedo_color = Color(0.1, 0.8, 1, 0.22)
+
+[sub_resource type="ImmediateMesh" id="ImmediateMesh_hwgj0"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_nos6a"]
+transparency = 1
+no_depth_test = true
+shading_mode = 0
+albedo_color = Color(0.1, 0.8, 1, 0.22)
+
+[sub_resource type="ImmediateMesh" id="ImmediateMesh_30b1g"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_iqj72"]
+transparency = 1
+no_depth_test = true
+shading_mode = 0
+albedo_color = Color(0.1, 0.8, 1, 0.22)
+
+[sub_resource type="ImmediateMesh" id="ImmediateMesh_as5an"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_kacb3"]
+transparency = 1
+no_depth_test = true
+shading_mode = 0
+albedo_color = Color(0.1, 0.8, 1, 0.22)
+
+[sub_resource type="ImmediateMesh" id="ImmediateMesh_glb82"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_8r5gh"]
+transparency = 1
+no_depth_test = true
+shading_mode = 0
+albedo_color = Color(0.1, 0.8, 1, 0.22)
+
+[sub_resource type="ImmediateMesh" id="ImmediateMesh_m3grm"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_adc85"]
+transparency = 1
+no_depth_test = true
+shading_mode = 0
+albedo_color = Color(0.1, 0.8, 1, 0.22)
+
+[sub_resource type="ImmediateMesh" id="ImmediateMesh_i0bhs"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_fvrbv"]
+transparency = 1
+no_depth_test = true
+shading_mode = 0
+albedo_color = Color(0.1, 0.8, 1, 0.22)
+
+[sub_resource type="ImmediateMesh" id="ImmediateMesh_uey8o"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_he4ks"]
+transparency = 1
+no_depth_test = true
+shading_mode = 0
+albedo_color = Color(0.1, 0.8, 1, 0.22)
+
+[sub_resource type="ImmediateMesh" id="ImmediateMesh_626jb"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_3gsnc"]
+transparency = 1
+no_depth_test = true
+shading_mode = 0
+albedo_color = Color(0.1, 0.8, 1, 0.22)
+
+[sub_resource type="ImmediateMesh" id="ImmediateMesh_qcxqq"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_kexpy"]
+transparency = 1
+no_depth_test = true
+shading_mode = 0
+albedo_color = Color(0.1, 0.8, 1, 0.22)
+
+[sub_resource type="ImmediateMesh" id="ImmediateMesh_ckgk6"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_wc0bx"]
+transparency = 1
+no_depth_test = true
+shading_mode = 0
+albedo_color = Color(0.1, 0.8, 1, 0.22)
+
+[sub_resource type="ImmediateMesh" id="ImmediateMesh_eu5na"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_ebbbc"]
+transparency = 1
+no_depth_test = true
+shading_mode = 0
+albedo_color = Color(0.1, 0.8, 1, 0.22)
+
+[sub_resource type="ImmediateMesh" id="ImmediateMesh_d17p4"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_8i758"]
+transparency = 1
+no_depth_test = true
+shading_mode = 0
+albedo_color = Color(0.1, 0.8, 1, 0.22)
+
+[sub_resource type="ImmediateMesh" id="ImmediateMesh_l231o"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_aq4ka"]
+transparency = 1
+no_depth_test = true
+shading_mode = 0
+albedo_color = Color(0.1, 0.8, 1, 0.22)
+
+[sub_resource type="ImmediateMesh" id="ImmediateMesh_1c6aw"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_y2uf0"]
+transparency = 1
+no_depth_test = true
+shading_mode = 0
+albedo_color = Color(0.1, 0.8, 1, 0.22)
+
+[sub_resource type="ImmediateMesh" id="ImmediateMesh_8tggr"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_2l6b1"]
+transparency = 1
+no_depth_test = true
+shading_mode = 0
+albedo_color = Color(0.1, 0.8, 1, 0.22)
+
+[sub_resource type="ImmediateMesh" id="ImmediateMesh_sh2o5"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_gucoi"]
 transparency = 1
 no_depth_test = true
 shading_mode = 0
 albedo_color = Color(0.2, 1, 0.45, 1)
 
-[sub_resource type="ImmediateMesh" id="ImmediateMesh_fo7e3"]
+[sub_resource type="ImmediateMesh" id="ImmediateMesh_2l6b1"]
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_c1vbo"]
 resource_name = "Boat_texture"
@@ -255,54 +308,6 @@ _surfaces = [{
 }]
 blend_shape_mode = 0
 shadow_mesh = SubResource("ArrayMesh_gefh1")
-
-[sub_resource type="Animation" id="Animation_4kjtq"]
-length = 0.001
-tracks/0/type = "rotation_3d"
-tracks/0/imported = false
-tracks/0/enabled = true
-tracks/0/path = NodePath("../LPaddlePivot")
-tracks/0/interp = 1
-tracks/0/loop_wrap = true
-tracks/0/keys = PackedFloat32Array(0, 1, 0, 0, 0, 1)
-tracks/1/type = "rotation_3d"
-tracks/1/imported = false
-tracks/1/enabled = true
-tracks/1/path = NodePath("../RPaddlePivot")
-tracks/1/interp = 1
-tracks/1/loop_wrap = true
-tracks/1/keys = PackedFloat32Array(0, 1, 0.1290668, 0, 5.641689e-09, 0.9916359)
-
-[sub_resource type="Animation" id="Animation_0qq2w"]
-resource_name = "lpaddle"
-length = 1.2
-loop_mode = 1
-tracks/0/type = "rotation_3d"
-tracks/0/imported = false
-tracks/0/enabled = true
-tracks/0/path = NodePath("../LPaddlePivot")
-tracks/0/interp = 1
-tracks/0/loop_wrap = true
-tracks/0/keys = PackedFloat32Array(0, 1, 0, 0, 0, 1, 0.2, 1, -0.18741857, 0, -8.192327e-09, 0.98228014, 0.56666666, 1, -0.10429968, 0.23931073, -0.31729144, 0.9116898, 0.73333335, 1, 0.2562312, 0.34335998, -0.20011851, 0.88113695, 0.93333334, 1, 0.20935538, -0.049078893, -0.07505522, 0.97371894)
-
-[sub_resource type="Animation" id="Animation_ducaw"]
-resource_name = "rpaddle"
-length = 1.2
-loop_mode = 1
-tracks/0/type = "rotation_3d"
-tracks/0/imported = false
-tracks/0/enabled = true
-tracks/0/path = NodePath("../RPaddlePivot")
-tracks/0/interp = 1
-tracks/0/loop_wrap = true
-tracks/0/keys = PackedFloat32Array(0, 1, 0, 0, 0, 1, 0.2, 1, 0.18, 0, 0, 0.991636, 0.56666666, 1, 0.1, 0.239311, -0.317291, 1, 0.73333335, 1, -0.256, 0.34336, -0.200119, 1, 0.93333334, 1, -0.209, -0.049079, -0.075055, 1)
-
-[sub_resource type="AnimationLibrary" id="AnimationLibrary_4kjtq"]
-_data = {
-&"RESET": SubResource("Animation_4kjtq"),
-&"lpaddle": SubResource("Animation_0qq2w"),
-&"rpaddle": SubResource("Animation_ducaw")
-}
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_3oab4"]
 resource_name = "Paddle_texture"
@@ -379,12 +384,13 @@ blend_shape_mode = 0
 shadow_mesh = SubResource("ArrayMesh_opm05")
 
 [node name="FloatingBox" type="RigidBody3D" unique_id=1779372444]
-mass = 278.2532
+mass = 37.9692
 center_of_mass_mode = 1
-center_of_mass = Vector3(-0.07292196, 0.21799773, 0.0042619705)
+center_of_mass = Vector3(-5.4466568e-08, 0.14503828, 0.108288765)
 linear_damp = 0.2
 angular_damp = 1.8
 script = ExtResource("2_float_debug")
+sync_child_water_cutout_with_player_control = null
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=25228791]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.2, -0.2, -2)
@@ -394,26 +400,358 @@ shape = SubResource("BoxShape3D_float_demo")
 [node name="BuoyancyCellVolume" type="Node3D" parent="." unique_id=1980283015]
 transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, 0, 0.06657648, 3.5)
 script = ExtResource("6_cell_volume")
-source_model_path = NodePath("../Sketchfab_Scene2")
-voxel_size = Vector3(0.4, 2, 1)
+source_model_path = NodePath("../Sketchfab_Scene2/Sketchfab_model/Wooden_boat_fbx/RootNode/Boat")
+voxel_size = Vector3(0.4, 0.4, 0.4)
 max_generated_cells = 640
 default_density = 28.0
-cells = Array[Resource]([SubResource("Resource_8dk2k"), SubResource("Resource_35oko"), SubResource("Resource_kmnh5"), SubResource("Resource_0qq2w"), SubResource("Resource_4kjtq"), SubResource("Resource_ducaw"), SubResource("Resource_dr3n4"), SubResource("Resource_htw60"), SubResource("Resource_xu65i"), SubResource("Resource_82fpr"), SubResource("Resource_f5n33"), SubResource("Resource_r7vxl"), SubResource("Resource_odp0u"), SubResource("Resource_pgcpf"), SubResource("Resource_fo7e3"), SubResource("Resource_ndef8"), SubResource("Resource_rt2ym"), SubResource("Resource_sfe5m"), SubResource("Resource_3sm6b"), SubResource("Resource_lihre"), SubResource("Resource_6lar6"), SubResource("Resource_klghn"), SubResource("Resource_f3md0"), SubResource("Resource_uqdwc"), SubResource("Resource_f2spp"), SubResource("Resource_hhxne"), SubResource("Resource_24ixn"), SubResource("Resource_1bnwl")])
 default_buoyancy_efficiency = 0.65
-water_exclusion_enabled = false
-exclusion_margin = 0.14
-exclusion_height_above_origin = 0.32
-exclusion_height_below_origin = 0.55
-exclusion_height_feather = 0.12
-feather = 0.28
+exclusion_margin = 0.0
+exclusion_height_above_origin = 1.06
+exclusion_height_below_origin = 0.0
+exclusion_height_feather = 0.001
+feather = 0.0
 foam_amount = 0.0
-debug_draw = false
+interaction_strength = 0.025
+interaction_radius_scale = 0.65
+max_interaction_sources = 4
 
 [node name="DebugDraw" type="MeshInstance3D" parent="BuoyancyCellVolume" unique_id=1102676112]
-visible = false
 cast_shadow = 0
 extra_cull_margin = 10000.0
-mesh = SubResource("ImmediateMesh_odp0u")
+mesh = SubResource("ImmediateMesh_4kjtq")
+surface_material_override/0 = SubResource("StandardMaterial3D_ducaw")
+
+[node name="GeneratedCells" type="Node3D" parent="BuoyancyCellVolume" unique_id=1914061068]
+
+[node name="Cell_000" type="MeshInstance3D" parent="BuoyancyCellVolume/GeneratedCells" unique_id=1252850296]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.3841858e-07, 0.2025339, 2.1303847)
+material_override = SubResource("StandardMaterial3D_0qq2w")
+cast_shadow = 0
+extra_cull_margin = 10000.0
+mesh = SubResource("ImmediateMesh_ducaw")
+script = ExtResource("3_0qq2w")
+size = Vector3(0.37356055, 0.3101803, 0.3901009)
+density = 28.0
+buoyancy_efficiency = 0.65
+
+[node name="Cell_001" type="MeshInstance3D" parent="BuoyancyCellVolume/GeneratedCells" unique_id=1179942586]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.3841858e-07, -0.107646406, 2.5204856)
+material_override = SubResource("StandardMaterial3D_dr3n4")
+cast_shadow = 0
+extra_cull_margin = 10000.0
+mesh = SubResource("ImmediateMesh_htw60")
+script = ExtResource("3_0qq2w")
+size = Vector3(0.37356055, 0.3101803, 0.3901009)
+density = 28.0
+buoyancy_efficiency = 0.65
+
+[node name="Cell_002" type="MeshInstance3D" parent="BuoyancyCellVolume/GeneratedCells" unique_id=1080460154]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.3735608, 0.2025339, 2.5204856)
+material_override = SubResource("StandardMaterial3D_xu65i")
+cast_shadow = 0
+extra_cull_margin = 10000.0
+mesh = SubResource("ImmediateMesh_82fpr")
+script = ExtResource("3_0qq2w")
+size = Vector3(0.37356055, 0.3101803, 0.3901009)
+density = 28.0
+buoyancy_efficiency = 0.65
+
+[node name="Cell_003" type="MeshInstance3D" parent="BuoyancyCellVolume/GeneratedCells" unique_id=978240836]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.3841858e-07, 0.2025339, 2.5204856)
+material_override = SubResource("StandardMaterial3D_f5n33")
+cast_shadow = 0
+extra_cull_margin = 10000.0
+mesh = SubResource("ImmediateMesh_r7vxl")
+script = ExtResource("3_0qq2w")
+size = Vector3(0.37356055, 0.3101803, 0.3901009)
+density = 28.0
+buoyancy_efficiency = 0.65
+
+[node name="Cell_004" type="MeshInstance3D" parent="BuoyancyCellVolume/GeneratedCells" unique_id=1342933403]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.3735603, 0.2025339, 2.5204856)
+material_override = SubResource("StandardMaterial3D_odp0u")
+cast_shadow = 0
+extra_cull_margin = 10000.0
+mesh = SubResource("ImmediateMesh_pgcpf")
+script = ExtResource("3_0qq2w")
+size = Vector3(0.37356055, 0.3101803, 0.3901009)
+density = 28.0
+buoyancy_efficiency = 0.65
+
+[node name="Cell_005" type="MeshInstance3D" parent="BuoyancyCellVolume/GeneratedCells" unique_id=716496437]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.3735608, -0.107646406, 2.9105866)
+material_override = SubResource("StandardMaterial3D_fo7e3")
+cast_shadow = 0
+extra_cull_margin = 10000.0
+mesh = SubResource("ImmediateMesh_ndef8")
+script = ExtResource("3_0qq2w")
+size = Vector3(0.37356055, 0.3101803, 0.3901009)
+density = 28.0
+buoyancy_efficiency = 0.65
+
+[node name="Cell_006" type="MeshInstance3D" parent="BuoyancyCellVolume/GeneratedCells" unique_id=1900387366]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.3841858e-07, -0.107646406, 2.9105866)
+material_override = SubResource("StandardMaterial3D_rt2ym")
+cast_shadow = 0
+extra_cull_margin = 10000.0
+mesh = SubResource("ImmediateMesh_sfe5m")
+script = ExtResource("3_0qq2w")
+size = Vector3(0.37356055, 0.3101803, 0.3901009)
+density = 28.0
+buoyancy_efficiency = 0.65
+
+[node name="Cell_007" type="MeshInstance3D" parent="BuoyancyCellVolume/GeneratedCells" unique_id=1523516668]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.3735603, -0.107646406, 2.9105866)
+material_override = SubResource("StandardMaterial3D_3sm6b")
+cast_shadow = 0
+extra_cull_margin = 10000.0
+mesh = SubResource("ImmediateMesh_lihre")
+script = ExtResource("3_0qq2w")
+size = Vector3(0.37356055, 0.3101803, 0.3901009)
+density = 28.0
+buoyancy_efficiency = 0.65
+
+[node name="Cell_008" type="MeshInstance3D" parent="BuoyancyCellVolume/GeneratedCells" unique_id=1112763849]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.3735608, 0.2025339, 2.9105866)
+material_override = SubResource("StandardMaterial3D_6lar6")
+cast_shadow = 0
+extra_cull_margin = 10000.0
+mesh = SubResource("ImmediateMesh_klghn")
+script = ExtResource("3_0qq2w")
+size = Vector3(0.37356055, 0.3101803, 0.3901009)
+density = 28.0
+buoyancy_efficiency = 0.65
+
+[node name="Cell_009" type="MeshInstance3D" parent="BuoyancyCellVolume/GeneratedCells" unique_id=1768815539]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.3841858e-07, 0.2025339, 2.9105866)
+material_override = SubResource("StandardMaterial3D_f3md0")
+cast_shadow = 0
+extra_cull_margin = 10000.0
+mesh = SubResource("ImmediateMesh_uqdwc")
+script = ExtResource("3_0qq2w")
+size = Vector3(0.37356055, 0.3101803, 0.3901009)
+density = 28.0
+buoyancy_efficiency = 0.65
+
+[node name="Cell_010" type="MeshInstance3D" parent="BuoyancyCellVolume/GeneratedCells" unique_id=72080016]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.3735603, 0.2025339, 2.9105866)
+material_override = SubResource("StandardMaterial3D_f2spp")
+cast_shadow = 0
+extra_cull_margin = 10000.0
+mesh = SubResource("ImmediateMesh_hhxne")
+script = ExtResource("3_0qq2w")
+size = Vector3(0.37356055, 0.3101803, 0.3901009)
+density = 28.0
+buoyancy_efficiency = 0.65
+
+[node name="Cell_011" type="MeshInstance3D" parent="BuoyancyCellVolume/GeneratedCells" unique_id=352336194]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.3735608, -0.107646406, 3.3006873)
+material_override = SubResource("StandardMaterial3D_24ixn")
+cast_shadow = 0
+extra_cull_margin = 10000.0
+mesh = SubResource("ImmediateMesh_1bnwl")
+script = ExtResource("3_0qq2w")
+size = Vector3(0.37356055, 0.3101803, 0.3901009)
+density = 28.0
+buoyancy_efficiency = 0.65
+
+[node name="Cell_012" type="MeshInstance3D" parent="BuoyancyCellVolume/GeneratedCells" unique_id=451422640]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.3841858e-07, -0.107646406, 3.3006873)
+material_override = SubResource("StandardMaterial3D_qtsqx")
+cast_shadow = 0
+extra_cull_margin = 10000.0
+mesh = SubResource("ImmediateMesh_7iqgi")
+script = ExtResource("3_0qq2w")
+size = Vector3(0.37356055, 0.3101803, 0.3901009)
+density = 28.0
+buoyancy_efficiency = 0.65
+
+[node name="Cell_013" type="MeshInstance3D" parent="BuoyancyCellVolume/GeneratedCells" unique_id=472295864]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.3735603, -0.107646406, 3.3006873)
+material_override = SubResource("StandardMaterial3D_undve")
+cast_shadow = 0
+extra_cull_margin = 10000.0
+mesh = SubResource("ImmediateMesh_o26tx")
+script = ExtResource("3_0qq2w")
+size = Vector3(0.37356055, 0.3101803, 0.3901009)
+density = 28.0
+buoyancy_efficiency = 0.65
+
+[node name="Cell_014" type="MeshInstance3D" parent="BuoyancyCellVolume/GeneratedCells" unique_id=2024386555]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.3735608, 0.2025339, 3.3006873)
+material_override = SubResource("StandardMaterial3D_ndwj0")
+cast_shadow = 0
+extra_cull_margin = 10000.0
+mesh = SubResource("ImmediateMesh_hwgj0")
+script = ExtResource("3_0qq2w")
+size = Vector3(0.37356055, 0.3101803, 0.3901009)
+density = 28.0
+buoyancy_efficiency = 0.65
+
+[node name="Cell_015" type="MeshInstance3D" parent="BuoyancyCellVolume/GeneratedCells" unique_id=1632316781]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.3841858e-07, 0.2025339, 3.3006873)
+material_override = SubResource("StandardMaterial3D_nos6a")
+cast_shadow = 0
+extra_cull_margin = 10000.0
+mesh = SubResource("ImmediateMesh_30b1g")
+script = ExtResource("3_0qq2w")
+size = Vector3(0.37356055, 0.3101803, 0.3901009)
+density = 28.0
+buoyancy_efficiency = 0.65
+
+[node name="Cell_016" type="MeshInstance3D" parent="BuoyancyCellVolume/GeneratedCells" unique_id=927038450]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.3735603, 0.2025339, 3.3006873)
+material_override = SubResource("StandardMaterial3D_iqj72")
+cast_shadow = 0
+extra_cull_margin = 10000.0
+mesh = SubResource("ImmediateMesh_as5an")
+script = ExtResource("3_0qq2w")
+size = Vector3(0.37356055, 0.3101803, 0.3901009)
+density = 28.0
+buoyancy_efficiency = 0.65
+
+[node name="Cell_017" type="MeshInstance3D" parent="BuoyancyCellVolume/GeneratedCells" unique_id=1793917463]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.3735608, -0.107646406, 3.6907883)
+material_override = SubResource("StandardMaterial3D_kacb3")
+cast_shadow = 0
+extra_cull_margin = 10000.0
+mesh = SubResource("ImmediateMesh_glb82")
+script = ExtResource("3_0qq2w")
+size = Vector3(0.37356055, 0.3101803, 0.3901009)
+density = 28.0
+buoyancy_efficiency = 0.65
+
+[node name="Cell_018" type="MeshInstance3D" parent="BuoyancyCellVolume/GeneratedCells" unique_id=1443016530]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.3841858e-07, -0.107646406, 3.6907883)
+material_override = SubResource("StandardMaterial3D_8r5gh")
+cast_shadow = 0
+extra_cull_margin = 10000.0
+mesh = SubResource("ImmediateMesh_m3grm")
+script = ExtResource("3_0qq2w")
+size = Vector3(0.37356055, 0.3101803, 0.3901009)
+density = 28.0
+buoyancy_efficiency = 0.65
+
+[node name="Cell_019" type="MeshInstance3D" parent="BuoyancyCellVolume/GeneratedCells" unique_id=188801650]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.3735603, -0.107646406, 3.6907883)
+material_override = SubResource("StandardMaterial3D_adc85")
+cast_shadow = 0
+extra_cull_margin = 10000.0
+mesh = SubResource("ImmediateMesh_i0bhs")
+script = ExtResource("3_0qq2w")
+size = Vector3(0.37356055, 0.3101803, 0.3901009)
+density = 28.0
+buoyancy_efficiency = 0.65
+
+[node name="Cell_020" type="MeshInstance3D" parent="BuoyancyCellVolume/GeneratedCells" unique_id=1917287381]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.3735608, 0.2025339, 3.6907883)
+material_override = SubResource("StandardMaterial3D_fvrbv")
+cast_shadow = 0
+extra_cull_margin = 10000.0
+mesh = SubResource("ImmediateMesh_uey8o")
+script = ExtResource("3_0qq2w")
+size = Vector3(0.37356055, 0.3101803, 0.3901009)
+density = 28.0
+buoyancy_efficiency = 0.65
+
+[node name="Cell_021" type="MeshInstance3D" parent="BuoyancyCellVolume/GeneratedCells" unique_id=443247749]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.3841858e-07, 0.2025339, 3.6907883)
+material_override = SubResource("StandardMaterial3D_he4ks")
+cast_shadow = 0
+extra_cull_margin = 10000.0
+mesh = SubResource("ImmediateMesh_626jb")
+script = ExtResource("3_0qq2w")
+size = Vector3(0.37356055, 0.3101803, 0.3901009)
+density = 28.0
+buoyancy_efficiency = 0.65
+
+[node name="Cell_022" type="MeshInstance3D" parent="BuoyancyCellVolume/GeneratedCells" unique_id=417858168]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.3735603, 0.2025339, 3.6907883)
+material_override = SubResource("StandardMaterial3D_3gsnc")
+cast_shadow = 0
+extra_cull_margin = 10000.0
+mesh = SubResource("ImmediateMesh_qcxqq")
+script = ExtResource("3_0qq2w")
+size = Vector3(0.37356055, 0.3101803, 0.3901009)
+density = 28.0
+buoyancy_efficiency = 0.65
+
+[node name="Cell_023" type="MeshInstance3D" parent="BuoyancyCellVolume/GeneratedCells" unique_id=1868593791]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.3841858e-07, -0.107646406, 4.080889)
+material_override = SubResource("StandardMaterial3D_kexpy")
+cast_shadow = 0
+extra_cull_margin = 10000.0
+mesh = SubResource("ImmediateMesh_ckgk6")
+script = ExtResource("3_0qq2w")
+size = Vector3(0.37356055, 0.3101803, 0.3901009)
+density = 28.0
+buoyancy_efficiency = 0.65
+
+[node name="Cell_024" type="MeshInstance3D" parent="BuoyancyCellVolume/GeneratedCells" unique_id=489465712]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.3735608, 0.2025339, 4.080889)
+material_override = SubResource("StandardMaterial3D_wc0bx")
+cast_shadow = 0
+extra_cull_margin = 10000.0
+mesh = SubResource("ImmediateMesh_eu5na")
+script = ExtResource("3_0qq2w")
+size = Vector3(0.37356055, 0.3101803, 0.3901009)
+density = 28.0
+buoyancy_efficiency = 0.65
+
+[node name="Cell_025" type="MeshInstance3D" parent="BuoyancyCellVolume/GeneratedCells" unique_id=1773465596]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.3841858e-07, 0.2025339, 4.080889)
+material_override = SubResource("StandardMaterial3D_ebbbc")
+cast_shadow = 0
+extra_cull_margin = 10000.0
+mesh = SubResource("ImmediateMesh_d17p4")
+script = ExtResource("3_0qq2w")
+size = Vector3(0.37356055, 0.3101803, 0.3901009)
+density = 28.0
+buoyancy_efficiency = 0.65
+
+[node name="Cell_026" type="MeshInstance3D" parent="BuoyancyCellVolume/GeneratedCells" unique_id=343638513]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.3735603, 0.2025339, 4.080889)
+material_override = SubResource("StandardMaterial3D_8i758")
+cast_shadow = 0
+extra_cull_margin = 10000.0
+mesh = SubResource("ImmediateMesh_l231o")
+script = ExtResource("3_0qq2w")
+size = Vector3(0.37356055, 0.3101803, 0.3901009)
+density = 28.0
+buoyancy_efficiency = 0.65
+
+[node name="Cell_027" type="MeshInstance3D" parent="BuoyancyCellVolume/GeneratedCells" unique_id=1670291347]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.3841858e-07, -0.107646406, 4.47099)
+material_override = SubResource("StandardMaterial3D_aq4ka")
+cast_shadow = 0
+extra_cull_margin = 10000.0
+mesh = SubResource("ImmediateMesh_1c6aw")
+script = ExtResource("3_0qq2w")
+size = Vector3(0.37356055, 0.3101803, 0.3901009)
+density = 28.0
+buoyancy_efficiency = 0.65
+
+[node name="Cell_028" type="MeshInstance3D" parent="BuoyancyCellVolume/GeneratedCells" unique_id=96765448]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.3841858e-07, 0.2025339, 4.47099)
+material_override = SubResource("StandardMaterial3D_y2uf0")
+cast_shadow = 0
+extra_cull_margin = 10000.0
+mesh = SubResource("ImmediateMesh_8tggr")
+script = ExtResource("3_0qq2w")
+size = Vector3(0.37356055, 0.3101803, 0.3901009)
+density = 28.0
+buoyancy_efficiency = 0.65
+
+[node name="Cell_029" type="MeshInstance3D" parent="BuoyancyCellVolume/GeneratedCells" unique_id=1305229556]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.3841858e-07, 0.2025339, 4.861091)
+material_override = SubResource("StandardMaterial3D_2l6b1")
+cast_shadow = 0
+extra_cull_margin = 10000.0
+mesh = SubResource("ImmediateMesh_sh2o5")
+script = ExtResource("3_0qq2w")
+size = Vector3(0.37356055, 0.3101803, 0.3901009)
+density = 28.0
+buoyancy_efficiency = 0.65
 
 [node name="BuoyantBody" type="Node" parent="." unique_id=1420237142]
 script = ExtResource("4_buoyant")
@@ -421,13 +759,28 @@ rigid_body_path = NodePath("..")
 vertical_damping = 60.0
 submit_water_interactions = false
 
+[node name="BoatWaterInteractor" type="Node3D" parent="." unique_id=1023630386]
+script = ExtResource("9_interactor")
+side_offset = 2.63
+bow_radius = 5.9799999999999995
+
+[node name="SimpleBoatController" type="Node" parent="." unique_id=1519507528]
+script = ExtResource("10_controller")
+
+[node name="BoatWakeTrail" type="Node3D" parent="." unique_id=1484418996]
+script = ExtResource("11_wake_trail")
+min_radius = 0.7300000000000001
+max_radius = 1.88
+lifetime = 8.76
+max_foam_amount = 0.713
+
 [node name="PositionHistory" type="MeshInstance3D" parent="." unique_id=1495800927]
 top_level = true
 visible = false
-material_override = SubResource("StandardMaterial3D_pgcpf")
+material_override = SubResource("StandardMaterial3D_gucoi")
 cast_shadow = 0
 extra_cull_margin = 10000.0
-mesh = SubResource("ImmediateMesh_fo7e3")
+mesh = SubResource("ImmediateMesh_2l6b1")
 
 [node name="CameraTargets" type="Node3D" parent="." unique_id=299673246]
 
@@ -454,9 +807,6 @@ transform = Transform3D(13.558668, 0, 0, 0, 13.558668, -1.8181731e-06, 0, 5.9266
 [node name="Boat_Boat_texture_0" type="MeshInstance3D" parent="Sketchfab_Scene2/Sketchfab_model/Wooden_boat_fbx/RootNode/Boat" unique_id=1632043595]
 mesh = SubResource("ArrayMesh_vvl30")
 skeleton = NodePath("")
-
-[node name="AnimationPlayer" type="AnimationPlayer" parent="Sketchfab_Scene2/Sketchfab_model/Wooden_boat_fbx/RootNode/Boat" unique_id=2048925403]
-libraries/ = SubResource("AnimationLibrary_4kjtq")
 
 [node name="LPaddlePivot" type="Node3D" parent="Sketchfab_Scene2/Sketchfab_model/Wooden_boat_fbx/RootNode" unique_id=1435222028]
 transform = Transform3D(1.0000002, 0, 0, 0, 1.0000002, 0, 0, 0, 1.0000007, -118.00002, 190, -175)

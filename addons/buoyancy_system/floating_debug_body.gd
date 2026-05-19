@@ -15,6 +15,14 @@ extends RigidBody3D
 	set(value):
 		debug_draw_position_history = value
 		_update_history_visibility()
+@export var sync_child_buoyancy_debug_with_player_control := false :
+	set(value):
+		sync_child_buoyancy_debug_with_player_control = value
+		_apply_player_controlled_state()
+@export var sync_child_water_cutout_with_player_control := false :
+	set(value):
+		sync_child_water_cutout_with_player_control = value
+		_apply_player_controlled_state()
 @export_range(2, 2048, 1) var debug_history_max_points := 240 :
 	set(value):
 		debug_history_max_points = maxi(value, 2)
@@ -129,14 +137,28 @@ func _apply_player_controlled_state() -> void:
 		var cell_volume := child as Node
 		if cell_volume == null or not cell_volume.has_method(&"get_buoyancy_sample_points"):
 			continue
-		cell_volume.set(&"water_exclusion_enabled", player_controlled)
-		cell_volume.set(&"debug_draw", player_controlled)
+		if sync_child_water_cutout_with_player_control:
+			cell_volume.set(&"water_exclusion_enabled", player_controlled)
+		if sync_child_buoyancy_debug_with_player_control:
+			cell_volume.set(&"debug_draw", player_controlled)
 
 	for child in _find_descendants():
 		var cutout := child as WaterHullCutout
 		if cutout == null:
 			continue
-		cutout.enabled = player_controlled
+		if sync_child_water_cutout_with_player_control:
+			cutout.enabled = player_controlled
+
+	for child in _find_descendants():
+		var buoyant_body := child as BuoyantBody
+		if buoyant_body != null:
+			buoyant_body.submit_water_interactions = false
+		if child.is_in_group(&"boat_controller"):
+			child.set(&"enabled", player_controlled)
+		if child.is_in_group(&"boat_water_interactor"):
+			child.set(&"enabled", player_controlled)
+		if child.is_in_group(&"boat_wake_trail"):
+			child.set(&"enabled", player_controlled)
 
 
 func _find_descendants() -> Array[Node]:

@@ -13,7 +13,11 @@ const BODY_GRAVITY_COLOR := Color(1.0, 0.2, 0.05, 1.0)
 const BODY_NET_FORCE_COLOR := Color(1.0, 0.9, 0.15, 1.0)
 const CENTER_OF_MASS_COLOR := Color(1.0, 1.0, 1.0, 1.0)
 const INTERACTION_SOURCE_LIMIT := 6
-const BUOYANCY_CELL := preload("res://addons/buoyancy_system/buoyancy_cell.gd")
+const GENERATED_CELLS_NAME := "GeneratedCells"
+const HULL_EPSILON := 0.001
+const HULL_DEDUP_SCALE := 1000.0
+const HULL_MAX_ITERATIONS := 4096
+const BUOYANCY_CELL_NODE := preload("res://addons/buoyancy_system/buoyancy_cell_node.gd")
 
 @export var enabled := true
 
@@ -33,14 +37,6 @@ const BUOYANCY_CELL := preload("res://addons/buoyancy_system/buoyancy_cell.gd")
 			return
 		generate_cells_now = false
 		generate_cells_from_source()
-
-@export_group("Cells")
-@export var cells : Array[Resource] = [] :
-	set(value):
-		cells = value
-		_connect_cell_signals()
-		_apply_mass_to_parent()
-		_queue_debug_rebuild()
 
 @export_group("Buoyancy Defaults")
 @export_range(0.0, 1.0, 0.01) var default_buoyancy_efficiency := 1.0
@@ -126,7 +122,7 @@ func _exit_tree() -> void:
 
 
 func _ready() -> void:
-	if cells.is_empty() and auto_generate_if_empty:
+	if _get_cells().is_empty() and auto_generate_if_empty:
 		generate_cells_from_source()
 	_connect_cell_signals()
 	_ensure_debug_nodes()
@@ -136,11 +132,20 @@ func _ready() -> void:
 
 
 func generate_cells_from_source() -> void:
-	var bounds := _get_source_bounds_in_local_space()
+	var cells_root := _get_or_create_generated_cells_root()
+	_clear_generated_cells(cells_root)
+
+	var source_points := _get_source_points_in_local_space()
+	var hull_planes := _build_convex_hull_planes(source_points)
+	var bounds := _get_points_bounds(source_points) if not source_points.is_empty() else AABB()
+	if bounds.size.length_squared() <= 0.0001:
+		bounds = _get_source_bounds_in_local_space()
 	if bounds.size.length_squared() <= 0.0001:
 		bounds = AABB(Vector3(-1.5, -0.5, -3.0), Vector3(3.0, 1.0, 6.0))
 	bounds.position -= bounds_padding
 	bounds.size += bounds_padding * 2.0
+	if not hull_planes.is_empty():
+		_expand_hull_planes(hull_planes, maxf(bounds_padding.x, maxf(bounds_padding.y, bounds_padding.z)))
 
 	var count_x := maxi(int(ceil(bounds.size.x / voxel_size.x)), 1)
 	var count_y := maxi(int(ceil(bounds.size.y / voxel_size.y)), 1)
@@ -157,16 +162,20 @@ func generate_cells_from_source() -> void:
 		bounds.size.y / float(count_y),
 		bounds.size.z / float(count_z)
 	)
-	var generated : Array[Resource] = []
+	var cell_index := 0
 	for z in count_z:
 		for y in count_y:
 			for x in count_x:
-				var cell : Resource = BUOYANCY_CELL.new()
-				cell.local_center = bounds.position + Vector3(
+				var cell_position := bounds.position + Vector3(
 					(float(x) + 0.5) * cell_size.x,
 					(float(y) + 0.5) * cell_size.y,
 					(float(z) + 0.5) * cell_size.z
 				)
+				if not hull_planes.is_empty() and not _is_point_inside_convex_hull(cell_position, hull_planes):
+					continue
+				var cell : BuoyancyCellNode = BUOYANCY_CELL_NODE.new()
+				cell.name = "Cell_%03d" % cell_index
+				cell.position = cell_position
 				cell.size = cell_size
 				cell.density = default_density
 				cell.buoyancy_efficiency = default_buoyancy_efficiency
@@ -174,8 +183,9 @@ func generate_cells_from_source() -> void:
 				cell.vertical_damping_multiplier = default_vertical_damping_multiplier
 				cell.longitudinal_water_drag_multiplier = default_longitudinal_water_drag_multiplier
 				cell.lateral_water_drag_multiplier = default_lateral_water_drag_multiplier
-				generated.push_back(cell)
-	cells = generated
+				cells_root.add_child(cell)
+				cell.owner = owner
+				cell_index += 1
 	_connect_cell_signals()
 	_apply_mass_to_parent()
 	_queue_debug_rebuild()
@@ -185,16 +195,17 @@ func get_buoyancy_sample_points() -> Array[Dictionary]:
 	var samples : Array[Dictionary] = []
 	if not enabled:
 		return samples
+	var cells := _get_cells()
 	_debug_sample_states.clear()
 	_debug_sample_states.resize(cells.size())
 	for i in cells.size():
-		var cell := cells[i] as BuoyancyCell
+		var cell := cells[i]
 		if cell == null or not cell.enabled:
 			continue
 		var vertical_half_extent := _get_cell_vertical_half_extent(cell)
 		samples.push_back({
-			"world_position": global_transform * cell.local_center,
-			"local_position": cell.local_center,
+			"world_position": cell.global_position,
+			"local_position": cell.position,
 			"volume_cubic_meters": cell.get_volume(),
 			"mass_kg": cell.get_mass(),
 			"buoyancy_efficiency": cell.buoyancy_efficiency,
@@ -212,8 +223,7 @@ func get_buoyancy_sample_points() -> Array[Dictionary]:
 
 func get_total_volume() -> float:
 	var volume := 0.0
-	for i in cells.size():
-		var cell := cells[i] as BuoyancyCell
+	for cell in _get_cells():
 		if cell != null and cell.enabled:
 			volume += cell.get_volume()
 	return volume
@@ -221,8 +231,7 @@ func get_total_volume() -> float:
 
 func get_total_mass() -> float:
 	var mass := 0.0
-	for i in cells.size():
-		var cell := cells[i] as BuoyancyCell
+	for cell in _get_cells():
 		if cell != null and cell.enabled:
 			mass += cell.get_mass()
 	return mass * mass_scale
@@ -231,12 +240,11 @@ func get_total_mass() -> float:
 func get_center_of_mass() -> Vector3:
 	var weighted_center := Vector3.ZERO
 	var total_mass := 0.0
-	for i in cells.size():
-		var cell := cells[i] as BuoyancyCell
+	for cell in _get_cells():
 		if cell == null or not cell.enabled:
 			continue
 		var mass := cell.get_mass()
-		weighted_center += cell.local_center * mass
+		weighted_center += cell.position * mass
 		total_mass += mass
 	if total_mass <= 0.0001:
 		return center_of_mass_offset
@@ -406,9 +414,253 @@ func _get_source_bounds_in_local_space() -> AABB:
 	return bounds if has_bounds else AABB()
 
 
+func _get_source_points_in_local_space() -> PackedVector3Array:
+	var points := PackedVector3Array()
+	var seen := {}
+	var source := get_node_or_null(source_model_path) as Node3D
+	if source == null:
+		source = get_parent() as Node3D
+	if source == null:
+		return points
+	for mesh_instance in _find_mesh_instances(source):
+		if mesh_instance.mesh == null:
+			continue
+		var mesh := mesh_instance.mesh
+		for surface_index in mesh.get_surface_count():
+			var arrays := mesh.surface_get_arrays(surface_index)
+			if arrays.is_empty() or arrays.size() <= Mesh.ARRAY_VERTEX:
+				continue
+			if not (arrays[Mesh.ARRAY_VERTEX] is PackedVector3Array):
+				continue
+			var vertices : PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+			for vertex in vertices:
+				var local_vertex := to_local(mesh_instance.global_transform * vertex)
+				var key := _get_point_dedup_key(local_vertex)
+				if seen.has(key):
+					continue
+				seen[key] = true
+				points.push_back(local_vertex)
+	return points
+
+
+func _get_point_dedup_key(point: Vector3) -> String:
+	return "%d:%d:%d" % [
+		int(round(point.x * HULL_DEDUP_SCALE)),
+		int(round(point.y * HULL_DEDUP_SCALE)),
+		int(round(point.z * HULL_DEDUP_SCALE)),
+	]
+
+
+func _get_points_bounds(points: PackedVector3Array) -> AABB:
+	var bounds := AABB()
+	var has_bounds := false
+	for point in points:
+		if not has_bounds:
+			bounds = AABB(point, Vector3.ZERO)
+			has_bounds = true
+		else:
+			bounds = bounds.expand(point)
+	return bounds if has_bounds else AABB()
+
+
+func _build_convex_hull_planes(points: PackedVector3Array) -> Array[Dictionary]:
+	if points.size() < 4:
+		return []
+	var tetra := _find_initial_tetrahedron(points)
+	if tetra.is_empty():
+		return []
+	var interior := (points[tetra[0]] + points[tetra[1]] + points[tetra[2]] + points[tetra[3]]) * 0.25
+	var faces : Array[Dictionary] = []
+	faces.push_back(_make_hull_face(tetra[0], tetra[1], tetra[2], points, interior))
+	faces.push_back(_make_hull_face(tetra[0], tetra[3], tetra[1], points, interior))
+	faces.push_back(_make_hull_face(tetra[0], tetra[2], tetra[3], points, interior))
+	faces.push_back(_make_hull_face(tetra[1], tetra[3], tetra[2], points, interior))
+	var valid_faces : Array[Dictionary] = []
+	for face in faces:
+		if not face.is_empty():
+			valid_faces.push_back(face)
+	faces = valid_faces
+	if faces.size() < 4:
+		return []
+
+	for _iteration in HULL_MAX_ITERATIONS:
+		var best_face_index := -1
+		var best_point_index := -1
+		var best_distance := HULL_EPSILON
+		for face_index in faces.size():
+			var face := faces[face_index]
+			for point_index in points.size():
+				if point_index == int(face["a"]) or point_index == int(face["b"]) or point_index == int(face["c"]):
+					continue
+				var distance := _get_face_distance(face, points[point_index])
+				if distance > best_distance:
+					best_distance = distance
+					best_face_index = face_index
+					best_point_index = point_index
+		if best_face_index < 0 or best_point_index < 0:
+			return _get_unique_hull_planes(faces)
+
+		var visible := {}
+		for face_index in faces.size():
+			if _get_face_distance(faces[face_index], points[best_point_index]) > HULL_EPSILON:
+				visible[face_index] = true
+		var horizon_edges := _get_horizon_edges(faces, visible)
+		if horizon_edges.is_empty():
+			return _get_unique_hull_planes(faces)
+
+		var next_faces : Array[Dictionary] = []
+		for face_index in faces.size():
+			if not visible.has(face_index):
+				next_faces.push_back(faces[face_index])
+		for edge in horizon_edges:
+			var new_face := _make_hull_face(int(edge["a"]), int(edge["b"]), best_point_index, points, interior)
+			if not new_face.is_empty():
+				next_faces.push_back(new_face)
+		faces = next_faces
+	return _get_unique_hull_planes(faces)
+
+
+func _find_initial_tetrahedron(points: PackedVector3Array) -> PackedInt32Array:
+	var result := PackedInt32Array()
+	var i0 := 0
+	var i1 := 0
+	var max_distance_squared := 0.0
+	for a in points.size():
+		for b in range(a + 1, points.size()):
+			var distance_squared := points[a].distance_squared_to(points[b])
+			if distance_squared > max_distance_squared:
+				max_distance_squared = distance_squared
+				i0 = a
+				i1 = b
+	if max_distance_squared <= HULL_EPSILON * HULL_EPSILON:
+		return result
+
+	var i2 := -1
+	var line := points[i1] - points[i0]
+	var max_line_distance_squared := 0.0
+	for i in points.size():
+		var line_distance_squared := line.cross(points[i] - points[i0]).length_squared() / maxf(line.length_squared(), HULL_EPSILON)
+		if line_distance_squared > max_line_distance_squared:
+			max_line_distance_squared = line_distance_squared
+			i2 = i
+	if i2 < 0 or max_line_distance_squared <= HULL_EPSILON * HULL_EPSILON:
+		return result
+
+	var plane_normal := (points[i1] - points[i0]).cross(points[i2] - points[i0]).normalized()
+	var i3 := -1
+	var max_plane_distance := 0.0
+	for i in points.size():
+		var plane_distance := absf(plane_normal.dot(points[i] - points[i0]))
+		if plane_distance > max_plane_distance:
+			max_plane_distance = plane_distance
+			i3 = i
+	if i3 < 0 or max_plane_distance <= HULL_EPSILON:
+		return result
+
+	result.push_back(i0)
+	result.push_back(i1)
+	result.push_back(i2)
+	result.push_back(i3)
+	return result
+
+
+func _make_hull_face(a: int, b: int, c: int, points: PackedVector3Array, interior: Vector3) -> Dictionary:
+	if a == b or b == c or a == c:
+		return {}
+	var pa := points[a]
+	var pb := points[b]
+	var pc := points[c]
+	var normal := (pb - pa).cross(pc - pa)
+	if normal.length_squared() <= HULL_EPSILON * HULL_EPSILON:
+		return {}
+	normal = normal.normalized()
+	if normal.dot(interior - pa) > 0.0:
+		var temp := b
+		b = c
+		c = temp
+		pb = points[b]
+		pc = points[c]
+		normal = (pb - pa).cross(pc - pa).normalized()
+	return {
+		"a": a,
+		"b": b,
+		"c": c,
+		"normal": normal,
+		"d": -normal.dot(pa),
+	}
+
+
+func _get_face_distance(face: Dictionary, point: Vector3) -> float:
+	return Vector3(face["normal"]).dot(point) + float(face["d"])
+
+
+func _get_horizon_edges(faces: Array[Dictionary], visible: Dictionary) -> Array[Dictionary]:
+	var edge_map := {}
+	for face_index in visible.keys():
+		var face := faces[int(face_index)]
+		_add_horizon_edge(edge_map, int(face["a"]), int(face["b"]))
+		_add_horizon_edge(edge_map, int(face["b"]), int(face["c"]))
+		_add_horizon_edge(edge_map, int(face["c"]), int(face["a"]))
+	var horizon_edges : Array[Dictionary] = []
+	for key in edge_map.keys():
+		var edge : Dictionary = edge_map[key]
+		if int(edge["count"]) == 1:
+			horizon_edges.push_back({"a": int(edge["a"]), "b": int(edge["b"])})
+	return horizon_edges
+
+
+func _add_horizon_edge(edge_map: Dictionary, a: int, b: int) -> void:
+	var min_index := mini(a, b)
+	var max_index := maxi(a, b)
+	var key := "%d:%d" % [min_index, max_index]
+	if not edge_map.has(key):
+		edge_map[key] = {"a": a, "b": b, "count": 1}
+		return
+	var edge : Dictionary = edge_map[key]
+	edge["count"] = int(edge["count"]) + 1
+	edge_map[key] = edge
+
+
+func _get_unique_hull_planes(faces: Array[Dictionary]) -> Array[Dictionary]:
+	var planes : Array[Dictionary] = []
+	var seen := {}
+	for face in faces:
+		var normal : Vector3 = face["normal"]
+		var d := float(face["d"])
+		var key := "%d:%d:%d:%d" % [
+			int(round(normal.x * HULL_DEDUP_SCALE)),
+			int(round(normal.y * HULL_DEDUP_SCALE)),
+			int(round(normal.z * HULL_DEDUP_SCALE)),
+			int(round(d * HULL_DEDUP_SCALE)),
+		]
+		if seen.has(key):
+			continue
+		seen[key] = true
+		planes.push_back({"normal": normal, "d": d})
+	return planes
+
+
+func _expand_hull_planes(planes: Array[Dictionary], margin: float) -> void:
+	if margin <= 0.0:
+		return
+	for i in planes.size():
+		var plane := planes[i]
+		plane["d"] = float(plane["d"]) - margin
+		planes[i] = plane
+
+
+func _is_point_inside_convex_hull(point: Vector3, planes: Array[Dictionary]) -> bool:
+	for plane in planes:
+		if Vector3(plane["normal"]).dot(point) + float(plane["d"]) > HULL_EPSILON:
+			return false
+	return true
+
+
 func _find_mesh_instances(root: Node) -> Array[MeshInstance3D]:
 	var results : Array[MeshInstance3D] = []
-	if root is MeshInstance3D:
+	if root == self:
+		return results
+	if root is MeshInstance3D and not (root is BuoyancyCellNode):
 		results.push_back(root)
 	for child in root.get_children():
 		results.append_array(_find_mesh_instances(child))
@@ -430,13 +682,43 @@ func _get_aabb_corners(bounds: AABB) -> Array[Vector3]:
 	]
 
 
-func _connect_cell_signals() -> void:
-	for i in cells.size():
-		var cell := cells[i] as BuoyancyCell
-		if cell == null:
+func _get_or_create_generated_cells_root() -> Node3D:
+	var root := get_node_or_null(GENERATED_CELLS_NAME) as Node3D
+	if root != null:
+		return root
+	root = Node3D.new()
+	root.name = GENERATED_CELLS_NAME
+	add_child(root)
+	root.owner = owner
+	return root
+
+
+func _clear_generated_cells(cells_root: Node) -> void:
+	for child in cells_root.get_children():
+		cells_root.remove_child(child)
+		child.queue_free()
+
+
+func _get_cells() -> Array[BuoyancyCellNode]:
+	var results : Array[BuoyancyCellNode] = []
+	_collect_cells(self, results)
+	return results
+
+
+func _collect_cells(root: Node, results: Array[BuoyancyCellNode]) -> void:
+	for child in root.get_children():
+		if child == _debug_mesh_instance:
 			continue
-		if not cell.changed.is_connected(_on_cell_changed):
-			cell.changed.connect(_on_cell_changed)
+		if child is BuoyancyCellNode:
+			results.push_back(child)
+		else:
+			_collect_cells(child, results)
+
+
+func _connect_cell_signals() -> void:
+	for cell in _get_cells():
+		if not cell.cell_changed.is_connected(_on_cell_changed):
+			cell.cell_changed.connect(_on_cell_changed)
 
 
 func _on_cell_changed() -> void:
@@ -461,12 +743,11 @@ func _apply_mass_to_parent() -> void:
 func _get_enabled_cell_bounds() -> AABB:
 	var bounds := AABB()
 	var has_bounds := false
-	for i in cells.size():
-		var cell := cells[i] as BuoyancyCell
+	for cell in _get_cells():
 		if cell == null or not cell.enabled:
 			continue
 		var half_size : Vector3 = cell.size * 0.5
-		var cell_bounds := AABB(cell.local_center - half_size, cell.size)
+		var cell_bounds := AABB(cell.position - half_size, cell.size)
 		if not has_bounds:
 			bounds = cell_bounds
 			has_bounds = true
@@ -475,9 +756,9 @@ func _get_enabled_cell_bounds() -> AABB:
 	return bounds if has_bounds else AABB()
 
 
-func _get_cell_vertical_half_extent(cell: Resource) -> float:
+func _get_cell_vertical_half_extent(cell: BuoyancyCellNode) -> float:
 	var half_size : Vector3 = cell.size * 0.5
-	var basis := global_transform.basis
+	var basis := cell.global_transform.basis
 	return maxf(
 		absf(basis.x.y) * half_size.x
 		+ absf(basis.y.y) * half_size.y
@@ -585,8 +866,7 @@ func _rebuild_debug_mesh() -> void:
 	if _has_debug_cells():
 		var drawn := 0
 		_begin_debug_lines()
-		for i in cells.size():
-			var cell := cells[i] as BuoyancyCell
+		for cell in _get_cells():
 			if cell == null:
 				continue
 			if drawn >= debug_max_cells:
@@ -655,16 +935,15 @@ func _set_last_surface_material(material: Material) -> void:
 
 
 func _has_debug_cells() -> bool:
-	for i in cells.size():
-		var cell := cells[i] as BuoyancyCell
+	for cell in _get_cells():
 		if cell != null:
 			return true
 	return false
 
 
-func _add_cell_box(cell: Resource) -> void:
+func _add_cell_box(cell: BuoyancyCellNode) -> void:
 	var half : Vector3 = cell.size * 0.5
-	var p : Vector3 = cell.local_center
+	var p : Vector3 = cell.position
 	var corners := [
 		p + Vector3(-half.x, -half.y, -half.z),
 		p + Vector3( half.x, -half.y, -half.z),

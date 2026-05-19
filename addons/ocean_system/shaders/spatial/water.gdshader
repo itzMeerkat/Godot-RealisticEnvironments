@@ -7,6 +7,7 @@ render_mode world_vertex_coords, cull_disabled, shadows_disabled;
 
 #define MAX_CASCADES 8
 #define MAX_HULL_CUTOUTS 16
+#define MAX_MANUAL_FOAM_SOURCES 96
 
 uniform vec4 water_color : source_color;
 uniform vec4 foam_color : source_color;
@@ -47,6 +48,9 @@ uniform vec4 hull_cutout_axes[MAX_HULL_CUTOUTS];    // right.xz, forward.xz
 uniform vec4 hull_cutout_shapes[MAX_HULL_CUTOUTS];  // max half width, half length, foam amount, shape type
 uniform vec4 hull_cutout_verticals[MAX_HULL_CUTOUTS]; // min y, max y, height feather, unused
 uniform vec4 hull_cutout_widths[MAX_HULL_CUTOUTS]; // start half width, end half width, unused, unused
+uniform int manual_foam_count = 0;
+uniform vec4 manual_foam_sources[MAX_MANUAL_FOAM_SOURCES]; // xz center, radius, amount
+uniform vec4 manual_foam_shapes[MAX_MANUAL_FOAM_SOURCES]; // direction.xz, half length, unused
 
 group_uniforms cascade_data;
 uniform vec4 map_scales[MAX_CASCADES];               // Scales for displacement/normal maps. Packed: [uv scale, displacement scale, normal scale]
@@ -114,6 +118,25 @@ float sample_interaction_height(vec3 world_position) {
 		return 0.0;
 	}
 	return texture(interaction_height_map, uv).r * interaction_map_origin_size.w;
+}
+
+float sample_manual_foam(vec3 world_position) {
+	float foam = 0.0;
+	for (int i = 0; i < min(manual_foam_count, MAX_MANUAL_FOAM_SOURCES); ++i) {
+		vec4 source = manual_foam_sources[i];
+		vec4 shape = manual_foam_shapes[i];
+		float radius = max(source.z, 0.001);
+		vec2 delta = world_position.xz - source.xy;
+		float half_length = max(shape.z, 0.0);
+		if (half_length > 0.001) {
+			vec2 direction = normalize(shape.xy);
+			delta -= direction * clamp(dot(delta, direction), -half_length, half_length);
+		}
+		float dist = length(delta) / radius;
+		float spot = (1.0 - smoothstep(0.15, 1.0, dist)) * source.w;
+		foam = max(foam, spot);
+	}
+	return clamp(foam, 0.0, 1.0);
 }
 
 void vertex() {
@@ -195,6 +218,7 @@ void fragment() {
 	vec3 gradient = vec3(0);
 	float wave_slope = 0.0;
 	foam_factor = 0.0;
+	float manual_foam = sample_manual_foam(water_world_position);
 	if (water_interaction_enabled && interaction_map_origin_size.w > 0.0) {
 		float e = max(interaction_map_origin_size.z / max(float(textureSize(interaction_height_map, 0).x), 1.0), 0.05);
 		float h_l = sample_interaction_height(water_world_position + vec3(-e, 0.0, 0.0));
@@ -240,7 +264,7 @@ void fragment() {
 		float foam_edge = foam_threshold + far_foam_threshold_boost * distance_lod;
 		float foam_distance_fade = mix(1.0, far_foam_coverage, distance_lod);
 		foam_factor = smoothstep(foam_edge, foam_edge + foam_softness, foam_signal) * exp(-dist*0.0075) * foam_distance_fade;
-		foam_factor = max(foam_factor, hull_edge_foam);
+		foam_factor = max(max(foam_factor, hull_edge_foam), manual_foam);
 		wave_slope = clamp(length(gradient.xy) * slope_roughness_strength, 0.0, 1.0);
 
 		float near_normal_fade = exp(-dist*0.0175);
@@ -248,6 +272,7 @@ void fragment() {
 		gradient *= mix(0.015, normal_strength, mix(near_normal_fade, far_normal_fade, distance_lod));
 		NORMAL = (VIEW_MATRIX * vec4(normalize(vec3(-gradient.x, 1.0, -gradient.y)), 0.0)).xyz;
 	}
+	foam_factor = max(max(foam_factor, hull_edge_foam), manual_foam);
 
 	vec3 base_albedo = mix(water_color.rgb, foam_color.rgb, foam_factor);
 	if (planar_reflection_enabled && planar_reflection_strength > 0.0) {

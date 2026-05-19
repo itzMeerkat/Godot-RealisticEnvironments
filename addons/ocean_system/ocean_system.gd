@@ -8,6 +8,7 @@ const WATER_MAT := preload('res://addons/ocean_system/mat_water.tres')
 const OCEAN_REFLECTION_RENDERER := preload('res://addons/ocean_system/ocean_reflection_renderer.gd')
 const MAX_CASCADES := 8
 const MAX_HULL_CUTOUTS := 16
+const MAX_MANUAL_FOAM_SOURCES := 96
 const SPECTRUM_SLOT_COUNT := 2
 const SURFACE_QUERY_WORKGROUP_SIZE := 64
 const SURFACE_QUERY_BYTES_PER_POINT := 16
@@ -383,6 +384,7 @@ func _ready() -> void:
 	_ensure_water_interaction_field()
 	_update_water_interaction_shader_parameters()
 	_update_hull_cutouts()
+	_update_manual_foam_sources()
 	_update_far_lod_shader_parameters()
 	_update_water_mesh()
 	_setup_planar_reflections()
@@ -393,6 +395,7 @@ func _process(delta : float) -> void:
 		_reflection_renderer.set_water_level(water_level)
 	_update_water_interaction_field(delta)
 	_update_hull_cutouts()
+	_update_manual_foam_sources()
 	_update_external_wind_state()
 	# Update waves once every 1.0/updates_per_second.
 	if updates_per_second == 0 or time >= next_update_time:
@@ -939,6 +942,41 @@ func _update_hull_cutouts() -> void:
 	_set_water_shader_parameter(&'hull_cutout_shapes', shapes)
 	_set_water_shader_parameter(&'hull_cutout_verticals', verticals)
 	_set_water_shader_parameter(&'hull_cutout_widths', widths)
+
+
+func _update_manual_foam_sources() -> void:
+	if not is_inside_tree():
+		return
+	var sources := PackedVector4Array()
+	var shapes := PackedVector4Array()
+	sources.resize(MAX_MANUAL_FOAM_SOURCES)
+	shapes.resize(MAX_MANUAL_FOAM_SOURCES)
+	var source_count := 0
+	for node in get_tree().get_nodes_in_group(&"manual_water_foam_source"):
+		if source_count >= MAX_MANUAL_FOAM_SOURCES:
+			break
+		if node == null or not node.has_method(&"get_manual_foam_sources"):
+			continue
+		var node_sources : Array = node.call(&"get_manual_foam_sources")
+		for source in node_sources:
+			if source_count >= MAX_MANUAL_FOAM_SOURCES:
+				break
+			var position : Vector3 = source.get("position", Vector3.ZERO)
+			var radius := maxf(float(source.get("radius", 0.0)), 0.001)
+			var amount := clampf(float(source.get("amount", source.get("foam", 0.0))), 0.0, 1.0)
+			if amount <= 0.001:
+				continue
+			var direction : Vector3 = source.get("direction", Vector3.ZERO)
+			direction.y = 0.0
+			if direction.length_squared() > 0.0001:
+				direction = direction.normalized()
+			var half_length := maxf(float(source.get("length", 0.0)) * 0.5, 0.0)
+			sources[source_count] = Vector4(position.x, position.z, radius, amount)
+			shapes[source_count] = Vector4(direction.x, direction.z, half_length, 0.0)
+			source_count += 1
+	_set_water_shader_parameter(&'manual_foam_count', source_count)
+	_set_water_shader_parameter(&'manual_foam_sources', sources)
+	_set_water_shader_parameter(&'manual_foam_shapes', shapes)
 
 
 func _set_water_shader_parameter(parameter: StringName, value: Variant) -> void:
