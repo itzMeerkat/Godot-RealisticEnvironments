@@ -1030,6 +1030,8 @@ func _update_water_interaction_shader_parameters() -> void:
 
 
 func _get_interaction_map_origin() -> Vector2:
+	if not is_inside_tree():
+		return Vector2.ZERO
 	var half_size := interaction_world_size * 0.5
 	return Vector2(global_position.x - half_size, global_position.z - half_size)
 
