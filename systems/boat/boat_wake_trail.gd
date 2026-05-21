@@ -35,7 +35,7 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
-	if not enabled:
+	if not enabled or not is_visible_in_tree():
 		_clear_trail()
 		return
 	if rigid_body == null:
@@ -48,6 +48,8 @@ func _process(delta: float) -> void:
 
 func get_manual_foam_sources() -> Array[Dictionary]:
 	var sources : Array[Dictionary] = []
+	if not enabled or not is_visible_in_tree():
+		return sources
 	for reverse_i in _positions.size():
 		var i := _positions.size() - 1 - reverse_i
 		var age_t := clampf(_ages[i] / maxf(lifetime, 0.001), 0.0, 1.0)

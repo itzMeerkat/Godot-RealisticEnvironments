@@ -885,7 +885,7 @@ func _update_hull_cutouts() -> void:
 	var cutout_count := 0
 	for node in get_tree().get_nodes_in_group(&"water_hull_cutout"):
 		var cutout := node as WaterHullCutout
-		if cutout == null or not cutout.enabled:
+		if cutout == null or not cutout.enabled or not _is_node_visible_in_tree(cutout):
 			continue
 		if cutout_count >= MAX_HULL_CUTOUTS:
 			break
@@ -907,7 +907,7 @@ func _update_hull_cutouts() -> void:
 
 	for node in get_tree().get_nodes_in_group(&"water_cutout_provider"):
 		var cutout_provider := node as Node
-		if cutout_provider == null or not bool(cutout_provider.get(&"enabled")) or not cutout_provider.has_method(&"get_exclusion_segments"):
+		if cutout_provider == null or not bool(cutout_provider.get(&"enabled")) or not _is_node_visible_in_tree(cutout_provider) or not cutout_provider.has_method(&"get_exclusion_segments"):
 			continue
 		for segment in cutout_provider.get_exclusion_segments():
 			if cutout_count >= MAX_HULL_CUTOUTS:
@@ -955,7 +955,7 @@ func _update_manual_foam_sources() -> void:
 	for node in get_tree().get_nodes_in_group(&"manual_water_foam_source"):
 		if source_count >= MAX_MANUAL_FOAM_SOURCES:
 			break
-		if node == null or not node.has_method(&"get_manual_foam_sources"):
+		if node == null or not _is_node_visible_in_tree(node) or not node.has_method(&"get_manual_foam_sources"):
 			continue
 		var node_sources : Array = node.call(&"get_manual_foam_sources")
 		for source in node_sources:
@@ -977,6 +977,14 @@ func _update_manual_foam_sources() -> void:
 	_set_water_shader_parameter(&'manual_foam_count', source_count)
 	_set_water_shader_parameter(&'manual_foam_sources', sources)
 	_set_water_shader_parameter(&'manual_foam_shapes', shapes)
+
+
+func _is_node_visible_in_tree(node: Node) -> bool:
+	if node is Node3D:
+		return (node as Node3D).is_visible_in_tree()
+	if node is CanvasItem:
+		return (node as CanvasItem).is_visible_in_tree()
+	return true
 
 
 func _set_water_shader_parameter(parameter: StringName, value: Variant) -> void:

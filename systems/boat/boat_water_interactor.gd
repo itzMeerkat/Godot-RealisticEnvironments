@@ -31,7 +31,7 @@ func _ready() -> void:
 
 func get_manual_foam_sources() -> Array[Dictionary]:
 	var sources : Array[Dictionary] = []
-	if not enabled:
+	if not enabled or not is_visible_in_tree():
 		return sources
 	if rigid_body == null:
 		rigid_body = get_parent() as RigidBody3D

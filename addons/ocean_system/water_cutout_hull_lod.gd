@@ -120,7 +120,7 @@ func generate_cutouts_from_source() -> void:
 
 func get_exclusion_segments() -> Array[Dictionary]:
 	var segments : Array[Dictionary] = []
-	if not enabled:
+	if not enabled or not is_visible_in_tree():
 		return segments
 	for cutout in _get_cutouts():
 		if cutout.enabled:
