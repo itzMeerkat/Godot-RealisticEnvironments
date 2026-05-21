@@ -5,7 +5,14 @@ extends MeshInstance3D
 ## managing wave generation pipelines.
 
 const WATER_MAT := preload('res://addons/ocean_system/mat_water.tres')
+const OCEAN_REFLECTION_RENDERER := preload('res://addons/ocean_system/ocean_reflection_renderer.gd')
 const MAX_CASCADES := 8
+const MAX_HULL_CUTOUTS := 16
+const MAX_MANUAL_FOAM_SOURCES := 96
+const SURFACE_QUERY_WORKGROUP_SIZE := 64
+const SURFACE_QUERY_BYTES_PER_POINT := 16
+const SURFACE_QUERY_BYTES_PER_CASCADE := 32
+const SURFACE_QUERY_BYTES_PER_SAMPLE := 48
 const EXTERNAL_WIND_SPEED_DIRTY_THRESHOLD := 0.25
 const EXTERNAL_WIND_DIRECTION_DIRTY_THRESHOLD := 2.0
 const EXTERNAL_WIND_SPECTRUM_REFRESH_INTERVAL := 0.5
@@ -55,7 +62,7 @@ const EXTERNAL_WIND_SPECTRUM_REFRESH_INTERVAL := 0.5
 		normal_strength = value
 		_set_water_shader_parameter(&'normal_strength', normal_strength)
 ## Enables smoother but more expensive normal sampling for close wave detail.
-@export var use_bicubic_normals := false :
+@export var use_bicubic_normals := true :
 	set(value):
 		use_bicubic_normals = value
 		_set_water_shader_parameter(&'use_bicubic_normals', use_bicubic_normals)
@@ -81,6 +88,48 @@ const EXTERNAL_WIND_SPECTRUM_REFRESH_INTERVAL := 0.5
 	set(value):
 		foam_softness = value
 		_set_water_shader_parameter(&'foam_softness', foam_softness)
+
+@export_group('Planar Reflections')
+## Renders a mirrored camera into a texture so floating objects can appear in the water.
+@export var enable_planar_reflections := true :
+	set(value):
+		enable_planar_reflections = value
+		_update_planar_reflection_settings()
+## Maximum side length for the reflection texture after resolution_scale is applied.
+@export_range(128, 4096, 1) var reflection_texture_size := 1024 :
+	set(value):
+		reflection_texture_size = value
+		_update_planar_reflection_settings()
+## Multiplier applied to the main viewport size when sizing the reflection texture.
+@export_range(0.1, 1.0, 0.05) var reflection_resolution_scale := 0.5 :
+	set(value):
+		reflection_resolution_scale = value
+		_update_planar_reflection_settings()
+## Overall reflected color contribution.
+@export_range(0.0, 1.0, 0.01) var reflection_strength := 0.42 :
+	set(value):
+		reflection_strength = value
+		_update_planar_reflection_settings()
+## UV perturbation from wave normals. Higher values make reflections more broken.
+@export_range(0.0, 0.08, 0.001) var reflection_distortion := 0.018 :
+	set(value):
+		reflection_distortion = value
+		_update_planar_reflection_settings()
+## Larger values keep reflections strongest at grazing angles.
+@export_range(0.25, 8.0, 0.05) var reflection_fresnel_power := 4.0 :
+	set(value):
+		reflection_fresnel_power = value
+		_update_planar_reflection_settings()
+## Visual layer assigned to this ocean so the reflection camera can exclude it.
+@export_range(1, 20, 1) var reflection_water_layer := 20 :
+	set(value):
+		reflection_water_layer = value
+		_update_planar_reflection_settings()
+## Objects visible to the reflection camera. The water layer is always removed.
+@export_flags_3d_render var reflection_cull_mask := 0xFFFFF :
+	set(value):
+		reflection_cull_mask = value
+		_update_planar_reflection_settings()
 
 @export_group('External Wind')
 ## When enabled, cascades read speed and direction from wind_source_path.
@@ -131,7 +180,6 @@ const EXTERNAL_WIND_SPECTRUM_REFRESH_INTERVAL := 0.5
 @export_enum('128x128:128', '256x256:256', '512x512:512', '1024x1024:1024') var map_size := 1024 :
 	set(value):
 		map_size = value
-		_clear_height_cache()
 		_setup_wave_generator()
 
 @export_group('Mesh')
@@ -173,15 +221,6 @@ const EXTERNAL_WIND_SPECTRUM_REFRESH_INTERVAL := 0.5
 @export_group('Water Queries')
 ## The still-water height in world units. Wave displacement is added on top.
 @export var water_level := 0.0
-## Enables a CPU-side height cache copied from the GPU displacement maps.
-@export var enable_height_queries := false :
-	set(value):
-		enable_height_queries = value
-		if not enable_height_queries:
-			_clear_height_cache()
-## How often the CPU-side height cache is refreshed. Querying cached heights is cheap;
-## refreshing the cache can stall the GPU, so keep this lower than the render frame rate.
-@export_range(0, 60) var height_query_updates_per_second := 5.0
 @export_group('Visual Smoothing')
 ## Blends between previous and current wave maps to reduce low update-rate stutter.
 @export var smooth_wave_interpolation := true
@@ -214,7 +253,7 @@ const EXTERNAL_WIND_SPECTRUM_REFRESH_INTERVAL := 0.5
 		far_lod_curve = value
 		_update_far_lod_shader_parameters()
 ## Cascades shorter than this tile length fade out in far LOD.
-@export_range(1.0, 512.0, 1.0) var far_low_frequency_tile_length := 64.0 :
+@export_range(1.0, 512.0, 1.0) var far_low_frequency_tile_length := 32.0 :
 	set(value):
 		far_low_frequency_tile_length = value
 		_update_far_lod_shader_parameters()
@@ -253,20 +292,31 @@ var displacement_maps := Texture2DArrayRD.new()
 var normal_maps := Texture2DArrayRD.new()
 var previous_displacement_maps := Texture2DArrayRD.new()
 var previous_normal_maps := Texture2DArrayRD.new()
-var _height_images : Array[Image] = []
-var _previous_height_images : Array[Image] = []
-var _next_height_query_update_time := 0.0
 var _has_wave_output := false
 var _last_wave_output_time := 0.0
 var _wave_blend_start_time := 0.0
 var _wave_blend_duration := 1.0 / 60.0
-var _height_cache_refresh_pending := false
+var _surface_query_capacity := 0
+var _surface_query_shader := RID()
+var _surface_query_pipeline := RID()
+var _surface_query_point_buffer
+var _surface_query_cascade_buffer
+var _surface_query_sample_buffer
+var _surface_query_sets := {}
+var _surface_query_queued_requests := {}
+var _surface_query_pending_requests : Array[Dictionary] = []
+var _surface_query_pending_points := PackedVector3Array()
+var _surface_query_cached_results := {}
+var _surface_query_has_pending_readback := false
+var _surface_query_pending_draw_frame := -1
+var _reflection_renderer : OceanReflectionRenderer
 
 func _init() -> void:
 	rng.set_seed(1234) # This seed gives big waves!
 
 func _ready() -> void:
 	process_priority = 100
+	add_to_group(&"ocean_system")
 	if not Engine.is_editor_hint():
 		_ensure_unique_water_material()
 	_resolve_wind_source()
@@ -284,11 +334,18 @@ func _ready() -> void:
 	_set_water_shader_parameter(&'foam_intensity', foam_intensity)
 	_set_water_shader_parameter(&'foam_threshold', foam_threshold)
 	_set_water_shader_parameter(&'foam_softness', foam_softness)
+	_update_hull_cutouts()
+	_update_manual_foam_sources()
 	_update_far_lod_shader_parameters()
 	_update_water_mesh()
+	_setup_planar_reflections()
 
 func _process(delta : float) -> void:
 	_update_follow_camera()
+	if _reflection_renderer != null:
+		_reflection_renderer.set_water_level(water_level)
+	_update_hull_cutouts()
+	_update_manual_foam_sources()
 	_update_external_wind_state()
 	# Update waves once every 1.0/updates_per_second.
 	if updates_per_second == 0 or time >= next_update_time:
@@ -298,17 +355,20 @@ func _process(delta : float) -> void:
 		_update_water(update_delta)
 	time += delta
 	_update_wave_blend_alpha()
+	_dispatch_surface_query_requests()
 
 func _setup_wave_generator() -> void:
 	if parameters.size() <= 0:
 		_clear_wave_generator()
 		return
+	if RenderingServer.get_rendering_device() == null:
+		_clear_wave_generator()
+		return
 	for param in parameters:
 		if param:
-			param.should_generate_spectrum = true
+			param.mark_all_spectra_dirty()
 
-	_clear_height_cache()
-	_height_cache_refresh_pending = false
+	_reset_surface_query_resources()
 	wave_generator = WaveGenerator.new()
 	wave_generator.map_size = map_size
 	# The output ping-pong path expects at least two texture-array layers.
@@ -327,6 +387,7 @@ func _setup_wave_generator() -> void:
 	_set_water_shader_parameter(&'previous_displacements', previous_displacement_maps)
 	_set_water_shader_parameter(&'previous_normals', previous_normal_maps)
 	_set_water_shader_parameter(&'wave_blend_alpha', 1.0)
+	_update_spectrum_blend_uniform()
 
 func _update_scales_uniform() -> void:
 	var cascade_count := mini(len(parameters), MAX_CASCADES)
@@ -338,6 +399,17 @@ func _update_scales_uniform() -> void:
 		var uv_scale := Vector2.ONE / params.tile_length
 		map_scales[i] = Vector4(uv_scale.x, uv_scale.y, params.displacement_scale, params.normal_scale)
 	_set_water_shader_parameter(&'map_scales', map_scales)
+	_update_spectrum_blend_uniform()
+
+func _update_spectrum_blend_uniform() -> void:
+	var cascade_count := mini(len(parameters), MAX_CASCADES)
+	var spectrum_blend_states : PackedVector4Array; spectrum_blend_states.resize(cascade_count)
+	for i in cascade_count:
+		var params := parameters[i]
+		if params == null:
+			continue
+		spectrum_blend_states[i] = params.get_spectrum_blend_state(i)
+	_set_water_shader_parameter(&'spectrum_blend_states', spectrum_blend_states)
 
 func _update_water(delta : float) -> void:
 	if parameters.size() <= 0:
@@ -346,25 +418,20 @@ func _update_water(delta : float) -> void:
 	if wave_generator == null:
 		return
 	wave_generator.update(delta, parameters, get_external_wind_speed(), get_external_wind_direction(), should_use_external_wind())
-	if enable_height_queries and (height_query_updates_per_second == 0 or time >= _next_height_query_update_time):
-		var target_update_delta := 1.0 / (height_query_updates_per_second + 1e-10)
-		_next_height_query_update_time = time + target_update_delta
-		_height_cache_refresh_pending = true
+	_update_spectrum_blend_uniform()
 
-func get_water_height(world_position: Vector3) -> float:
-	var t := _get_ocean_time()
-	var height := water_level
-	for i in mini(parameters.size(), _height_images.size()):
-		height += _sample_wave_height(i, world_position, t)
-	return height
+func sample_water_surface(world_position: Vector3) -> WaterSurfaceSample:
+	var points := PackedVector3Array()
+	points.push_back(world_position)
+	var samples := sample_water_surface_batch(points)
+	if samples.is_empty():
+		return null
+	return samples[0]
 
-func get_water_normal(world_position: Vector3) -> Vector3:
-	var e := 0.25
-	var h_l := get_water_height(world_position + Vector3(-e, 0, 0))
-	var h_r := get_water_height(world_position + Vector3( e, 0, 0))
-	var h_b := get_water_height(world_position + Vector3(0, 0, -e))
-	var h_f := get_water_height(world_position + Vector3(0, 0,  e))
-	return Vector3(h_l - h_r, 2.0 * e, h_b - h_f).normalized()
+func sample_water_surface_batch(points: PackedVector3Array, request_owner: Object = null) -> Array[WaterSurfaceSample]:
+	if points.is_empty():
+		return _empty_surface_samples()
+	return _sample_water_surface_batch_gpu(points, request_owner)
 
 func should_use_external_wind() -> bool:
 	return use_external_wind and get_wind_source() != null
@@ -402,17 +469,17 @@ func _update_external_wind_state() -> void:
 		return
 	var current_speed := get_external_wind_speed()
 	var current_direction := get_external_wind_direction()
-	if (
-		absf(current_speed - _last_external_wind_speed) < EXTERNAL_WIND_SPEED_DIRTY_THRESHOLD
-		and _get_wrapped_degrees_delta(current_direction, _last_external_wind_direction) < EXTERNAL_WIND_DIRECTION_DIRTY_THRESHOLD
-	):
+	var speed_changed := absf(current_speed - _last_external_wind_speed) >= EXTERNAL_WIND_SPEED_DIRTY_THRESHOLD
+	var direction_changed := _get_wrapped_degrees_delta(current_direction, _last_external_wind_direction) >= EXTERNAL_WIND_DIRECTION_DIRTY_THRESHOLD
+	if not speed_changed and not direction_changed:
 		return
 	if time - _last_external_wind_spectrum_time < EXTERNAL_WIND_SPECTRUM_REFRESH_INTERVAL:
 		return
 	_last_external_wind_speed = current_speed
 	_last_external_wind_direction = current_direction
 	_last_external_wind_spectrum_time = time
-	_mark_spectra_dirty()
+	if speed_changed:
+		_mark_spectra_dirty()
 
 func _reset_external_wind_tracking() -> void:
 	_last_external_wind_speed = -1.0
@@ -427,64 +494,10 @@ func _mark_spectra_dirty() -> void:
 		return
 	for params in parameters:
 		if params:
-			params.should_generate_spectrum = true
-
-func refresh_height_cache() -> void:
-	if not wave_generator or not wave_generator.context: return
-	var displacement_rid : RID = wave_generator.descriptors[&'displacement_map'].rid
-	if not displacement_rid.is_valid(): return
-
-	_height_images.clear()
-	var device := wave_generator.context.device
-	_height_images = _read_height_images(device, displacement_rid)
-	_previous_height_images = _read_height_images(device, wave_generator.descriptors[&'previous_displacement_map'].rid)
-
-func _get_ocean_time() -> float:
-	return time
-
-func _sample_wave_height(cascade_index: int, world_position: Vector3, _ocean_time: float) -> float:
-	if cascade_index >= _height_images.size(): return 0.0
-	var image := _height_images[cascade_index]
-	if image == null or image.is_empty(): return 0.0
-
-	var params := parameters[cascade_index]
-	var uv := Vector2(world_position.x / params.tile_length.x, world_position.z / params.tile_length.y)
-	var displacement := _sample_image_bilinear(image, uv).g
-	if cascade_index < _previous_height_images.size():
-		var previous_image := _previous_height_images[cascade_index]
-		if previous_image != null and not previous_image.is_empty():
-			var previous_displacement := _sample_image_bilinear(previous_image, uv).g
-			displacement = lerpf(previous_displacement, displacement, _get_wave_blend_alpha())
-	return displacement * params.displacement_scale
-
-func _sample_image_bilinear(image: Image, uv: Vector2) -> Color:
-	var width := image.get_width()
-	var height := image.get_height()
-	if width <= 0 or height <= 0: return Color.BLACK
-
-	var x := fposmod(uv.x, 1.0) * width
-	var y := fposmod(uv.y, 1.0) * height
-	var x0 := int(floor(x)) % width
-	var y0 := int(floor(y)) % height
-	var x1 := (x0 + 1) % width
-	var y1 := (y0 + 1) % height
-	var fx: float = x - floor(x)
-	var fy : float = y - floor(y)
-
-	var c00 := image.get_pixel(x0, y0)
-	var c10 := image.get_pixel(x1, y0)
-	var c01 := image.get_pixel(x0, y1)
-	var c11 := image.get_pixel(x1, y1)
-	return c00.lerp(c10, fx).lerp(c01.lerp(c11, fx), fy)
-
-func _clear_height_cache() -> void:
-	_height_images.clear()
-	_previous_height_images.clear()
-	_next_height_query_update_time = 0.0
-	_height_cache_refresh_pending = false
+			params.mark_all_spectra_dirty()
 
 func _clear_wave_generator() -> void:
-	_clear_height_cache()
+	_reset_surface_query_resources()
 	wave_generator = null
 	_has_wave_output = false
 	_last_wave_output_time = 0.0
@@ -652,11 +665,163 @@ func _update_far_lod_shader_parameters() -> void:
 	_set_water_shader_parameter(&'far_foam_coverage', far_foam_coverage)
 	_set_water_shader_parameter(&'far_foam_threshold_boost', far_foam_threshold_boost)
 
+
+func _setup_planar_reflections() -> void:
+	if Engine.is_editor_hint():
+		return
+	if _reflection_renderer == null:
+		_reflection_renderer = OCEAN_REFLECTION_RENDERER.new()
+		_reflection_renderer.name = "OceanReflectionRenderer"
+		add_child(_reflection_renderer)
+	_reflection_renderer.setup(self, water_level)
+	_update_planar_reflection_settings()
+
+
+func _update_planar_reflection_settings() -> void:
+	if _reflection_renderer != null:
+		_reflection_renderer.enabled = enable_planar_reflections
+		_reflection_renderer.texture_size = reflection_texture_size
+		_reflection_renderer.resolution_scale = reflection_resolution_scale
+		_reflection_renderer.reflection_strength = reflection_strength
+		_reflection_renderer.reflection_distortion = reflection_distortion
+		_reflection_renderer.fresnel_power = reflection_fresnel_power
+		_reflection_renderer.water_layer = reflection_water_layer
+		_reflection_renderer.reflection_cull_mask = reflection_cull_mask
+		_reflection_renderer.setup(self, water_level)
+		return
+	_set_water_shader_parameter(&'planar_reflection_enabled', enable_planar_reflections)
+	_set_water_shader_parameter(&'planar_reflection_strength', reflection_strength if enable_planar_reflections else 0.0)
+	_set_water_shader_parameter(&'planar_reflection_distortion', reflection_distortion)
+	_set_water_shader_parameter(&'planar_reflection_fresnel_power', reflection_fresnel_power)
+	_set_water_shader_parameter(&'planar_reflection_plane_y', water_level)
+
+
+func _update_hull_cutouts() -> void:
+	if not is_inside_tree():
+		return
+
+	var centers := PackedVector4Array()
+	var axes := PackedVector4Array()
+	var shapes := PackedVector4Array()
+	var verticals := PackedVector4Array()
+	var widths := PackedVector4Array()
+	centers.resize(MAX_HULL_CUTOUTS)
+	axes.resize(MAX_HULL_CUTOUTS)
+	shapes.resize(MAX_HULL_CUTOUTS)
+	verticals.resize(MAX_HULL_CUTOUTS)
+	widths.resize(MAX_HULL_CUTOUTS)
+
+	var cutout_count := 0
+	for node in get_tree().get_nodes_in_group(&"water_hull_cutout"):
+		var cutout := node as WaterHullCutout
+		if cutout == null or not cutout.enabled or not _is_node_visible_in_tree(cutout):
+			continue
+		if cutout_count >= MAX_HULL_CUTOUTS:
+			break
+
+		var basis := cutout.global_transform.basis.orthonormalized()
+		var right := basis.x
+		var forward := basis.z
+		centers[cutout_count] = Vector4(
+			cutout.global_position.x,
+			cutout.global_position.y,
+			cutout.global_position.z,
+			cutout.feather
+		)
+		axes[cutout_count] = Vector4(right.x, right.z, forward.x, forward.z)
+		shapes[cutout_count] = Vector4(cutout.half_extents.x, cutout.half_extents.y, cutout.foam_amount, 0.0)
+		verticals[cutout_count] = Vector4(-100000.0, 100000.0, 1.0, 0.0)
+		widths[cutout_count] = Vector4(cutout.half_extents.x, cutout.half_extents.x, 0.0, 0.0)
+		cutout_count += 1
+
+	for node in get_tree().get_nodes_in_group(&"water_cutout_provider"):
+		var cutout_provider := node as Node
+		if cutout_provider == null or not bool(cutout_provider.get(&"enabled")) or not _is_node_visible_in_tree(cutout_provider) or not cutout_provider.has_method(&"get_exclusion_segments"):
+			continue
+		for segment in cutout_provider.get_exclusion_segments():
+			if cutout_count >= MAX_HULL_CUTOUTS:
+				break
+			var center : Vector3 = segment["center"]
+			var segment_right : Vector3 = segment["right"]
+			var segment_forward : Vector3 = segment["forward"]
+			var half_extents : Vector2 = segment["half_extents"]
+			var half_widths : Vector2 = segment["half_widths"]
+			centers[cutout_count] = Vector4(
+				center.x,
+				center.y,
+				center.z,
+				float(segment["feather"])
+			)
+			axes[cutout_count] = Vector4(segment_right.x, segment_right.z, segment_forward.x, segment_forward.z)
+			shapes[cutout_count] = Vector4(half_extents.x, half_extents.y, float(segment["foam_amount"]), 1.0)
+			widths[cutout_count] = Vector4(half_widths.x, half_widths.y, 0.0, 0.0)
+			verticals[cutout_count] = Vector4(
+				float(segment["min_y"]),
+				float(segment["max_y"]),
+				float(segment["height_feather"]),
+				0.0
+			)
+			cutout_count += 1
+		if cutout_count >= MAX_HULL_CUTOUTS:
+			break
+
+	_set_water_shader_parameter(&'hull_cutout_count', cutout_count)
+	_set_water_shader_parameter(&'hull_cutout_centers', centers)
+	_set_water_shader_parameter(&'hull_cutout_axes', axes)
+	_set_water_shader_parameter(&'hull_cutout_shapes', shapes)
+	_set_water_shader_parameter(&'hull_cutout_verticals', verticals)
+	_set_water_shader_parameter(&'hull_cutout_widths', widths)
+
+
+func _update_manual_foam_sources() -> void:
+	if not is_inside_tree():
+		return
+	var sources := PackedVector4Array()
+	var shapes := PackedVector4Array()
+	sources.resize(MAX_MANUAL_FOAM_SOURCES)
+	shapes.resize(MAX_MANUAL_FOAM_SOURCES)
+	var source_count := 0
+	for node in get_tree().get_nodes_in_group(&"manual_water_foam_source"):
+		if source_count >= MAX_MANUAL_FOAM_SOURCES:
+			break
+		if node == null or not _is_node_visible_in_tree(node) or not node.has_method(&"get_manual_foam_sources"):
+			continue
+		var node_sources : Array = node.call(&"get_manual_foam_sources")
+		for source in node_sources:
+			if source_count >= MAX_MANUAL_FOAM_SOURCES:
+				break
+			var position : Vector3 = source.get("position", Vector3.ZERO)
+			var radius := maxf(float(source.get("radius", 0.0)), 0.001)
+			var amount := clampf(float(source.get("amount", source.get("foam", 0.0))), 0.0, 1.0)
+			if amount <= 0.001:
+				continue
+			var direction : Vector3 = source.get("direction", Vector3.ZERO)
+			direction.y = 0.0
+			if direction.length_squared() > 0.0001:
+				direction = direction.normalized()
+			var half_length := maxf(float(source.get("length", 0.0)) * 0.5, 0.0)
+			sources[source_count] = Vector4(position.x, position.z, radius, amount)
+			shapes[source_count] = Vector4(direction.x, direction.z, half_length, 0.0)
+			source_count += 1
+	_set_water_shader_parameter(&'manual_foam_count', source_count)
+	_set_water_shader_parameter(&'manual_foam_sources', sources)
+	_set_water_shader_parameter(&'manual_foam_shapes', shapes)
+
+
+func _is_node_visible_in_tree(node: Node) -> bool:
+	if node is Node3D:
+		return (node as Node3D).is_visible_in_tree()
+	if node is CanvasItem:
+		return (node as CanvasItem).is_visible_in_tree()
+	return true
+
+
 func _set_water_shader_parameter(parameter: StringName, value: Variant) -> void:
 	if material_override is ShaderMaterial:
 		(material_override as ShaderMaterial).set_shader_parameter(parameter, value)
 	else:
 		WATER_MAT.set_shader_parameter(parameter, value)
+
 
 func _ensure_unique_water_material() -> void:
 	if material_override is ShaderMaterial:
@@ -664,14 +829,285 @@ func _ensure_unique_water_material() -> void:
 	else:
 		material_override = WATER_MAT.duplicate()
 
-func _read_height_images(device: RenderingDevice, texture_rid: RID) -> Array[Image]:
-	var images : Array[Image] = []
-	if not texture_rid.is_valid(): return images
-	for i in parameters.size():
-		var data := device.texture_get_data(texture_rid, i)
-		if data.is_empty(): continue
-		images.push_back(Image.create_from_data(map_size, map_size, false, Image.FORMAT_RGBAH, data))
-	return images
+func _sample_water_surface_batch_gpu(points: PackedVector3Array, request_owner: Object = null) -> Array[WaterSurfaceSample]:
+	_read_surface_query_results_if_ready()
+	var owner_key := _get_surface_query_owner_key(request_owner)
+	_surface_query_queued_requests[owner_key] = {
+		"points": points,
+	}
+	var cached_samples : Array[WaterSurfaceSample] = _surface_query_cached_results.get(owner_key, _empty_surface_samples())
+	if cached_samples.size() != points.size():
+		return _empty_surface_samples()
+	return cached_samples
+
+
+func _get_surface_query_owner_key(request_owner: Object) -> int:
+	return 0 if request_owner == null else request_owner.get_instance_id()
+
+
+func _dispatch_surface_query_requests() -> void:
+	_read_surface_query_results_if_ready()
+	if _surface_query_has_pending_readback or _surface_query_queued_requests.is_empty():
+		return
+	if wave_generator == null or wave_generator.context == null:
+		if parameters.size() > 0:
+			_setup_wave_generator()
+	if wave_generator == null or wave_generator.context == null:
+		return
+
+	var total_count := 0
+	for request in _surface_query_queued_requests.values():
+		var request_points : PackedVector3Array = request.get("points", PackedVector3Array())
+		total_count += request_points.size()
+	if total_count <= 0:
+		_surface_query_queued_requests.clear()
+		return
+	if not _ensure_surface_query_resources(total_count):
+		return
+
+	var combined_points := PackedVector3Array()
+	combined_points.resize(total_count)
+	var dispatch_requests : Array[Dictionary] = []
+	var offset := 0
+	for owner_key in _surface_query_queued_requests.keys():
+		var request : Dictionary = _surface_query_queued_requests[owner_key]
+		var request_points : PackedVector3Array = request.get("points", PackedVector3Array())
+		var count := request_points.size()
+		if count <= 0:
+			continue
+		for i in count:
+			combined_points[offset + i] = request_points[i]
+		dispatch_requests.push_back({
+			"owner_key": int(owner_key),
+			"offset": offset,
+			"count": count,
+		})
+		offset += count
+	if offset <= 0:
+		_surface_query_queued_requests.clear()
+		return
+	if offset != total_count:
+		combined_points.resize(offset)
+		total_count = offset
+
+	var context := wave_generator.context
+	var device := context.device
+	var point_data := _pack_surface_query_points(combined_points)
+	var cascade_data := _pack_surface_query_cascades()
+	device.buffer_update(_surface_query_point_buffer.rid, 0, point_data.size(), point_data)
+	device.buffer_update(_surface_query_cascade_buffer.rid, 0, cascade_data.size(), cascade_data)
+
+	var current_displacement_rid : RID = wave_generator.descriptors[&'displacement_map'].rid
+	var previous_displacement_rid : RID = wave_generator.descriptors[&'previous_displacement_map'].rid
+	var uniform_set := _get_surface_query_uniform_set(current_displacement_rid, previous_displacement_rid)
+	if not uniform_set.is_valid():
+		return
+
+	var groups := int(ceil(float(total_count) / float(SURFACE_QUERY_WORKGROUP_SIZE)))
+	var compute_list := context.compute_list_begin()
+	device.compute_list_bind_compute_pipeline(compute_list, _surface_query_pipeline)
+	device.compute_list_bind_uniform_set(compute_list, uniform_set, 0)
+	device.compute_list_set_push_constant(
+		compute_list,
+		RenderingContext.create_push_constant([
+			total_count,
+			mini(parameters.size(), MAX_CASCADES),
+			map_size,
+			water_level,
+			_get_wave_blend_alpha(),
+			maxf(_wave_blend_duration, 1.0 / 60.0),
+			0.25,
+			0.0,
+		]),
+		32
+	)
+	device.compute_list_dispatch(compute_list, groups, 1, 1)
+	context.compute_list_end()
+
+	if device != RenderingServer.get_rendering_device():
+		context.submit()
+		context.sync()
+		var byte_count := total_count * SURFACE_QUERY_BYTES_PER_SAMPLE
+		var sample_data : PackedByteArray = device.buffer_get_data(_surface_query_sample_buffer.rid, 0, byte_count)
+		_store_surface_query_results(combined_points, dispatch_requests, sample_data)
+		_surface_query_queued_requests.clear()
+		return
+
+	_surface_query_pending_points = combined_points
+	_surface_query_pending_requests = dispatch_requests
+	_surface_query_pending_draw_frame = Engine.get_frames_drawn()
+	_surface_query_has_pending_readback = true
+	_surface_query_queued_requests.clear()
+
+
+func _read_surface_query_results_if_ready() -> void:
+	if not _surface_query_has_pending_readback or _surface_query_sample_buffer == null:
+		return
+	if wave_generator == null or wave_generator.context == null:
+		return
+	var device := wave_generator.context.device
+	if device == RenderingServer.get_rendering_device() and Engine.get_frames_drawn() <= _surface_query_pending_draw_frame:
+		return
+	var byte_count := _surface_query_pending_points.size() * SURFACE_QUERY_BYTES_PER_SAMPLE
+	var sample_data : PackedByteArray = device.buffer_get_data(_surface_query_sample_buffer.rid, 0, byte_count)
+	_store_surface_query_results(_surface_query_pending_points, _surface_query_pending_requests, sample_data)
+	_surface_query_has_pending_readback = false
+	_surface_query_pending_points.clear()
+	_surface_query_pending_requests.clear()
+
+
+func _store_surface_query_results(points: PackedVector3Array, requests: Array[Dictionary], data: PackedByteArray) -> void:
+	var samples := _unpack_surface_query_samples(points, data)
+	if samples.size() != points.size():
+		return
+	for request in requests:
+		var owner_key := int(request.get("owner_key", 0))
+		var offset := int(request.get("offset", 0))
+		var count := int(request.get("count", 0))
+		var owner_samples : Array[WaterSurfaceSample] = []
+		for i in count:
+			owner_samples.push_back(samples[offset + i])
+		_surface_query_cached_results[owner_key] = owner_samples
+
+
+func _ensure_surface_query_resources(point_count : int) -> bool:
+	if point_count <= 0:
+		return false
+	if wave_generator == null or wave_generator.context == null:
+		return false
+	if not wave_generator.descriptors.has(&'displacement_map') or wave_generator.descriptors[&'displacement_map'] == null or not wave_generator.descriptors[&'displacement_map'].rid.is_valid():
+		return false
+	if not wave_generator.descriptors.has(&'previous_displacement_map') or wave_generator.descriptors[&'previous_displacement_map'] == null or not wave_generator.descriptors[&'previous_displacement_map'].rid.is_valid():
+		return false
+
+	var context := wave_generator.context
+	if not _surface_query_shader.is_valid():
+		_surface_query_shader = context.load_shader('res://addons/ocean_system/shaders/compute/surface_query.glsl')
+	if not _surface_query_pipeline.is_valid():
+		_surface_query_pipeline = context.deletion_queue.push(context.device.compute_pipeline_create(_surface_query_shader))
+	if point_count <= _surface_query_capacity and _surface_query_point_buffer != null:
+		return true
+
+	var capacity := _get_surface_query_capacity(point_count)
+	_surface_query_capacity = capacity
+	_surface_query_point_buffer = context.create_storage_buffer(capacity * SURFACE_QUERY_BYTES_PER_POINT)
+	_surface_query_cascade_buffer = context.create_storage_buffer(MAX_CASCADES * SURFACE_QUERY_BYTES_PER_CASCADE)
+	_surface_query_sample_buffer = context.create_storage_buffer(capacity * SURFACE_QUERY_BYTES_PER_SAMPLE)
+	_surface_query_sets.clear()
+	_surface_query_has_pending_readback = false
+	return true
+
+func _get_surface_query_capacity(point_count : int) -> int:
+	var capacity := SURFACE_QUERY_WORKGROUP_SIZE
+	while capacity < point_count:
+		capacity *= 2
+	return capacity
+
+func _get_surface_query_uniform_set(current_displacement_rid : RID, previous_displacement_rid : RID) -> RID:
+	var key := "%s:%s" % [str(current_displacement_rid), str(previous_displacement_rid)]
+	if _surface_query_sets.has(key):
+		return _surface_query_sets[key]
+	var device := wave_generator.context.device
+	var uniforms : Array[RDUniform] = []
+	_add_surface_query_uniform(uniforms, 0, _surface_query_point_buffer.type, [_surface_query_point_buffer.rid])
+	_add_surface_query_uniform(uniforms, 1, _surface_query_cascade_buffer.type, [_surface_query_cascade_buffer.rid])
+	_add_surface_query_uniform(uniforms, 2, _surface_query_sample_buffer.type, [_surface_query_sample_buffer.rid])
+	_add_surface_query_uniform(uniforms, 3, wave_generator.descriptors[&'displacement_map'].type, [current_displacement_rid])
+	_add_surface_query_uniform(uniforms, 4, wave_generator.descriptors[&'previous_displacement_map'].type, [previous_displacement_rid])
+	var uniform_set := wave_generator.context.deletion_queue.push(device.uniform_set_create(uniforms, _surface_query_shader, 0))
+	_surface_query_sets[key] = uniform_set
+	return uniform_set
+
+
+func _add_surface_query_uniform(uniforms: Array[RDUniform], binding: int, uniform_type: RenderingDevice.UniformType, ids: Array[RID]) -> void:
+	var uniform := RDUniform.new()
+	uniform.binding = binding
+	uniform.uniform_type = uniform_type
+	for id in ids:
+		uniform.add_id(id)
+	uniforms.push_back(uniform)
+
+func _pack_surface_query_points(points: PackedVector3Array) -> PackedByteArray:
+	var data := PackedByteArray()
+	data.resize(points.size() * SURFACE_QUERY_BYTES_PER_POINT)
+	for i in points.size():
+		var offset := i * SURFACE_QUERY_BYTES_PER_POINT
+		var point := points[i]
+		data.encode_float(offset, point.x)
+		data.encode_float(offset + 4, point.y)
+		data.encode_float(offset + 8, point.z)
+		data.encode_float(offset + 12, 0.0)
+	return data
+
+func _pack_surface_query_cascades() -> PackedByteArray:
+	var data := PackedByteArray()
+	data.resize(MAX_CASCADES * SURFACE_QUERY_BYTES_PER_CASCADE)
+	for i in mini(parameters.size(), MAX_CASCADES):
+		var params := parameters[i]
+		if params == null:
+			continue
+		var uv_scale := Vector2.ONE / params.tile_length
+		var blend_state := params.get_spectrum_blend_state(i)
+		var offset := i * SURFACE_QUERY_BYTES_PER_CASCADE
+		data.encode_float(offset, uv_scale.x)
+		data.encode_float(offset + 4, uv_scale.y)
+		data.encode_float(offset + 8, params.displacement_scale)
+		data.encode_float(offset + 12, params.normal_scale)
+		data.encode_float(offset + 16, blend_state.x)
+		data.encode_float(offset + 20, blend_state.y)
+		data.encode_float(offset + 24, blend_state.z)
+		data.encode_float(offset + 28, 0.0)
+	return data
+
+func _unpack_surface_query_samples(points: PackedVector3Array, data: PackedByteArray) -> Array[WaterSurfaceSample]:
+	if data.size() < points.size() * SURFACE_QUERY_BYTES_PER_SAMPLE:
+		return _empty_surface_samples()
+
+	var samples : Array[WaterSurfaceSample] = []
+	samples.resize(points.size())
+	for i in points.size():
+		var offset := i * SURFACE_QUERY_BYTES_PER_SAMPLE
+		var sample := WaterSurfaceSample.new()
+		sample.position = points[i]
+		sample.displacement = Vector3(
+			data.decode_float(offset),
+			data.decode_float(offset + 4),
+			data.decode_float(offset + 8)
+		)
+		sample.height = data.decode_float(offset + 12)
+		sample.normal = Vector3(
+			data.decode_float(offset + 16),
+			data.decode_float(offset + 20),
+			data.decode_float(offset + 24)
+		)
+		sample.surface_velocity = Vector3(
+			data.decode_float(offset + 32),
+			data.decode_float(offset + 36),
+			data.decode_float(offset + 40)
+		)
+		samples[i] = sample
+	return samples
+
+
+func _empty_surface_samples() -> Array[WaterSurfaceSample]:
+	var samples : Array[WaterSurfaceSample] = []
+	return samples
+
+
+func _reset_surface_query_resources() -> void:
+	_surface_query_capacity = 0
+	_surface_query_shader = RID()
+	_surface_query_pipeline = RID()
+	_surface_query_point_buffer = null
+	_surface_query_cascade_buffer = null
+	_surface_query_sample_buffer = null
+	_surface_query_sets.clear()
+	_surface_query_queued_requests.clear()
+	_surface_query_pending_requests.clear()
+	_surface_query_pending_points.clear()
+	_surface_query_cached_results.clear()
+	_surface_query_has_pending_readback = false
+	_surface_query_pending_draw_frame = -1
 
 func _set_texture_rid(texture: Texture2DArrayRD, rid: RID) -> void:
 	texture.texture_rd_rid = RID()
@@ -697,9 +1133,6 @@ func _on_wave_output_maps_swapped(current_displacement: RID, previous_displaceme
 	_set_water_shader_parameter(&'normals', normal_maps)
 	_set_water_shader_parameter(&'previous_displacements', previous_displacement_maps)
 	_set_water_shader_parameter(&'previous_normals', previous_normal_maps)
-	if _height_cache_refresh_pending and enable_height_queries:
-		refresh_height_cache()
-		_height_cache_refresh_pending = false
 
 func _update_wave_blend_alpha() -> void:
 	_set_water_shader_parameter(&'wave_blend_alpha', _get_wave_blend_alpha())

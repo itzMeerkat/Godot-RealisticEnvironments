@@ -1,9 +1,67 @@
-[gd_scene load_steps=11 format=4]
+[gd_scene format=3 uid="uid://ckdc57htjsaad"]
 
-[ext_resource type="Script" path="res://addons/sky_system/sky_system.gd" id="1_sky_system"]
+[ext_resource type="Script" uid="uid://dp6mb8myrguk3" path="res://addons/sky_system/sky_system.gd" id="1_sky_system"]
+[ext_resource type="Script" uid="uid://bw2332cbm64tv" path="res://addons/sky_system/sky_profile.gd" id="2_ckf4a"]
 [ext_resource type="Material" path="res://addons/sky_system/materials/sky.tres" id="2_sky"]
-[ext_resource type="Shader" path="res://addons/sky_system/shaders/celestial_disk.gdshader" id="3_disk_shader"]
+[ext_resource type="Shader" uid="uid://c06rajf110qna" path="res://addons/sky_system/shaders/celestial_disk.gdshader" id="3_disk_shader"]
 [ext_resource type="Material" path="res://addons/sky_system/materials/starfield.tres" id="4_starfield"]
+
+[sub_resource type="Curve" id="Curve_2q5k3"]
+_limits = [0.0, 2.0, 0.0, 1.0]
+_data = [Vector2(0, 0.035), 0.0, 0.0, 0, 0, Vector2(0.25, 0.22), 0.0, 0.0, 0, 0, Vector2(0.5, 0.65), 0.0, 0.0, 0, 0, Vector2(0.75, 0.22), 0.0, 0.0, 0, 0, Vector2(1, 0.035), 0.0, 0.0, 0, 0]
+point_count = 5
+
+[sub_resource type="Gradient" id="Gradient_l6d7l"]
+offsets = PackedFloat32Array(0, 0.25, 0.5, 0.75, 1)
+colors = PackedColorArray(0.28, 0.32, 0.4, 1, 0.82, 0.63, 0.48, 1, 0.73, 0.67, 0.62, 1, 0.82, 0.58, 0.45, 1, 0.28, 0.32, 0.4, 1)
+
+[sub_resource type="Gradient" id="Gradient_5us0o"]
+offsets = PackedFloat32Array(0, 0.25, 0.5, 0.75, 1)
+colors = PackedColorArray(0.35, 0.45, 0.7, 1, 0.16, 0.2, 0.32, 1, 0.02, 0.025, 0.04, 1, 0.16, 0.2, 0.32, 1, 0.35, 0.45, 0.7, 1)
+
+[sub_resource type="Curve" id="Curve_24ar8"]
+_limits = [0.0, 2.0, 0.0, 1.0]
+_data = [Vector2(0, 0.045), 0.0, 0.0, 0, 0, Vector2(0.22, 0.018), 0.0, 0.0, 0, 0, Vector2(0.3, 0), 0.0, 0.0, 0, 0, Vector2(0.7, 0), 0.0, 0.0, 0, 0, Vector2(0.78, 0.018), 0.0, 0.0, 0, 0, Vector2(1, 0.045), 0.0, 0.0, 0, 0]
+point_count = 6
+
+[sub_resource type="Gradient" id="Gradient_vfaec"]
+offsets = PackedFloat32Array(0, 0.25, 0.5, 0.75, 1)
+colors = PackedColorArray(0.015, 0.018, 0.035, 1, 1, 0.46, 0.22, 1, 0.58, 0.78, 0.94, 1, 1, 0.36, 0.18, 1, 0.015, 0.018, 0.035, 1)
+
+[sub_resource type="Gradient" id="Gradient_ubvhu"]
+offsets = PackedFloat32Array(0, 0.25, 0.5, 0.75, 1)
+colors = PackedColorArray(0.005, 0.008, 0.018, 1, 0.36, 0.3, 0.42, 1, 0.12, 0.42, 0.78, 1, 0.38, 0.24, 0.34, 1, 0.005, 0.008, 0.018, 1)
+
+[sub_resource type="Curve" id="Curve_yya8t"]
+_limits = [0.0, 2.0, 0.0, 1.0]
+_data = [Vector2(0, 0), 0.0, 0.0, 0, 0, Vector2(0.35, 0), 0.0, 0.0, 0, 0, Vector2(0.7, 0.85), 0.0, 0.0, 0, 0, Vector2(1, 1), 0.0, 0.0, 0, 0]
+point_count = 4
+
+[sub_resource type="Gradient" id="Gradient_t7aj0"]
+offsets = PackedFloat32Array(0, 0.25, 0.5, 0.75, 1)
+colors = PackedColorArray(0.05, 0.07, 0.12, 1, 1, 0.48, 0.22, 1, 1, 0.96, 0.82, 1, 1, 0.42, 0.18, 1, 0.05, 0.07, 0.12, 1)
+
+[sub_resource type="Curve" id="Curve_j6g8k"]
+_limits = [0.0, 2.0, 0.0, 1.0]
+_data = [Vector2(0, 0), 0.0, 0.0, 0, 0, Vector2(0.23, 0), 0.0, 0.0, 0, 0, Vector2(0.3, 0.65), 0.0, 0.0, 0, 0, Vector2(0.5, 1.25), 0.0, 0.0, 0, 0, Vector2(0.7, 0.65), 0.0, 0.0, 0, 0, Vector2(0.77, 0), 0.0, 0.0, 0, 0, Vector2(1, 0), 0.0, 0.0, 0, 0]
+point_count = 7
+
+[sub_resource type="Gradient" id="Gradient_jpmkg"]
+offsets = PackedFloat32Array(0, 0.25, 0.5, 0.75, 1)
+colors = PackedColorArray(0.015, 0.025, 0.045, 1, 0.05, 0.08, 0.1, 1, 0.1, 0.15, 0.18, 1, 0.05, 0.07, 0.09, 1, 0.015, 0.025, 0.045, 1)
+
+[sub_resource type="Resource" id="Resource_oebik"]
+script = ExtResource("2_ckf4a")
+sun_color_gradient = SubResource("Gradient_t7aj0")
+moon_color_gradient = SubResource("Gradient_5us0o")
+sky_top_gradient = SubResource("Gradient_ubvhu")
+sky_horizon_gradient = SubResource("Gradient_vfaec")
+water_color_gradient = SubResource("Gradient_jpmkg")
+foam_color_gradient = SubResource("Gradient_l6d7l")
+sun_energy_curve = SubResource("Curve_j6g8k")
+moon_energy_curve = SubResource("Curve_24ar8")
+star_visibility_curve = SubResource("Curve_yya8t")
+ambient_energy_curve = SubResource("Curve_2q5k3")
 
 [sub_resource type="Sky" id="Sky_dynamic"]
 sky_material = ExtResource("2_sky")
@@ -11,11 +69,17 @@ sky_material = ExtResource("2_sky")
 [sub_resource type="Environment" id="Environment_dynamic"]
 background_mode = 2
 sky = SubResource("Sky_dynamic")
+ambient_light_color = Color(0.281, 0.546, 0.83599997, 1)
+ambient_light_energy = 0.6494806
 tonemap_mode = 2
+ssr_enabled = true
+ssao_enabled = true
+ssil_enabled = true
+sdfgi_use_occlusion = true
+sdfgi_min_cell_size = 0.1953125
+sdfgi_y_scale = 0
+sdfgi_energy = 0.7
 adjustment_enabled = true
-adjustment_brightness = 0.85
-adjustment_contrast = 1.07
-adjustment_saturation = 1.35
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_sun_disk"]
 render_priority = -5
@@ -24,15 +88,15 @@ shader_parameter/body_color = Color(1, 0.92, 0.72, 1)
 shader_parameter/visibility = 1.0
 shader_parameter/halo_strength = 1.25
 
+[sub_resource type="QuadMesh" id="QuadMesh_sun"]
+size = Vector2(9.3, 9.3)
+
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_moon_disk"]
 render_priority = -5
 shader = ExtResource("3_disk_shader")
 shader_parameter/body_color = Color(0.72, 0.78, 1, 1)
 shader_parameter/visibility = 1.0
 shader_parameter/halo_strength = 0.35
-
-[sub_resource type="QuadMesh" id="QuadMesh_sun"]
-size = Vector2(9.3, 9.3)
 
 [sub_resource type="QuadMesh" id="QuadMesh_moon"]
 size = Vector2(9.3, 9.3)
@@ -43,39 +107,42 @@ height = 2.0
 radial_segments = 96
 rings = 48
 
-[node name="SkySystem" type="Node3D"]
+[node name="SkySystem" type="Node3D" unique_id=356109582]
 script = ExtResource("1_sky_system")
+profile = SubResource("Resource_oebik")
 
-[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=1481807339]
 environment = SubResource("Environment_dynamic")
 
-[node name="SunLight" type="DirectionalLight3D" parent="."]
+[node name="SunLight" type="DirectionalLight3D" parent="." unique_id=1793493974]
+transform = Transform3D(0.3846633, -0.44443837, 0.809017, 0, 0.8764538, 0.48148546, -0.92305696, -0.18520975, 0.33713973, 0, 0, 0)
 light_color = Color(1, 0.96, 0.82, 1)
-light_energy = 1.0
+light_energy = 0.8988355
 shadow_enabled = true
 shadow_bias = 0.0
 shadow_normal_bias = 6.464
 shadow_opacity = 0.8
 shadow_blur = 5.0
 
-[node name="MoonLight" type="DirectionalLight3D" parent="."]
-light_color = Color(0.45, 0.55, 0.85, 1)
-light_energy = 0.045
-shadow_enabled = false
+[node name="MoonLight" type="DirectionalLight3D" parent="." unique_id=454785887]
+transform = Transform3D(-0.37372905, -0.46388495, -0.8032043, 0, 0.8659532, -0.50012493, 0.9275379, -0.18691126, -0.32363182, 0, 0, 0)
+visible = false
+light_color = Color(0.02, 0.025, 0.04, 1)
+light_energy = 0.0
 
-[node name="SunVisual" type="MeshInstance3D" parent="."]
+[node name="SunVisual" type="MeshInstance3D" parent="." unique_id=1562036981]
 visible = false
 material_override = SubResource("ShaderMaterial_sun_disk")
 cast_shadow = 0
 mesh = SubResource("QuadMesh_sun")
 
-[node name="MoonVisual" type="MeshInstance3D" parent="."]
+[node name="MoonVisual" type="MeshInstance3D" parent="." unique_id=2073974674]
 visible = false
 material_override = SubResource("ShaderMaterial_moon_disk")
 cast_shadow = 0
 mesh = SubResource("QuadMesh_moon")
 
-[node name="Starfield" type="MeshInstance3D" parent="."]
+[node name="Starfield" type="MeshInstance3D" parent="." unique_id=1100405788]
 visible = false
 material_override = ExtResource("4_starfield")
 cast_shadow = 0

@@ -1,0 +1,21 @@
+[gd_scene load_steps=3 format=3 uid="uid://c4amd8o0cttut"]
+
+[ext_resource type="Script" path="res://systems/camera/player_camera_rig.gd" id="1_camera_rig"]
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_camera_collision"]
+radius = 0.35
+
+[node name="PlayerCameraRig" type="Node3D"]
+script = ExtResource("1_camera_rig")
+
+[node name="YawPivot" type="Node3D" parent="."]
+
+[node name="PitchPivot" type="Node3D" parent="YawPivot"]
+
+[node name="SpringArm3D" type="SpringArm3D" parent="YawPivot/PitchPivot"]
+spring_length = 12.0
+shape = SubResource("SphereShape3D_camera_collision")
+
+[node name="Camera3D" type="Camera3D" parent="YawPivot/PitchPivot/SpringArm3D"]
+current = true
+far = 8000.0

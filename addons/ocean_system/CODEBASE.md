@@ -8,7 +8,7 @@
 
 ## 主要脚本
 
-- `ocean_system.gd`：系统协调者，负责导出参数、材质参数同步、网格生成、风源读取、波浪更新节流、双缓冲纹理绑定和 CPU 高度查询。
+- `ocean_system.gd`：系统协调者，负责导出参数、材质参数同步、网格生成、风源读取、波浪更新节流、双缓冲纹理绑定和 GPU point-query 调度。
 - `wave_cascade_parameters.gd`：每个 wave cascade 的参数资源。setter 会标记频谱需要重算，缩放相关参数会发出 `scale_changed`。
 - `wave_generator.gd`：RenderingDevice compute 管线封装，负责生成频谱、调制频谱、FFT、unpack displacement/normal/foam。
 - `rendering/render_context.gd`：RenderingDevice 辅助类，统一创建 shader、buffer、texture、descriptor set、pipeline，并在释放时回收 RID。
@@ -34,14 +34,20 @@
 
 每个 cascade 自己决定有效风速和风向。如果 `OceanSystem.use_external_wind` 为 false，使用本地 `wind_speed` / `wind_direction`；否则使用外部风源，再叠加 `wind_speed_multiplier` 和 `wind_direction_offset`。
 
+风向是波浪的目标方向，不是即时方向。`WaveCascadeParameters` 为每个 cascade 维护
+`current_wave_direction`、`active_spectrum_direction`、`pending_spectrum_direction`、active/pending
+频谱槽和 `spectrum_blend_alpha`。长 tile 默认转向慢，短 tile 默认转向快。方向变化超过阈值时，
+pending 槽生成新方向频谱，water shader 按 `spectrum_blend_states` 在 active/pending 层之间混合。
+
 ## GPU 管线
 
 `WaveGenerator.init_gpu()` 创建以下资源：
 
 - `spectrum`：每个 cascade 一层的频谱 texture array。
+- 双频谱模式下实际为每个 cascade 分配 active/pending 两层。
 - `butterfly_factors`：FFT butterfly 数据 buffer。
 - `fft_buffer`：Stockham FFT 临时 buffer。
-- 两套 displacement/normal 输出 texture array，用于 ping-pong 双缓冲。
+- 两套 displacement/normal 输出 texture array，用于 ping-pong 双缓冲；每套同样包含 active/pending 层。
 
 compute pass 顺序是：
 
@@ -50,7 +56,8 @@ compute pass 顺序是：
 3. `fft_compute.glsl`、`transpose.glsl`、`fft_compute.glsl`：完成二维逆 FFT。
 4. `fft_unpack.glsl`：写 displacement map、normal map 和 foam 信息。
 
-`wave_generator.gd` 只在 map size 或 cascade 数量变化时重建管线。
+`wave_generator.gd` 只在 map size 或 cascade 数量变化时重建管线。风速或波参数变化会标记频谱槽 dirty；
+单纯风向变化由每个 cascade 的转向状态和 pending 频谱混合处理。
 
 ## 材质与网格
 
@@ -58,9 +65,9 @@ compute pass 顺序是：
 
 网格不使用外部 mesh 资产。`_create_generated_clipmap_mesh()` 生成圆形 clipmap 风格网格，近处密、远处疏。Far LOD 使用同一个 mesh 的外圈，并由 `water.gdshader` 根据距离淡出高频 normal 和 foam。
 
-## 高度查询
+## 水面查询
 
-开启 `enable_height_queries` 后，系统会按 `height_query_updates_per_second` 将 GPU displacement texture 读回 `_height_images`。`get_water_height()` 在 CPU 侧双线性采样缓存图像，并按当前 `wave_blend_alpha` 在上一帧和当前帧数据之间插值。`get_water_normal()` 用周围高度差估算法线。
+`sample_water_surface()` 和 `sample_water_surface_batch()` 通过 GPU point-query 返回高度、法线、位移与表面速度。批量接口使用 `surface_query.glsl`：调用方提交世界坐标与 owner，`OceanSystem` 在 `_process()` 中把本帧所有 owner 的请求合并到一个大 point buffer，一次 compute dispatch 后只读回一个 sample buffer，再按 offset/count 分发缓存结果。浮力系统走该路径；当主 RenderingDevice 的异步结果尚未就绪时返回空结果，不生成静水替代样本。
 
 ## 依赖边界
 

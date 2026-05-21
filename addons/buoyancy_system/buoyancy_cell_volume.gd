@@ -1,0 +1,925 @@
+@tool
+class_name BuoyancyCellVolume
+extends Node3D
+## Cell-based displacement volume used as the source of truth for buoyancy,
+## mass, and center of mass.
+
+const DEFAULT_CELL_COLOR := Color(0.1, 0.8, 1.0, 0.18)
+const DISABLED_CELL_COLOR := Color(0.25, 0.25, 0.25, 0.08)
+const WATERLINE_CELL_COLOR := Color(0.1, 0.7, 1.0, 0.9)
+const BUOYANCY_FORCE_COLOR := Color(0.1, 0.95, 0.35, 1.0)
+const TOTAL_FORCE_COLOR := Color(1.0, 0.25, 0.1, 1.0)
+const BODY_GRAVITY_COLOR := Color(1.0, 0.2, 0.05, 1.0)
+const BODY_NET_FORCE_COLOR := Color(1.0, 0.9, 0.15, 1.0)
+const CENTER_OF_MASS_COLOR := Color(1.0, 1.0, 1.0, 1.0)
+const GENERATED_CELLS_NAME := "GeneratedCells"
+const HULL_EPSILON := 0.001
+const HULL_DEDUP_SCALE := 1000.0
+const HULL_MAX_ITERATIONS := 4096
+const BUOYANCY_CELL_NODE := preload("res://addons/buoyancy_system/buoyancy_cell_node.gd")
+
+@export var enabled := true
+
+@export_group("Generation")
+@export var source_model_path : NodePath
+@export var voxel_size := Vector3(0.8, 0.45, 1.2) :
+	set(value):
+		voxel_size = value.max(Vector3(0.05, 0.05, 0.05))
+@export var bounds_padding := Vector3.ZERO
+@export_range(1, 4096, 1) var max_generated_cells := 768
+@export_range(0.0, 20000.0, 1.0, "or_greater") var default_density := 450.0
+@export var auto_generate_if_empty := true
+@export var generate_cells_now := false :
+	set(value):
+		if not value:
+			generate_cells_now = false
+			return
+		generate_cells_now = false
+		generate_cells_from_source()
+
+@export_group("Buoyancy Defaults")
+@export_range(0.0, 1.0, 0.01) var default_buoyancy_efficiency := 1.0
+@export_range(0.0, 1.0, 0.01) var default_flooding_fraction := 0.0
+@export_range(0.0, 100.0, 0.01, "or_greater") var default_vertical_damping_multiplier := 1.0
+@export_range(0.0, 100.0, 0.01, "or_greater") var default_longitudinal_water_drag_multiplier := 1.0
+@export_range(0.0, 100.0, 0.01, "or_greater") var default_lateral_water_drag_multiplier := 1.0
+
+@export_group("Mass")
+@export var apply_mass_to_rigid_body := true :
+	set(value):
+		apply_mass_to_rigid_body = value
+		_apply_mass_to_parent()
+@export_range(0.001, 100.0, 0.001, "or_greater") var mass_scale := 1.0 :
+	set(value):
+		mass_scale = maxf(value, 0.001)
+		_apply_mass_to_parent()
+@export var center_of_mass_offset := Vector3.ZERO :
+	set(value):
+		center_of_mass_offset = value
+		_apply_mass_to_parent()
+
+@export_group("Debug Draw")
+@export var debug_draw := true :
+	set(value):
+		debug_draw = value
+		_update_debug_visibility()
+@export_range(1, 4096, 1) var debug_max_cells := 512 :
+	set(value):
+		debug_max_cells = maxi(value, 1)
+		_queue_debug_rebuild()
+@export_range(0.001, 10.0, 0.001, "or_greater") var debug_force_scale := 0.015 :
+	set(value):
+		debug_force_scale = maxf(value, 0.001)
+		_queue_debug_rebuild()
+@export_range(0.001, 10.0, 0.001, "or_greater") var debug_body_force_scale := 0.004 :
+	set(value):
+		debug_body_force_scale = maxf(value, 0.001)
+		_queue_debug_rebuild()
+@export_range(0.01, 10.0, 0.01, "or_greater") var debug_center_of_mass_size := 0.35 :
+	set(value):
+		debug_center_of_mass_size = maxf(value, 0.01)
+		_queue_debug_rebuild()
+
+var _debug_mesh_instance : MeshInstance3D
+var _debug_mesh := ImmediateMesh.new()
+var _cell_material : StandardMaterial3D
+var _waterline_material : StandardMaterial3D
+var _buoyancy_force_material : StandardMaterial3D
+var _total_force_material : StandardMaterial3D
+var _body_gravity_material : StandardMaterial3D
+var _body_net_force_material : StandardMaterial3D
+var _center_of_mass_material : StandardMaterial3D
+var _debug_sample_states : Array[Dictionary] = []
+var _debug_body_state := {}
+var _debug_line_vertices := PackedVector3Array()
+var _debug_rebuild_queued := false
+
+
+func _enter_tree() -> void:
+	add_to_group(&"buoyancy_cell_volume")
+
+
+func _exit_tree() -> void:
+	remove_from_group(&"buoyancy_cell_volume")
+
+
+func _ready() -> void:
+	if _get_cells().is_empty() and auto_generate_if_empty:
+		generate_cells_from_source()
+	_connect_cell_signals()
+	_ensure_debug_nodes()
+	_apply_mass_to_parent()
+	call_deferred(&"_apply_mass_to_parent")
+	_rebuild_debug_mesh()
+
+
+func generate_cells_from_source() -> void:
+	var cells_root := _get_or_create_generated_cells_root()
+	_clear_generated_cells(cells_root)
+
+	var source_points := _get_source_points_in_local_space()
+	var hull_planes := _build_convex_hull_planes(source_points)
+	var bounds := _get_points_bounds(source_points) if not source_points.is_empty() else AABB()
+	if bounds.size.length_squared() <= 0.0001:
+		bounds = _get_source_bounds_in_local_space()
+	if bounds.size.length_squared() <= 0.0001:
+		bounds = AABB(Vector3(-1.5, -0.5, -3.0), Vector3(3.0, 1.0, 6.0))
+	bounds.position -= bounds_padding
+	bounds.size += bounds_padding * 2.0
+	if not hull_planes.is_empty():
+		_expand_hull_planes(hull_planes, maxf(bounds_padding.x, maxf(bounds_padding.y, bounds_padding.z)))
+
+	var count_x := maxi(int(ceil(bounds.size.x / voxel_size.x)), 1)
+	var count_y := maxi(int(ceil(bounds.size.y / voxel_size.y)), 1)
+	var count_z := maxi(int(ceil(bounds.size.z / voxel_size.z)), 1)
+	var total_count := count_x * count_y * count_z
+	if total_count > max_generated_cells:
+		var scale := pow(float(total_count) / float(max_generated_cells), 1.0 / 3.0)
+		count_x = maxi(int(floor(float(count_x) / scale)), 1)
+		count_y = maxi(int(floor(float(count_y) / scale)), 1)
+		count_z = maxi(int(floor(float(count_z) / scale)), 1)
+
+	var cell_size := Vector3(
+		bounds.size.x / float(count_x),
+		bounds.size.y / float(count_y),
+		bounds.size.z / float(count_z)
+	)
+	var cell_index := 0
+	for z in count_z:
+		for y in count_y:
+			for x in count_x:
+				var cell_position := bounds.position + Vector3(
+					(float(x) + 0.5) * cell_size.x,
+					(float(y) + 0.5) * cell_size.y,
+					(float(z) + 0.5) * cell_size.z
+				)
+				if not hull_planes.is_empty() and not _is_point_inside_convex_hull(cell_position, hull_planes):
+					continue
+				var cell : BuoyancyCellNode = BUOYANCY_CELL_NODE.new()
+				cell.name = "Cell_%03d" % cell_index
+				cell.position = cell_position
+				cell.size = cell_size
+				cell.density = default_density
+				cell.buoyancy_efficiency = default_buoyancy_efficiency
+				cell.flooding_fraction = default_flooding_fraction
+				cell.vertical_damping_multiplier = default_vertical_damping_multiplier
+				cell.longitudinal_water_drag_multiplier = default_longitudinal_water_drag_multiplier
+				cell.lateral_water_drag_multiplier = default_lateral_water_drag_multiplier
+				cells_root.add_child(cell)
+				cell.owner = owner
+				cell_index += 1
+	_connect_cell_signals()
+	_apply_mass_to_parent()
+	_queue_debug_rebuild()
+
+
+func get_buoyancy_sample_points() -> Array[Dictionary]:
+	var samples : Array[Dictionary] = []
+	if not enabled:
+		return samples
+	var cells := _get_cells()
+	_debug_sample_states.clear()
+	_debug_sample_states.resize(cells.size())
+	for i in cells.size():
+		var cell := cells[i]
+		if cell == null or not cell.enabled:
+			continue
+		var vertical_half_extent := _get_cell_vertical_half_extent(cell)
+		samples.push_back({
+			"world_position": cell.global_position,
+			"local_position": cell.position,
+			"volume_cubic_meters": cell.get_volume(),
+			"mass_kg": cell.get_mass(),
+			"buoyancy_efficiency": cell.buoyancy_efficiency,
+			"flooding_fraction": cell.flooding_fraction,
+			"submersion_depth": maxf(vertical_half_extent * 2.0, 0.001),
+			"cell_vertical_half_extent": vertical_half_extent,
+			"vertical_damping_multiplier": cell.vertical_damping_multiplier,
+			"longitudinal_water_drag_multiplier": cell.longitudinal_water_drag_multiplier,
+			"lateral_water_drag_multiplier": cell.lateral_water_drag_multiplier,
+			"source": self,
+			"source_sample_index": i,
+		})
+	return samples
+
+
+func get_total_volume() -> float:
+	var volume := 0.0
+	for cell in _get_cells():
+		if cell != null and cell.enabled:
+			volume += cell.get_volume()
+	return volume
+
+
+func get_total_mass() -> float:
+	var mass := 0.0
+	for cell in _get_cells():
+		if cell != null and cell.enabled:
+			mass += cell.get_mass()
+	return mass * mass_scale
+
+
+func get_center_of_mass() -> Vector3:
+	var weighted_center := Vector3.ZERO
+	var total_mass := 0.0
+	for cell in _get_cells():
+		if cell == null or not cell.enabled:
+			continue
+		var mass := cell.get_mass()
+		weighted_center += cell.position * mass
+		total_mass += mass
+	if total_mass <= 0.0001:
+		return center_of_mass_offset
+	return weighted_center / total_mass + center_of_mass_offset
+
+
+func set_debug_sample_state(
+	sample_index: int,
+	sample_position: Vector3,
+	water_position: Vector3,
+	force: Vector3,
+	has_sample: bool,
+	buoyancy_force := Vector3.ZERO,
+	submersion := 0.0
+) -> void:
+	if sample_index < 0:
+		return
+	while _debug_sample_states.size() <= sample_index:
+		_debug_sample_states.push_back({})
+	_debug_sample_states[sample_index] = {
+		"sample_position": sample_position,
+		"water_position": water_position,
+		"force": force,
+		"has_sample": has_sample,
+		"buoyancy_force": buoyancy_force,
+		"submersion": submersion,
+	}
+	_queue_debug_rebuild()
+
+
+func set_debug_body_state(center_of_mass_world: Vector3, gravity_force: Vector3, external_force: Vector3, has_state: bool) -> void:
+	_debug_body_state = {
+		"center_of_mass_world": center_of_mass_world,
+		"gravity_force": gravity_force,
+		"external_force": external_force,
+		"has_state": has_state,
+	}
+	_queue_debug_rebuild()
+
+
+func _get_source_bounds_in_local_space() -> AABB:
+	var source := get_node_or_null(source_model_path) as Node3D
+	if source == null:
+		source = get_parent() as Node3D
+	if source == null:
+		return AABB()
+	var bounds := AABB()
+	var has_bounds := false
+	for mesh_instance in _find_mesh_instances(source):
+		if mesh_instance.mesh == null:
+			continue
+		var mesh_bounds := mesh_instance.mesh.get_aabb()
+		for corner in _get_aabb_corners(mesh_bounds):
+			var local_corner := to_local(mesh_instance.global_transform * corner)
+			if not has_bounds:
+				bounds = AABB(local_corner, Vector3.ZERO)
+				has_bounds = true
+			else:
+				bounds = bounds.expand(local_corner)
+	return bounds if has_bounds else AABB()
+
+
+func _get_source_points_in_local_space() -> PackedVector3Array:
+	var points := PackedVector3Array()
+	var seen := {}
+	var source := get_node_or_null(source_model_path) as Node3D
+	if source == null:
+		source = get_parent() as Node3D
+	if source == null:
+		return points
+	for mesh_instance in _find_mesh_instances(source):
+		if mesh_instance.mesh == null:
+			continue
+		var mesh := mesh_instance.mesh
+		for surface_index in mesh.get_surface_count():
+			var arrays := mesh.surface_get_arrays(surface_index)
+			if arrays.is_empty() or arrays.size() <= Mesh.ARRAY_VERTEX:
+				continue
+			if not (arrays[Mesh.ARRAY_VERTEX] is PackedVector3Array):
+				continue
+			var vertices : PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+			for vertex in vertices:
+				var local_vertex := to_local(mesh_instance.global_transform * vertex)
+				var key := _get_point_dedup_key(local_vertex)
+				if seen.has(key):
+					continue
+				seen[key] = true
+				points.push_back(local_vertex)
+	return points
+
+
+func _get_point_dedup_key(point: Vector3) -> String:
+	return "%d:%d:%d" % [
+		int(round(point.x * HULL_DEDUP_SCALE)),
+		int(round(point.y * HULL_DEDUP_SCALE)),
+		int(round(point.z * HULL_DEDUP_SCALE)),
+	]
+
+
+func _get_points_bounds(points: PackedVector3Array) -> AABB:
+	var bounds := AABB()
+	var has_bounds := false
+	for point in points:
+		if not has_bounds:
+			bounds = AABB(point, Vector3.ZERO)
+			has_bounds = true
+		else:
+			bounds = bounds.expand(point)
+	return bounds if has_bounds else AABB()
+
+
+func _build_convex_hull_planes(points: PackedVector3Array) -> Array[Dictionary]:
+	if points.size() < 4:
+		return []
+	var tetra := _find_initial_tetrahedron(points)
+	if tetra.is_empty():
+		return []
+	var interior := (points[tetra[0]] + points[tetra[1]] + points[tetra[2]] + points[tetra[3]]) * 0.25
+	var faces : Array[Dictionary] = []
+	faces.push_back(_make_hull_face(tetra[0], tetra[1], tetra[2], points, interior))
+	faces.push_back(_make_hull_face(tetra[0], tetra[3], tetra[1], points, interior))
+	faces.push_back(_make_hull_face(tetra[0], tetra[2], tetra[3], points, interior))
+	faces.push_back(_make_hull_face(tetra[1], tetra[3], tetra[2], points, interior))
+	var valid_faces : Array[Dictionary] = []
+	for face in faces:
+		if not face.is_empty():
+			valid_faces.push_back(face)
+	faces = valid_faces
+	if faces.size() < 4:
+		return []
+
+	for _iteration in HULL_MAX_ITERATIONS:
+		var best_face_index := -1
+		var best_point_index := -1
+		var best_distance := HULL_EPSILON
+		for face_index in faces.size():
+			var face := faces[face_index]
+			for point_index in points.size():
+				if point_index == int(face["a"]) or point_index == int(face["b"]) or point_index == int(face["c"]):
+					continue
+				var distance := _get_face_distance(face, points[point_index])
+				if distance > best_distance:
+					best_distance = distance
+					best_face_index = face_index
+					best_point_index = point_index
+		if best_face_index < 0 or best_point_index < 0:
+			return _get_unique_hull_planes(faces)
+
+		var visible := {}
+		for face_index in faces.size():
+			if _get_face_distance(faces[face_index], points[best_point_index]) > HULL_EPSILON:
+				visible[face_index] = true
+		var horizon_edges := _get_horizon_edges(faces, visible)
+		if horizon_edges.is_empty():
+			return _get_unique_hull_planes(faces)
+
+		var next_faces : Array[Dictionary] = []
+		for face_index in faces.size():
+			if not visible.has(face_index):
+				next_faces.push_back(faces[face_index])
+		for edge in horizon_edges:
+			var new_face := _make_hull_face(int(edge["a"]), int(edge["b"]), best_point_index, points, interior)
+			if not new_face.is_empty():
+				next_faces.push_back(new_face)
+		faces = next_faces
+	return _get_unique_hull_planes(faces)
+
+
+func _find_initial_tetrahedron(points: PackedVector3Array) -> PackedInt32Array:
+	var result := PackedInt32Array()
+	var i0 := 0
+	var i1 := 0
+	var max_distance_squared := 0.0
+	for a in points.size():
+		for b in range(a + 1, points.size()):
+			var distance_squared := points[a].distance_squared_to(points[b])
+			if distance_squared > max_distance_squared:
+				max_distance_squared = distance_squared
+				i0 = a
+				i1 = b
+	if max_distance_squared <= HULL_EPSILON * HULL_EPSILON:
+		return result
+
+	var i2 := -1
+	var line := points[i1] - points[i0]
+	var max_line_distance_squared := 0.0
+	for i in points.size():
+		var line_distance_squared := line.cross(points[i] - points[i0]).length_squared() / maxf(line.length_squared(), HULL_EPSILON)
+		if line_distance_squared > max_line_distance_squared:
+			max_line_distance_squared = line_distance_squared
+			i2 = i
+	if i2 < 0 or max_line_distance_squared <= HULL_EPSILON * HULL_EPSILON:
+		return result
+
+	var plane_normal := (points[i1] - points[i0]).cross(points[i2] - points[i0]).normalized()
+	var i3 := -1
+	var max_plane_distance := 0.0
+	for i in points.size():
+		var plane_distance := absf(plane_normal.dot(points[i] - points[i0]))
+		if plane_distance > max_plane_distance:
+			max_plane_distance = plane_distance
+			i3 = i
+	if i3 < 0 or max_plane_distance <= HULL_EPSILON:
+		return result
+
+	result.push_back(i0)
+	result.push_back(i1)
+	result.push_back(i2)
+	result.push_back(i3)
+	return result
+
+
+func _make_hull_face(a: int, b: int, c: int, points: PackedVector3Array, interior: Vector3) -> Dictionary:
+	if a == b or b == c or a == c:
+		return {}
+	var pa := points[a]
+	var pb := points[b]
+	var pc := points[c]
+	var normal := (pb - pa).cross(pc - pa)
+	if normal.length_squared() <= HULL_EPSILON * HULL_EPSILON:
+		return {}
+	normal = normal.normalized()
+	if normal.dot(interior - pa) > 0.0:
+		var temp := b
+		b = c
+		c = temp
+		pb = points[b]
+		pc = points[c]
+		normal = (pb - pa).cross(pc - pa).normalized()
+	return {
+		"a": a,
+		"b": b,
+		"c": c,
+		"normal": normal,
+		"d": -normal.dot(pa),
+	}
+
+
+func _get_face_distance(face: Dictionary, point: Vector3) -> float:
+	return Vector3(face["normal"]).dot(point) + float(face["d"])
+
+
+func _get_horizon_edges(faces: Array[Dictionary], visible: Dictionary) -> Array[Dictionary]:
+	var edge_map := {}
+	for face_index in visible.keys():
+		var face := faces[int(face_index)]
+		_add_horizon_edge(edge_map, int(face["a"]), int(face["b"]))
+		_add_horizon_edge(edge_map, int(face["b"]), int(face["c"]))
+		_add_horizon_edge(edge_map, int(face["c"]), int(face["a"]))
+	var horizon_edges : Array[Dictionary] = []
+	for key in edge_map.keys():
+		var edge : Dictionary = edge_map[key]
+		if int(edge["count"]) == 1:
+			horizon_edges.push_back({"a": int(edge["a"]), "b": int(edge["b"])})
+	return horizon_edges
+
+
+func _add_horizon_edge(edge_map: Dictionary, a: int, b: int) -> void:
+	var min_index := mini(a, b)
+	var max_index := maxi(a, b)
+	var key := "%d:%d" % [min_index, max_index]
+	if not edge_map.has(key):
+		edge_map[key] = {"a": a, "b": b, "count": 1}
+		return
+	var edge : Dictionary = edge_map[key]
+	edge["count"] = int(edge["count"]) + 1
+	edge_map[key] = edge
+
+
+func _get_unique_hull_planes(faces: Array[Dictionary]) -> Array[Dictionary]:
+	var planes : Array[Dictionary] = []
+	var seen := {}
+	for face in faces:
+		var normal : Vector3 = face["normal"]
+		var d := float(face["d"])
+		var key := "%d:%d:%d:%d" % [
+			int(round(normal.x * HULL_DEDUP_SCALE)),
+			int(round(normal.y * HULL_DEDUP_SCALE)),
+			int(round(normal.z * HULL_DEDUP_SCALE)),
+			int(round(d * HULL_DEDUP_SCALE)),
+		]
+		if seen.has(key):
+			continue
+		seen[key] = true
+		planes.push_back({"normal": normal, "d": d})
+	return planes
+
+
+func _expand_hull_planes(planes: Array[Dictionary], margin: float) -> void:
+	if margin <= 0.0:
+		return
+	for i in planes.size():
+		var plane := planes[i]
+		plane["d"] = float(plane["d"]) - margin
+		planes[i] = plane
+
+
+func _is_point_inside_convex_hull(point: Vector3, planes: Array[Dictionary]) -> bool:
+	for plane in planes:
+		if Vector3(plane["normal"]).dot(point) + float(plane["d"]) > HULL_EPSILON:
+			return false
+	return true
+
+
+func _find_mesh_instances(root: Node) -> Array[MeshInstance3D]:
+	var results : Array[MeshInstance3D] = []
+	if root == self:
+		return results
+	if root is MeshInstance3D and not (root is BuoyancyCellNode):
+		results.push_back(root)
+	for child in root.get_children():
+		results.append_array(_find_mesh_instances(child))
+	return results
+
+
+func _get_aabb_corners(bounds: AABB) -> Array[Vector3]:
+	var p := bounds.position
+	var s := bounds.size
+	return [
+		p,
+		p + Vector3(s.x, 0.0, 0.0),
+		p + Vector3(0.0, s.y, 0.0),
+		p + Vector3(0.0, 0.0, s.z),
+		p + Vector3(s.x, s.y, 0.0),
+		p + Vector3(s.x, 0.0, s.z),
+		p + Vector3(0.0, s.y, s.z),
+		p + s,
+	]
+
+
+func _get_or_create_generated_cells_root() -> Node3D:
+	var root := get_node_or_null(GENERATED_CELLS_NAME) as Node3D
+	if root != null:
+		return root
+	root = Node3D.new()
+	root.name = GENERATED_CELLS_NAME
+	add_child(root)
+	root.owner = owner
+	return root
+
+
+func _clear_generated_cells(cells_root: Node) -> void:
+	for child in cells_root.get_children():
+		cells_root.remove_child(child)
+		child.queue_free()
+
+
+func _get_cells() -> Array[BuoyancyCellNode]:
+	var results : Array[BuoyancyCellNode] = []
+	_collect_cells(self, results)
+	return results
+
+
+func _collect_cells(root: Node, results: Array[BuoyancyCellNode]) -> void:
+	for child in root.get_children():
+		if child == _debug_mesh_instance:
+			continue
+		if child is BuoyancyCellNode:
+			results.push_back(child)
+		else:
+			_collect_cells(child, results)
+
+
+func _connect_cell_signals() -> void:
+	for cell in _get_cells():
+		if not cell.cell_changed.is_connected(_on_cell_changed):
+			cell.cell_changed.connect(_on_cell_changed)
+
+
+func _on_cell_changed() -> void:
+	_apply_mass_to_parent()
+	_queue_debug_rebuild()
+
+
+func _apply_mass_to_parent() -> void:
+	if not apply_mass_to_rigid_body or not is_inside_tree():
+		return
+	var body := get_parent() as RigidBody3D
+	if body == null:
+		return
+	var total_mass := get_total_mass()
+	if total_mass <= 0.0001:
+		return
+	body.mass = total_mass
+	body.center_of_mass_mode = RigidBody3D.CENTER_OF_MASS_MODE_CUSTOM
+	body.center_of_mass = transform * get_center_of_mass()
+
+
+func _get_cell_vertical_half_extent(cell: BuoyancyCellNode) -> float:
+	var half_size : Vector3 = cell.size * 0.5
+	var basis := cell.global_transform.basis
+	return maxf(
+		absf(basis.x.y) * half_size.x
+		+ absf(basis.y.y) * half_size.y
+		+ absf(basis.z.y) * half_size.z,
+		0.0005
+	)
+
+
+func _queue_debug_rebuild() -> void:
+	if _debug_rebuild_queued:
+		return
+	_debug_rebuild_queued = true
+	call_deferred(&"_rebuild_queued_debug_mesh")
+
+
+func _rebuild_queued_debug_mesh() -> void:
+	_debug_rebuild_queued = false
+	_rebuild_debug_mesh()
+
+
+func _ensure_debug_nodes() -> void:
+	if _debug_mesh_instance != null and is_instance_valid(_debug_mesh_instance):
+		return
+	_debug_mesh_instance = get_node_or_null("DebugDraw") as MeshInstance3D
+	if _debug_mesh_instance == null:
+		_debug_mesh_instance = MeshInstance3D.new()
+		_debug_mesh_instance.name = "DebugDraw"
+		add_child(_debug_mesh_instance)
+		_debug_mesh_instance.owner = owner
+	_debug_mesh_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_debug_mesh_instance.extra_cull_margin = 10000.0
+	_debug_mesh_instance.mesh = _debug_mesh
+	_update_debug_materials()
+	_update_debug_visibility()
+
+
+func _update_debug_visibility() -> void:
+	if _debug_mesh_instance != null:
+		_debug_mesh_instance.visible = debug_draw
+
+
+func _update_debug_materials() -> void:
+	if _cell_material == null:
+		_cell_material = _create_debug_material(DEFAULT_CELL_COLOR)
+	if _waterline_material == null:
+		_waterline_material = _create_debug_material(WATERLINE_CELL_COLOR)
+	if _buoyancy_force_material == null:
+		_buoyancy_force_material = _create_debug_material(BUOYANCY_FORCE_COLOR)
+	if _total_force_material == null:
+		_total_force_material = _create_debug_material(TOTAL_FORCE_COLOR)
+	if _body_gravity_material == null:
+		_body_gravity_material = _create_debug_material(BODY_GRAVITY_COLOR)
+	if _body_net_force_material == null:
+		_body_net_force_material = _create_debug_material(BODY_NET_FORCE_COLOR)
+	if _center_of_mass_material == null:
+		_center_of_mass_material = _create_debug_material(CENTER_OF_MASS_COLOR)
+
+
+func _create_debug_material(color: Color) -> StandardMaterial3D:
+	var material := StandardMaterial3D.new()
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	material.no_depth_test = true
+	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	material.albedo_color = color
+	return material
+
+
+func _rebuild_debug_mesh() -> void:
+	if not is_inside_tree():
+		return
+	_ensure_debug_nodes()
+	_debug_mesh.clear_surfaces()
+	if not debug_draw:
+		return
+	_update_debug_materials()
+
+	if _has_debug_cells():
+		var drawn := 0
+		_begin_debug_lines()
+		for cell in _get_cells():
+			if cell == null:
+				continue
+			if drawn >= debug_max_cells:
+				break
+			_add_cell_box(cell)
+			drawn += 1
+		_commit_debug_lines(_cell_material)
+
+	if _has_debug_sample_lines():
+		_begin_debug_lines()
+		_add_debug_water_lines()
+		_commit_debug_lines(_waterline_material)
+
+	if _has_debug_sample_lines() and _has_debug_buoyancy_forces():
+		_begin_debug_lines()
+		_add_debug_buoyancy_force_lines()
+		_commit_debug_lines(_buoyancy_force_material)
+
+	if _has_debug_sample_lines() and _has_debug_total_forces():
+		_begin_debug_lines()
+		_add_debug_total_force_lines()
+		_commit_debug_lines(_total_force_material)
+
+	if _has_debug_body_state():
+		_begin_debug_lines()
+		_add_debug_center_of_mass()
+		_commit_debug_lines(_center_of_mass_material)
+
+	if _has_debug_body_state():
+		_begin_debug_lines()
+		_add_debug_body_gravity()
+		_commit_debug_lines(_body_gravity_material)
+
+	if _has_debug_body_state():
+		_begin_debug_lines()
+		_add_debug_body_net_force()
+		_commit_debug_lines(_body_net_force_material)
+
+
+func _begin_debug_lines() -> void:
+	_debug_line_vertices.clear()
+
+
+func _add_debug_vertex(vertex: Vector3) -> void:
+	_debug_line_vertices.push_back(vertex)
+
+
+func _commit_debug_lines(material: Material) -> void:
+	if _debug_line_vertices.is_empty():
+		return
+	if _debug_line_vertices.size() % 2 != 0:
+		return
+	_debug_mesh.surface_begin(Mesh.PRIMITIVE_LINES)
+	for vertex in _debug_line_vertices:
+		_debug_mesh.surface_add_vertex(vertex)
+	_debug_mesh.surface_end()
+	_set_last_surface_material(material)
+
+
+func _set_last_surface_material(material: Material) -> void:
+	if _debug_mesh_instance == null:
+		return
+	var surface_index := _debug_mesh.get_surface_count() - 1
+	if surface_index >= 0:
+		_debug_mesh_instance.set_surface_override_material(surface_index, material)
+
+
+func _has_debug_cells() -> bool:
+	for cell in _get_cells():
+		if cell != null:
+			return true
+	return false
+
+
+func _add_cell_box(cell: BuoyancyCellNode) -> void:
+	var half : Vector3 = cell.size * 0.5
+	var p : Vector3 = cell.position
+	var corners := [
+		p + Vector3(-half.x, -half.y, -half.z),
+		p + Vector3( half.x, -half.y, -half.z),
+		p + Vector3( half.x,  half.y, -half.z),
+		p + Vector3(-half.x,  half.y, -half.z),
+		p + Vector3(-half.x, -half.y,  half.z),
+		p + Vector3( half.x, -half.y,  half.z),
+		p + Vector3( half.x,  half.y,  half.z),
+		p + Vector3(-half.x,  half.y,  half.z),
+	]
+	var edges := [
+		0, 1, 1, 2, 2, 3, 3, 0,
+		4, 5, 5, 6, 6, 7, 7, 4,
+		0, 4, 1, 5, 2, 6, 3, 7,
+	]
+	for i in range(0, edges.size(), 2):
+		_add_debug_vertex(corners[edges[i]])
+		_add_debug_vertex(corners[edges[i + 1]])
+
+
+func _has_debug_sample_lines() -> bool:
+	for sample_state in _debug_sample_states:
+		if sample_state is Dictionary and not sample_state.is_empty() and bool(sample_state.get("has_sample", false)):
+			return true
+	return false
+
+
+func _has_debug_buoyancy_forces() -> bool:
+	for sample_state in _debug_sample_states:
+		if not (sample_state is Dictionary):
+			continue
+		if sample_state.is_empty() or not bool(sample_state.get("has_sample", false)):
+			continue
+		if float(sample_state.get("submersion", 0.0)) > 0.0 and Vector3(sample_state.get("buoyancy_force", Vector3.ZERO)).length_squared() > 0.0001:
+			return true
+	return false
+
+
+func _has_debug_total_forces() -> bool:
+	for sample_state in _debug_sample_states:
+		if not (sample_state is Dictionary):
+			continue
+		if sample_state.is_empty() or not bool(sample_state.get("has_sample", false)):
+			continue
+		if float(sample_state.get("submersion", 0.0)) > 0.0 and Vector3(sample_state.get("force", Vector3.ZERO)).length_squared() > 0.0001:
+			return true
+	return false
+
+
+func _add_debug_water_lines() -> void:
+	for sample_state in _debug_sample_states:
+		if not (sample_state is Dictionary):
+			continue
+		if sample_state.is_empty() or not bool(sample_state.get("has_sample", false)):
+			continue
+		var sample_position : Vector3 = sample_state["sample_position"]
+		var water_position : Vector3 = sample_state["water_position"]
+		_add_debug_vertex(to_local(sample_position))
+		_add_debug_vertex(to_local(water_position))
+
+
+func _add_debug_buoyancy_force_lines() -> void:
+	for sample_state in _debug_sample_states:
+		if not (sample_state is Dictionary):
+			continue
+		if sample_state.is_empty() or not bool(sample_state.get("has_sample", false)):
+			continue
+		var submersion := float(sample_state.get("submersion", 0.0))
+		if submersion <= 0.0:
+			continue
+		var sample_position : Vector3 = sample_state["sample_position"]
+		var buoyancy_force : Vector3 = sample_state.get("buoyancy_force", Vector3.ZERO)
+		_add_debug_arrow(sample_position, buoyancy_force, debug_force_scale)
+
+
+func _add_debug_total_force_lines() -> void:
+	for sample_state in _debug_sample_states:
+		if not (sample_state is Dictionary):
+			continue
+		if sample_state.is_empty() or not bool(sample_state.get("has_sample", false)):
+			continue
+		var submersion := float(sample_state.get("submersion", 0.0))
+		if submersion <= 0.0:
+			continue
+		var sample_position : Vector3 = sample_state["sample_position"]
+		var force : Vector3 = sample_state["force"]
+		_add_debug_arrow(sample_position, force, debug_force_scale)
+
+
+func _has_debug_body_state() -> bool:
+	return _debug_body_state is Dictionary and not _debug_body_state.is_empty() and bool(_debug_body_state.get("has_state", false))
+
+
+func _add_debug_center_of_mass() -> void:
+	var center_world : Vector3 = _debug_body_state["center_of_mass_world"]
+	var center := to_local(center_world)
+	var size := debug_center_of_mass_size
+	_add_debug_vertex(center + Vector3.LEFT * size)
+	_add_debug_vertex(center + Vector3.RIGHT * size)
+	_add_debug_vertex(center + Vector3.DOWN * size)
+	_add_debug_vertex(center + Vector3.UP * size)
+	_add_debug_vertex(center + Vector3.FORWARD * size)
+	_add_debug_vertex(center + Vector3.BACK * size)
+
+
+func _add_debug_body_gravity() -> void:
+	var center_world : Vector3 = _debug_body_state["center_of_mass_world"]
+	var gravity_force : Vector3 = _debug_body_state["gravity_force"]
+	_add_debug_arrow(center_world, gravity_force, debug_body_force_scale)
+
+
+func _add_debug_body_net_force() -> void:
+	var center_world : Vector3 = _debug_body_state["center_of_mass_world"]
+	var external_force : Vector3 = _debug_body_state["external_force"]
+	_add_debug_arrow(center_world, external_force, debug_body_force_scale)
+
+
+func _add_debug_arrow(start_world: Vector3, force: Vector3, scale: float) -> void:
+	if force.length_squared() <= 0.0001:
+		return
+	var start_local := to_local(start_world)
+	var end_local := to_local(start_world + force * scale)
+	_add_debug_vertex(start_local)
+	_add_debug_vertex(end_local)
+	_add_arrowhead(end_local, start_local)
+
+
+func _add_arrowhead(end_local: Vector3, start_local: Vector3) -> void:
+	var direction := end_local - start_local
+	if direction.length_squared() <= 0.0001:
+		return
+	direction = direction.normalized()
+	var side := direction.cross(Vector3.UP)
+	if side.length_squared() <= 0.0001:
+		side = direction.cross(Vector3.RIGHT)
+	side = side.normalized()
+	var up := side.cross(direction).normalized()
+	var length := minf(end_local.distance_to(start_local) * 0.22, 0.45)
+	var width := length * 0.45
+	var base := end_local - direction * length
+	_add_debug_vertex(end_local)
+	_add_debug_vertex(base + side * width)
+	_add_debug_vertex(end_local)
+	_add_debug_vertex(base - side * width)
+	_add_debug_vertex(end_local)
+	_add_debug_vertex(base + up * width)
+	_add_debug_vertex(end_local)
+	_add_debug_vertex(base - up * width)

@@ -7,6 +7,8 @@ const PANEL_SIZE := Vector2(420, 560)
 var water : OceanSystem
 var wind_source : Node
 var sky_system : Node
+var buoyant_body : BuoyantBody
+var player_body : FloatingDebugBody
 
 var _panel : PanelContainer
 var _fps_label : Label
@@ -19,10 +21,18 @@ func _ready() -> void:
 	_build()
 
 
-func setup(ocean_system : OceanSystem, active_wind_source : Node = null, active_sky_system : Node = null) -> void:
+func setup(
+	ocean_system : OceanSystem,
+	active_wind_source : Node = null,
+	active_sky_system : Node = null,
+	active_buoyant_body : BuoyantBody = null,
+	active_player_body : FloatingDebugBody = null
+) -> void:
 	water = ocean_system
 	wind_source = active_wind_source if active_wind_source != null else water.get_wind_source()
 	sky_system = active_sky_system
+	buoyant_body = active_buoyant_body
+	player_body = active_player_body
 	if _controls_ready:
 		_rebuild()
 
@@ -98,6 +108,10 @@ func _build() -> void:
 		content.add_child(HSeparator.new())
 		_add_sky_controls(content)
 
+	if buoyant_body:
+		content.add_child(HSeparator.new())
+		_add_buoyancy_controls(content)
+
 	content.add_child(HSeparator.new())
 	_add_ocean_controls(content)
 
@@ -109,7 +123,7 @@ func _build() -> void:
 
 	var hint := Label.new()
 	hint.modulate = Color.WEB_GRAY
-	hint.text = "Press %s-H to toggle GUI visibility\nPress %s-F to toggle fullscreen" % [_shortcut_modifier(), _shortcut_modifier()]
+	hint.text = "Press ` to toggle GUI visibility\nPress %s-F to toggle fullscreen" % _shortcut_modifier()
 	content.add_child(hint)
 
 	_controls_ready = true
@@ -229,6 +243,29 @@ func _add_ocean_controls(parent : VBoxContainer) -> void:
 	foam_intensity.name = "FoamIntensity"
 	foam_threshold.name = "FoamThreshold"
 	foam_softness.name = "FoamSoftness"
+
+
+func _add_buoyancy_controls(parent : VBoxContainer) -> void:
+	var title := Label.new()
+	title.text = "Buoyancy"
+	title.add_theme_font_size_override("font_size", 15)
+	parent.add_child(title)
+
+	if player_body:
+		var position_history := _add_check_row(parent, "Position History", "Shows the player body's world-space movement trail.")
+		position_history.name = "PlayerPositionHistory"
+		position_history.button_pressed = player_body.debug_draw_position_history
+		position_history.toggled.connect(func(enabled : bool) -> void:
+			if not _is_syncing and player_body:
+				player_body.debug_draw_position_history = enabled
+		)
+
+	_add_bound_param(parent, "Buoyancy Strength", "Global multiplier for all buoyancy volume forces.", buoyant_body.buoyancy_strength, 0.0, 10.0, 0.01, func(value : float) -> void: buoyant_body.buoyancy_strength = value, true)
+	_add_bound_param(parent, "Water Density", "Seawater is usually around 1025 kg/m^3; freshwater is around 1000 kg/m^3.", buoyant_body.water_density, 1.0, 2000.0, 1.0, func(value : float) -> void: buoyant_body.water_density = value, true)
+	_add_bound_param(parent, "Vertical Damping", "Global damping applied along the vertical axis at each submerged cell.", buoyant_body.vertical_damping, 0.0, 100.0, 0.01, func(value : float) -> void: buoyant_body.vertical_damping = value, true)
+	_add_bound_param(parent, "Longitudinal Drag", "Global water drag along the body's forward axis.", buoyant_body.longitudinal_water_drag, 0.0, 100.0, 0.01, func(value : float) -> void: buoyant_body.longitudinal_water_drag = value, true)
+	_add_bound_param(parent, "Lateral Drag", "Global water drag along the body's right axis.", buoyant_body.lateral_water_drag, 0.0, 100.0, 0.01, func(value : float) -> void: buoyant_body.lateral_water_drag = value, true)
+	_add_bound_param(parent, "Max Cell Accel", "Caps each buoyancy cell's acceleration contribution to avoid numerical blowups.", buoyant_body.max_cell_acceleration, 0.0, 100.0, 0.1, func(value : float) -> void: buoyant_body.max_cell_acceleration = value, true)
 
 
 func _add_far_lod_controls(parent : VBoxContainer) -> void:
@@ -509,7 +546,8 @@ func _populate_values() -> void:
 		_set_named_spin("SkySunEnergy", sky_system.sun_energy_multiplier)
 		_set_named_spin("SkyMoonEnergy", sky_system.moon_energy_multiplier)
 		_set_named_spin("SkyStarBrightness", sky_system.star_brightness)
-
+	if player_body:
+		_set_named_check("PlayerPositionHistory", player_body.debug_draw_position_history)
 	_is_syncing = false
 
 

@@ -9,6 +9,8 @@
 ## 基本设置
 
 - `parameters`：波浪 cascade 列表。每个 `WaveCascadeParameters` 控制一个波浪尺度。
+- `tile_length` 使用米，`wind_speed` 使用 m/s，`fetch_length` 使用 km，`water_depth_meters`
+  使用米。保持这些值对应现实尺寸时，船体、浮力和波浪查询会处在同一尺度下。
 - `map_size`：每层 displacement/normal 贴图分辨率。越高越细，GPU 成本越高。
 - `ocean_radius`、`generated_inner_extent`、`generated_base_cell_size`、`generated_ring_count`：控制近处海面网格密度和范围。
 - `enable_far_lod`、`far_lod_radius`、`far_lod_blend_distance`：控制远海网格和远处细节淡出。
@@ -36,14 +38,28 @@ ocean.wind_source_path = ocean.get_path_to($WindSystem)
 
 每个 cascade 仍可用 `wind_speed_multiplier` 和 `wind_direction_offset` 对外部风做局部调整。
 
-## 高度查询
+风向不会瞬间改写波浪方向。每个 `WaveCascadeParameters` 会把风向当作目标方向，并按自己的
+`wave_turn_rate_degrees_per_second` 或自动 tile-length 转向速度逐渐转向。系统会保留 active/pending
+两套频谱并用 `spectrum_direction_blend_duration` 混合，避免大角度变风时波面硬切。
 
-开启 `enable_height_queries` 后，可以查询 CPU 缓存的水面高度和法线。读回 GPU 贴图有成本，建议把 `height_query_updates_per_second` 保持在较低值。
+## 水面查询
+
+水面查询统一使用 GPU point-query 后端；不再维护 CPU 高度贴图缓存。
 
 ```gdscript
-var height := ocean.get_water_height(global_position)
-var normal := ocean.get_water_normal(global_position)
+var sample := ocean.sample_water_surface(global_position)
+var samples := ocean.sample_water_surface_batch(points, self)
 ```
+
+`OceanSystem` 会收集本帧所有 owner 的请求，合并到一个大 query buffer 中一次 dispatch，并在下一帧按 owner 分发结果。如果 GPU 结果尚未就绪，会返回空数组而不是静水替代样本。
+
+## 船体遮水
+
+`WaterCutoutHullLOD` 用于视觉上隐藏船体内部的水面。将它作为船体子节点，设置 `source_model_path` 指向船体模型，然后 toggle `generate_cutouts_now` 生成可编辑的 `WaterCutoutTrapezoid` 子节点。每个梯形都可以在编辑器中单独选中、移动、旋转，并调整 `half_length`、`start_half_width`、`end_half_width`、垂直范围和边缘参数。
+
+`height_feather` 控制 cutout 在 `max_y` 上方的垂直渐变恢复距离，用来避免水面在高度边界处硬切。`feather` 控制顶视角轮廓边缘的水平软边。`WaterCutoutTrapezoid` 默认在编辑器中绘制线框，运行时默认不显示；如需运行时显示可开启 `debug_draw_in_game`。
+
+简单船体也可以继续使用 `WaterHullCutout` 手工矩形遮水。遮水系统与 `BuoyancyCellVolume` 解耦；浮力 cell 只负责物理和质量。
 
 ## 独立性说明
 
