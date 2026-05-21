@@ -94,8 +94,8 @@ Each system folder includes a `HOW_TO_USE.md` file for setup instructions and a 
 
 Run the `demo/main.tscn`. You will see everything.
 
-Wooden boat model is from: https://sketchfab.com/3d-models/wooden-boat-55118b23a5494e4b81eed831b9f8c871
-And this work is based on "Stylized Low Poly Rowboat with Paddles" (https://sketchfab.com/3d-models/stylized-low-poly-rowboat-with-paddles-f2c35c716f32474e96cce3625073e6b8) by Muyaya Concept (https://sketchfab.com/muyayaconcept) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+"Stylized Low Poly Rowboat with Paddles" (https://sketchfab.com/3d-models/stylized-low-poly-rowboat-with-paddles-f2c35c716f32474e96cce3625073e6b8) by Muyaya Concept (https://sketchfab.com/muyayaconcept) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+"Red Marine Navigation Buoy (Game Ready)" (https://skfb.ly/pINBD) by Muyaya Concept is licensed under Creative Commons Attribution (http://creativecommons.org/licenses/by/4.0/).
 ## License
 
 MIT license.

@@ -41,6 +41,8 @@ enum CameraMode {
 
 @export_group("First Person")
 @export_range(-45.0, 45.0, 0.1) var first_person_default_pitch_degrees := -4.0
+@export var first_person_lock_to_anchor_transform := true
+@export_range(0.0, 30.0, 0.01) var first_person_anchor_rotation_smoothing := 14.0
 
 @export_group("Free Look")
 @export var free_look_velocity := 5.0
@@ -163,9 +165,18 @@ func _update_first_person(delta: float) -> void:
 		return
 
 	_spring_arm.spring_length = 0.0
-	var target_position := anchor.global_position
-	global_position = _smooth_vector(global_position, target_position, position_smoothing, delta)
-	_apply_view_rotation(_get_target_yaw() + _look_yaw_offset, _pitch, delta)
+	if first_person_lock_to_anchor_transform:
+		global_transform = _smooth_anchor_transform(
+			global_transform,
+			_get_anchor_transform(anchor),
+			first_person_anchor_rotation_smoothing,
+			delta
+		)
+		_apply_view_rotation(_look_yaw_offset, _pitch, delta)
+	else:
+		var target_position := anchor.global_position
+		global_position = _smooth_vector(global_position, target_position, position_smoothing, delta)
+		_apply_view_rotation(_get_target_yaw() + _look_yaw_offset, _pitch, delta)
 
 func _update_third_person(delta: float) -> void:
 	var focus := _third_person_focus if _third_person_focus != null else _follow_target
@@ -178,6 +189,7 @@ func _update_third_person(delta: float) -> void:
 	var right := Basis(Vector3.UP, target_yaw + _look_yaw_offset) * Vector3.RIGHT
 	target_position += right * third_person_side_offset
 	global_position = _smooth_vector(global_position, target_position, position_smoothing, delta)
+	global_transform = Transform3D(Basis.IDENTITY, global_position)
 	_recenter_look(delta)
 	_apply_view_rotation(target_yaw + _look_yaw_offset, _pitch, delta)
 
@@ -223,6 +235,7 @@ func _initialize_mode(mode: CameraMode, snap: bool) -> void:
 	_look_yaw_offset = 0.0
 	_last_look_input_time = -1000.0
 	_spring_arm.spring_length = 0.0 if mode != CameraMode.THIRD_PERSON else third_person_distance
+	var first_person_anchor_locked := mode == CameraMode.FIRST_PERSON and first_person_lock_to_anchor_transform
 
 	if mode == CameraMode.FREE_LOOK:
 		var camera_transform := _camera.global_transform
@@ -239,8 +252,11 @@ func _initialize_mode(mode: CameraMode, snap: bool) -> void:
 		if anchor == null:
 			anchor = _follow_target
 		if anchor != null:
-			global_position = anchor.global_position
-		_yaw_pivot.rotation.y = _get_target_yaw()
+			if first_person_anchor_locked:
+				global_transform = _get_anchor_transform(anchor)
+			else:
+				global_transform = Transform3D(Basis.IDENTITY, anchor.global_position)
+		_yaw_pivot.rotation.y = 0.0 if first_person_anchor_locked else _get_target_yaw()
 		_pitch_pivot.rotation.x = _pitch
 
 	_mode_initialized = true
@@ -282,6 +298,14 @@ func _get_target_yaw() -> float:
 		return _yaw_pivot.rotation.y
 	back = back.normalized()
 	return atan2(back.x, back.z)
+
+func _get_anchor_transform(anchor: Node3D) -> Transform3D:
+	return Transform3D(anchor.global_transform.basis.orthonormalized(), anchor.global_position)
+
+func _smooth_anchor_transform(from: Transform3D, to: Transform3D, rotation_smoothing_value: float, delta: float) -> Transform3D:
+	var weight := _smoothing_weight(rotation_smoothing_value, delta)
+	var basis := from.basis.slerp(to.basis, weight).orthonormalized()
+	return Transform3D(basis, to.origin)
 
 func _smooth_vector(from: Vector3, to: Vector3, smoothing: float, delta: float) -> Vector3:
 	return from.lerp(to, _smoothing_weight(smoothing, delta))

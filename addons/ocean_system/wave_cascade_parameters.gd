@@ -88,9 +88,11 @@ func get_effective_wind_speed(external_wind_speed : float, use_external_wind : b
 
 
 func get_effective_wind_direction(external_wind_direction : float, use_external_wind : bool) -> float:
+	var world_direction := wind_direction
 	if not use_external_wind:
-		return wind_direction
-	return external_wind_direction + wind_direction_offset
+		return _world_wind_direction_to_spectrum_direction(world_direction)
+	world_direction = external_wind_direction + wind_direction_offset
+	return _world_wind_direction_to_spectrum_direction(world_direction)
 
 
 func advance_direction_state(delta : float, external_wind_direction : float, use_external_wind : bool) -> void:
@@ -174,8 +176,8 @@ func initialize_runtime_state(seed : Vector2i, initial_time : float) -> void:
 		return
 	spectrum_seed = seed
 	time = initial_time
-	current_wave_direction = wind_direction
-	target_wave_direction = wind_direction
+	current_wave_direction = _world_wind_direction_to_spectrum_direction(wind_direction)
+	target_wave_direction = current_wave_direction
 	active_spectrum_direction = current_wave_direction
 	pending_spectrum_direction = current_wave_direction
 	spectrum_blend_alpha = 0.0
@@ -220,3 +222,9 @@ func _move_toward_degrees(from : float, to : float, max_delta : float) -> float:
 
 func _get_wrapped_degrees_delta(a : float, b : float) -> float:
 	return absf(wrapf(a - b + 180.0, 0.0, 360.0) - 180.0)
+
+
+func _world_wind_direction_to_spectrum_direction(world_direction : float) -> float:
+	# The FFT path maps world X/Z onto texture Y/X, so convert the public
+	# 0=+Z, 90=+X heading into the spectrum-space angle expected by the shader.
+	return 90.0 - world_direction

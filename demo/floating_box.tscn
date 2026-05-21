@@ -406,7 +406,7 @@ albedo_color = Color(0.2, 0.7, 1, 0.9)
 [node name="FloatingBox" type="RigidBody3D" unique_id=1779372444]
 mass = 244.08772
 center_of_mass_mode = 1
-center_of_mass = Vector3(-6.168773e-08, 0.14503825, 0.108288765)
+center_of_mass = Vector3(-4.4203176e-08, 0.14503825, 0.3082888)
 linear_damp = 0.2
 angular_damp = 1.8
 script = ExtResource("2_float_debug")
@@ -422,6 +422,7 @@ voxel_size = Vector3(0.4, 0.4, 0.4)
 max_generated_cells = 640
 default_density = 180.0
 default_buoyancy_efficiency = 0.4
+center_of_mass_offset = Vector3(0, 0, -0.2)
 debug_draw = false
 
 [node name="DebugDraw" type="MeshInstance3D" parent="BuoyancyCellVolume" unique_id=1102676112]
@@ -775,7 +776,9 @@ bow_foam_amount = 0.056
 
 [node name="SimpleBoatController" type="Node" parent="." unique_id=1519507528]
 script = ExtResource("10_controller")
-turn_torque_per_kg = 2.0
+forward_acceleration = 1.8
+turn_torque_per_kg = 1.5
+extra_lateral_damping = 0.0
 
 [node name="BoatWakeTrail" type="Node3D" parent="." unique_id=1484418996]
 script = ExtResource("11_wake_trail")

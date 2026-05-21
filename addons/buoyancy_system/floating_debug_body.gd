@@ -11,7 +11,7 @@ extends RigidBody3D
 		_apply_player_controlled_state()
 
 @export_group("Debug History")
-@export var debug_draw_position_history := true :
+@export var debug_draw_position_history := false :
 	set(value):
 		debug_draw_position_history = value
 		_update_history_visibility()

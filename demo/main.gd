@@ -6,6 +6,8 @@ extends Node3D
 @onready var wind_system := $WindSystem
 @onready var debug_panel : OceanDebugPanel = $OceanDebugPanel
 @onready var camera_rig : PlayerCameraRig = $PlayerCameraRig
+@onready var compass_hud : CompassHud = $CompassLayer/CompassHud
+@onready var buoy_distance_label : BuoyDistanceLabel = $Buoy/RigidBody3D/DistanceLabel
 
 var player_boat : FloatingDebugBody
 var buoyant_body : BuoyantBody
@@ -21,7 +23,10 @@ func _ready() -> void:
 	if Engine.is_editor_hint():
 		return
 	_configure_player_boat()
-	debug_panel.setup(water, wind_system, sky_system, buoyant_body)
+	if buoy_distance_label != null:
+		buoy_distance_label.set_target(player_boat)
+	compass_hud.setup(player_boat, wind_system)
+	debug_panel.setup(water, wind_system, sky_system, buoyant_body, player_boat)
 
 func _process(_delta : float) -> void:
 	if not Engine.is_editor_hint():

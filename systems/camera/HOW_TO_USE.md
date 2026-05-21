@@ -12,6 +12,12 @@ assign:
 - `third_person_focus_path`: a `Marker3D` near the point the camera should orbit.
 - `first_person_anchor_path`: a `Marker3D` at the player eye or seat position.
 
+When `first_person_lock_to_anchor_transform` is enabled, first-person mode uses
+the anchor's full transform every frame. This makes the camera inherit a boat's
+pitch, roll, yaw, and position directly, while mouse look is applied locally as
+the player's head movement. `first_person_anchor_rotation_smoothing` damps the
+anchor rotation so wave-driven pitch, roll, and yaw feel less rigid.
+
 The component contains this hierarchy:
 
 ```text

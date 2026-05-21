@@ -11,7 +11,9 @@
 [ext_resource type="PackedScene" uid="uid://bm4bg7uoyr0xy" path="res://systems/debug/ocean_debug_panel.tscn" id="9_gb4mm"]
 [ext_resource type="Script" uid="uid://btyuqnmfuyrr6" path="res://addons/wind_system/wind_system.gd" id="10_tfjfv"]
 [ext_resource type="PackedScene" uid="uid://ckdc57htjsaad" path="res://addons/sky_system/sky_system.tscn" id="11_sky"]
+[ext_resource type="PackedScene" uid="uid://cr5sv0avc8dug" path="res://demo/buoy.tscn" id="13_fdg1k"]
 [ext_resource type="PackedScene" uid="uid://b2pleaxvcdai8" path="res://demo/floating_box.tscn" id="13_floating_box"]
+[ext_resource type="Script" uid="uid://b372vvbghwlxx" path="res://systems/hud/compass_hud.gd" id="14_compass"]
 
 [sub_resource type="Curve" id="Curve_fdg1k"]
 _limits = [0.0, 2.0, 0.0, 1.0]
@@ -70,7 +72,7 @@ moon_energy_curve = SubResource("Curve_f8mb2")
 star_visibility_curve = SubResource("Curve_dls5p")
 ambient_energy_curve = SubResource("Curve_fdg1k")
 
-[sub_resource type="Texture2DArrayRD" id="Texture2DArrayRD_nr2wj"]
+[sub_resource type="Texture2DArrayRD" id="Texture2DArrayRD_6g5ly"]
 
 [sub_resource type="Texture2DArrayRD" id="Texture2DArrayRD_ucu34"]
 
@@ -110,22 +112,22 @@ shader_parameter/far_normal_strength = 0.14
 shader_parameter/far_foam_coverage = 0.24
 shader_parameter/far_foam_threshold_boost = 0.2
 shader_parameter/hull_cutout_count = 3
-shader_parameter/hull_cutout_centers = PackedVector4Array(-452.84265, 0.084116146, 536.9673, 1.275, -452.84265, 0.06932187, 537.8831, 0.85, -452.84265, 0.083165005, 538.9234, 0.85, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
-shader_parameter/hull_cutout_axes = PackedVector4Array(1, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
-shader_parameter/hull_cutout_shapes = PackedVector4Array(0.45, 0.4, 0.75, 1, 0.55, 0.5201345, 0.75, 1, 0.5, 0.5201345, 0.75, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
-shader_parameter/hull_cutout_verticals = PackedVector4Array(-0.26588386, 0.43411615, 0.35, 0, -0.28067812, 0.41932186, 0.35, 0, -0.266835, 0.433165, 0.35, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+shader_parameter/hull_cutout_centers = PackedVector4Array(0.6587918, 0.12600522, -0.63005555, 0, -0.003080437, 0.11121094, 0.0029459042, 0, -0.7548755, 0.12505408, 0.72194797, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+shader_parameter/hull_cutout_axes = PackedVector4Array(0.69116926, 0.72269297, -0.72269297, 0.69116926, 0.69116926, 0.72269297, -0.72269297, 0.69116926, 0.69116926, 0.72269297, -0.72269297, 0.69116926, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+shader_parameter/hull_cutout_shapes = PackedVector4Array(0.45, 0.4, 0.3, 1, 0.55, 0.5201345, 0.3, 1, 0.5, 0.5201345, 0.3, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+shader_parameter/hull_cutout_verticals = PackedVector4Array(-0.22399478, 0.47600523, 0.35, 0, -0.23878905, 0.46121094, 0.35, 0, -0.22494592, 0.4750541, 0.35, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 shader_parameter/hull_cutout_widths = PackedVector4Array(0.15, 0.45, 0, 0, 0.5, 0.55, 0, 0, 0.5, 0.35, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 shader_parameter/manual_foam_count = 0
 shader_parameter/manual_foam_sources = PackedVector4Array(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 shader_parameter/manual_foam_shapes = PackedVector4Array(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 shader_parameter/map_scales = PackedVector4Array(0.0078125, 0.0078125, 0.7, 1, 0.03125, 0.03125, 0.35, 0.8, 0.125, 0.125, 0.06, 0.45)
-shader_parameter/spectrum_blend_states = PackedVector4Array(0, 1, 0, 0, 2, 3, 0, 0, 4, 5, 0, 0)
+shader_parameter/spectrum_blend_states = PackedVector4Array(1, 0, 0, 0, 2, 3, 0, 0, 4, 5, 0, 0)
 shader_parameter/num_cascades = 3
-shader_parameter/displacements = SubResource("Texture2DArrayRD_nr2wj")
+shader_parameter/displacements = SubResource("Texture2DArrayRD_6g5ly")
 shader_parameter/normals = SubResource("Texture2DArrayRD_ucu34")
 shader_parameter/previous_displacements = SubResource("Texture2DArrayRD_f8mb2")
 shader_parameter/previous_normals = SubResource("Texture2DArrayRD_ykfgg")
-shader_parameter/wave_blend_alpha = 0.4190810830456602
+shader_parameter/wave_blend_alpha = 0.49368125000049323
 
 [sub_resource type="Resource" id="Resource_adqv5"]
 script = ExtResource("2_pw5n6")
@@ -170,19 +172,22 @@ foam_amount = 0.8
 script = ExtResource("1_skarq")
 
 [node name="SkySystem" parent="." unique_id=447290062 instance=ExtResource("11_sky")]
-cycle_duration_seconds = 60.0
+time_of_day = 0.25
+cycle_duration_seconds = 30.0
 profile = SubResource("Resource_msmub")
 ocean_path = NodePath("../Water")
 
 [node name="PlayerCameraRig" parent="." unique_id=436407652 instance=ExtResource("4_camera_rig")]
+active_mode = 0
 follow_target_path = NodePath("../FloatingBox")
 first_person_anchor_path = NodePath("../FloatingBox/CameraTargets/FirstPersonSeat")
 third_person_focus_path = NodePath("../FloatingBox/CameraTargets/ThirdPersonFocus")
 cycle_mode_action = &"cycle_camera_mode"
+first_person_anchor_rotation_smoothing = 3.0
 
 [node name="WindSystem" type="Node" parent="." unique_id=370380778]
 script = ExtResource("10_tfjfv")
-wind_speed = 6.0
+wind_direction = 0.0
 
 [node name="Water" parent="." unique_id=1159832475 instance=ExtResource("7_s0x5e")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -45, 0, 475)
@@ -196,20 +201,34 @@ parameters = Array[ExtResource("2_pw5n6")]([SubResource("Resource_adqv5"), SubRe
 
 [node name="OceanAudioPlayer" type="AudioStreamPlayer" parent="." unique_id=1224032298]
 stream = ExtResource("6_jpklm")
-volume_db = -12.0
 autoplay = true
 
 [node name="WindAudioPlayer" type="AudioStreamPlayer" parent="." unique_id=1606028856]
 stream = ExtResource("8_6r5si")
-volume_db = -9.0
+volume_db = -18.333334
 autoplay = true
 
 [node name="OceanDebugPanel" parent="." unique_id=900526538 instance=ExtResource("9_gb4mm")]
+visible = false
+
+[node name="CompassLayer" type="CanvasLayer" parent="." unique_id=1984659906]
+layer = 32
+
+[node name="CompassHud" type="Control" parent="CompassLayer" unique_id=842504251]
+layout_mode = 3
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -156.0
+offset_top = 20.0
+offset_right = -20.0
+offset_bottom = 156.0
+grow_horizontal = 0
+script = ExtResource("14_compass")
 
 [node name="FloatingBox" parent="." unique_id=1766651400 instance=ExtResource("13_floating_box")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -452.84265, -0.04188907, 537.87885)
+transform = Transform3D(0.69116926, 0, -0.72269297, 0, 1, 0, 0.72269297, 0, 0.69116926, 0, 0, 0)
 player_controlled = true
 
-[node name="FloatingBox2" parent="." unique_id=1779372444 instance=ExtResource("13_floating_box")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -428.5996, 0, 535.4397)
-visible = false
+[node name="Buoy" parent="." unique_id=2077650632 instance=ExtResource("13_fdg1k")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 146.46655, 2.0000153, -97.32648)
