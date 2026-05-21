@@ -46,10 +46,6 @@ layout(push_constant) restrict readonly uniform PushConstants {
 	float wave_blend_duration;
 	float normal_sample_distance;
 	float _pad0;
-	float interaction_origin_x;
-	float interaction_origin_z;
-	float interaction_world_size;
-	float interaction_height_strength;
 };
 
 vec4 sample_current_layer_bilinear(int layer, vec2 uv) {
@@ -116,14 +112,10 @@ vec3 sample_previous_total_displacement(vec3 world_position) {
 	return displacement;
 }
 
-float sample_interaction_height(vec3 world_position) {
-	return 0.0;
-}
-
 float sample_height(vec3 world_position) {
 	vec3 previous_displacement = sample_previous_total_displacement(world_position);
 	vec3 current_displacement = sample_current_total_displacement(world_position);
-	return water_level + mix(previous_displacement, current_displacement, wave_blend_alpha).y + sample_interaction_height(world_position);
+	return water_level + mix(previous_displacement, current_displacement, wave_blend_alpha).y;
 }
 
 void main() {
@@ -136,7 +128,6 @@ void main() {
 	vec3 previous_displacement = sample_previous_total_displacement(world_position);
 	vec3 current_displacement = sample_current_total_displacement(world_position);
 	vec3 visual_displacement = mix(previous_displacement, current_displacement, wave_blend_alpha);
-	visual_displacement.y += sample_interaction_height(world_position);
 
 	float e = max(normal_sample_distance, 0.001);
 	float h_l = sample_height(world_position + vec3(-e, 0.0, 0.0));

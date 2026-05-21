@@ -31,7 +31,7 @@ Several Godot 4 RenderingDevice validation errors were fixed:
 
  * Push constant uploads now use the exact byte count expected by each compute pipeline. This avoids pipelines rejecting a dispatch because a shader expects 4 bytes but receives a padded 16-byte block.
  * Spectrum write/read descriptor sets were separated so storage images match the shader's declared read/write access. This fixes uniform-set validation errors where a writable image was supplied to a shader binding that required a read-only image.
- * Displacement output textures include `TEXTURE_USAGE_CAN_COPY_FROM_BIT`, allowing CPU readback for height queries through `texture_get_data()`.
+ * Displacement output textures are sampled by the GPU point-query path used by buoyancy and gameplay code.
  * The FFT unpack pass now reads foam history from the previously completed normal map rather than the map currently being written. This keeps foam history continuous when output maps are double-buffered.
 
 ### OceanSystem scene and gameplay API
@@ -41,14 +41,14 @@ The runtime ocean scene has no ImGui dependency. The demo scene uses an optional
 
 `OceanSystem` is independent of the wind implementation. By default it uses each cascade's local wind speed and direction. If a scene assigns `wind_source_path` and enables `use_external_wind`, the ocean reads wind from that external node through `get_wind_speed()` and `get_wind_direction_degrees()` or matching `wind_speed` / `wind_direction` properties. The included `WindSystem` (`addons/wind_system/wind_system.gd`) is one such provider, and other systems such as sailing, clouds, particles, and weather can consume the same provider without coupling those systems to the ocean.
 
-The scene exposes CPU-side water queries for buoyancy and gameplay:
+The scene exposes GPU batched water queries for buoyancy and gameplay:
 
 ```gdscript
-func get_water_height(world_position: Vector3) -> float
-func get_water_normal(world_position: Vector3) -> Vector3
+func sample_water_surface(world_position: Vector3) -> WaterSurfaceSample
+func sample_water_surface_batch(points: PackedVector3Array, request_owner: Object = null) -> Array[WaterSurfaceSample]
 ```
 
-These functions use world-space positions, so boats and floating objects can sample the water consistently even when the render mesh follows a moving camera. The CPU height cache can be enabled through exported query settings and refreshed at a lower rate than rendering to avoid unnecessary GPU stalls.
+These functions use world-space positions, so boats and floating objects can sample the water consistently even when the render mesh follows a moving camera. Point queries avoid reading full displacement textures back to the CPU.
 
 ### Performance and smoothing changes
 The wave update path now supports lower simulation update rates while preserving smoother visuals:
@@ -57,7 +57,7 @@ The wave update path now supports lower simulation update rates while preserving
  * Wave textures, colors, cascade counts, and blend state are material uniforms, so multiple `OceanSystem` instances no longer overwrite one another through project-wide shader globals.
  * If a previous cascade update pass is still running, elapsed time is accumulated and applied to the next accepted pass instead of forcing unfinished work to complete immediately.
  * The fragment shader can limit the number of normal/foam cascades sampled per pixel through `fragment_cascade_limit`.
- * Bicubic normal filtering is optional through `use_bicubic_normals`.
+ * Bicubic normal filtering is enabled by default and can still be toggled through `use_bicubic_normals`.
  * The project has a frame-rate cap configured through `run/max_fps`.
 
 ### Procedural clipmap mesh

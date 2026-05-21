@@ -17,10 +17,8 @@
 - External wind is duck-typed: an assigned wind node only needs `get_wind_speed()` and `get_wind_direction_degrees()`, or `wind_speed` / `wind_direction` properties.
 
 ## Water Queries And Buoyancy
-- Prefer `OceanSystem.sample_water_surface_batch(points, owner)` for gameplay and buoyancy; it uses the GPU point-query path and does not require `enable_height_queries`.
-- `enable_height_queries` reads displacement textures back to the CPU for cached height/normal queries and can stall the GPU; keep it for cases that truly need CPU cache sampling.
+- Use `OceanSystem.sample_water_surface_batch(points, owner)` for gameplay and buoyancy; it uses the GPU point-query path.
 - `BuoyantBody` auto-finds an `OceanSystem` via explicit `ocean_path` or the `ocean_system` group and expects child `BuoyancyCellVolume` nodes for sample points.
-- `BuoyancyCellVolume` can submit aggregated water interaction sources into `OceanSystem`'s local interaction heightfield; wakes/ripples affect both rendering and buoyancy queries.
 
 ## Scene And Asset Editing
 - Keep `res://` paths and Godot resource UIDs intact when editing `.tscn`, `.tres`, or `.import` files manually.

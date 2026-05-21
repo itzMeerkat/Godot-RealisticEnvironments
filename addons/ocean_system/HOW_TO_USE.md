@@ -44,15 +44,14 @@ ocean.wind_source_path = ocean.get_path_to($WindSystem)
 
 ## 水面查询
 
-开启 `enable_height_queries` 后，可以查询 CPU 缓存的水面高度和法线。读回 GPU 贴图有成本，建议把 `height_query_updates_per_second` 保持在较低值。
+水面查询统一使用 GPU point-query 后端；不再维护 CPU 高度贴图缓存。
 
 ```gdscript
-var height := ocean.get_water_height(global_position)
-var normal := ocean.get_water_normal(global_position)
 var sample := ocean.sample_water_surface(global_position)
+var samples := ocean.sample_water_surface_batch(points, self)
 ```
 
-浮力和 gameplay 应优先使用 `sample_water_surface_batch(points, owner)`。该接口使用 GPU point-query 后端；`OceanSystem` 会收集本帧所有 owner 的请求，合并到一个大 query buffer 中一次 dispatch，并在下一帧按 owner 分发结果。它不需要开启 `enable_height_queries`，也不会整张 displacement 贴图读回。如果 GPU 结果尚未就绪，会返回空数组而不是静水替代样本。
+`OceanSystem` 会收集本帧所有 owner 的请求，合并到一个大 query buffer 中一次 dispatch，并在下一帧按 owner 分发结果。如果 GPU 结果尚未就绪，会返回空数组而不是静水替代样本。
 
 ## 船体遮水
 
@@ -60,7 +59,7 @@ var sample := ocean.sample_water_surface(global_position)
 
 `height_feather` 控制 cutout 在 `max_y` 上方的垂直渐变恢复距离，用来避免水面在高度边界处硬切。`feather` 控制顶视角轮廓边缘的水平软边。`WaterCutoutTrapezoid` 默认在编辑器中绘制线框，运行时默认不显示；如需运行时显示可开启 `debug_draw_in_game`。
 
-简单船体也可以继续使用 `WaterHullCutout` 手工矩形遮水。遮水系统与 `BuoyancyCellVolume` 解耦；浮力 cell 只负责物理、质量和水面交互。
+简单船体也可以继续使用 `WaterHullCutout` 手工矩形遮水。遮水系统与 `BuoyancyCellVolume` 解耦；浮力 cell 只负责物理和质量。
 
 ## 独立性说明
 

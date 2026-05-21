@@ -1,6 +1,6 @@
 # Boat Water Foam Effects
 
-This demo boat system adds lightweight, visual-only water interaction by manually increasing the ocean shader's local foam amount. It does not simulate fluid motion and does not modify the FFT wave data.
+This demo boat system adds lightweight, visual-only foam by manually increasing the ocean shader's local foam amount. It does not simulate fluid motion and does not modify the FFT wave data.
 
 ## Components
 
@@ -84,7 +84,7 @@ Important parameters:
 
 - Manual foam is visual only. It does not affect buoyancy, collision, or wave displacement.
 - Sources are passed as a fixed-size uniform array, so this is intended for a small number of nearby boats.
-- The effect follows world coordinates, not the camera-following local interaction map.
+- The effect follows world coordinates and is packed directly into water shader uniforms.
 - The wake is made from overlapping foam sources, not a continuous texture simulation.
 
 ## Related Files

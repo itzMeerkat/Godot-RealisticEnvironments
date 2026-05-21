@@ -2,7 +2,7 @@
 class_name BuoyancyCellVolume
 extends Node3D
 ## Cell-based displacement volume used as the source of truth for buoyancy,
-## mass, center of mass, and local water interaction.
+## mass, and center of mass.
 
 const DEFAULT_CELL_COLOR := Color(0.1, 0.8, 1.0, 0.18)
 const DISABLED_CELL_COLOR := Color(0.25, 0.25, 0.25, 0.08)
@@ -12,7 +12,6 @@ const TOTAL_FORCE_COLOR := Color(1.0, 0.25, 0.1, 1.0)
 const BODY_GRAVITY_COLOR := Color(1.0, 0.2, 0.05, 1.0)
 const BODY_NET_FORCE_COLOR := Color(1.0, 0.9, 0.15, 1.0)
 const CENTER_OF_MASS_COLOR := Color(1.0, 1.0, 1.0, 1.0)
-const INTERACTION_SOURCE_LIMIT := 6
 const GENERATED_CELLS_NAME := "GeneratedCells"
 const HULL_EPSILON := 0.001
 const HULL_DEDUP_SCALE := 1000.0
@@ -58,14 +57,6 @@ const BUOYANCY_CELL_NODE := preload("res://addons/buoyancy_system/buoyancy_cell_
 	set(value):
 		center_of_mass_offset = value
 		_apply_mass_to_parent()
-
-@export_group("Water Interaction")
-@export var water_interaction_enabled := true
-@export_range(0.0, 100.0, 0.01, "or_greater") var interaction_velocity_threshold := 0.35
-@export_range(0.0, 20.0, 0.01, "or_greater") var interaction_strength := 0.05
-@export_range(0.0, 10.0, 0.01, "or_greater") var interaction_radius_scale := 1.35
-@export_range(1, 12, 1) var max_interaction_sources := 6
-@export var local_forward_axis := Vector3.FORWARD
 
 @export_group("Debug Draw")
 @export var debug_draw := true :
@@ -240,88 +231,6 @@ func get_center_of_mass() -> Vector3:
 	if total_mass <= 0.0001:
 		return center_of_mass_offset
 	return weighted_center / total_mass + center_of_mass_offset
-
-
-func get_water_interaction_sources(sample_points: Array, surface_samples: Array, rigid_body: RigidBody3D) -> Array[Dictionary]:
-	var sources : Array[Dictionary] = []
-	if not enabled or not water_interaction_enabled or rigid_body == null:
-		return sources
-	var zone_count := mini(maxi(max_interaction_sources, 1), INTERACTION_SOURCE_LIMIT)
-	var zones : Array[Dictionary] = []
-	zones.resize(zone_count)
-	for i in zone_count:
-		zones[i] = {
-			"weight": 0.0,
-			"position": Vector3.ZERO,
-			"velocity": Vector3.ZERO,
-			"radius": 0.0,
-			"strength": 0.0,
-		}
-
-	var bounds := _get_enabled_cell_bounds()
-	if bounds.size.length_squared() <= 0.0001:
-		return sources
-	var max_speed := 0.0
-	var sample_count := mini(sample_points.size(), surface_samples.size())
-	for i in sample_count:
-		var sample_point : Dictionary = sample_points[i]
-		if sample_point.get("source") != self:
-			continue
-		var water_sample : WaterSurfaceSample = surface_samples[i]
-		var world_position : Vector3 = sample_point["world_position"]
-		var local_position : Vector3 = sample_point.get("local_position", to_local(world_position))
-		var cell_height := maxf(float(sample_point.get("submersion_depth", voxel_size.y)), 0.001)
-		var cell_half_height := maxf(float(sample_point.get("cell_vertical_half_extent", cell_height * 0.5)), 0.0005)
-		var cell_bottom_y := world_position.y - cell_half_height
-		var submersion := clampf((water_sample.height - cell_bottom_y) / cell_height, 0.0, 1.0)
-		if submersion <= 0.02:
-			continue
-		var offset := world_position - rigid_body.global_position
-		var point_velocity := rigid_body.linear_velocity + rigid_body.angular_velocity.cross(offset)
-		var water_velocity := water_sample.surface_velocity
-		var relative_velocity := point_velocity - water_velocity
-		var speed := relative_velocity.length()
-		if speed < interaction_velocity_threshold:
-			continue
-		var zone_index := _get_interaction_zone_index(local_position, bounds, zone_count)
-		var zone := zones[zone_index]
-		var volume := float(sample_point.get("volume_cubic_meters", 0.0))
-		var weight := submersion * volume * speed
-		zone["weight"] = float(zone["weight"]) + weight
-		zone["position"] = Vector3(zone["position"]) + world_position * weight
-		zone["velocity"] = Vector3(zone["velocity"]) + relative_velocity * weight
-		zone["radius"] = maxf(float(zone["radius"]), pow(maxf(volume, 0.001), 1.0 / 3.0) * interaction_radius_scale)
-		zone["strength"] = float(zone["strength"]) + weight * interaction_strength
-		zones[zone_index] = zone
-		max_speed = maxf(max_speed, speed)
-
-	for zone in zones:
-		var weight := float(zone["weight"])
-		if weight <= 0.0001:
-			continue
-		var velocity := Vector3(zone["velocity"]) / weight
-		sources.push_back({
-			"position": Vector3(zone["position"]) / weight,
-			"radius": maxf(float(zone["radius"]), 0.4),
-			"strength": clampf(float(zone["strength"]), -1.0, 1.0),
-			"foam": clampf(velocity.length() / 6.0, 0.0, 1.0),
-			"velocity": velocity,
-		})
-
-	if sources.size() < zone_count:
-		var body_speed := rigid_body.linear_velocity.length()
-		if body_speed > interaction_velocity_threshold:
-			var forward := _get_forward_direction()
-			var stern_local := bounds.get_center() - forward * bounds.size.length() * 0.25
-			var stern_world := global_transform * stern_local
-			sources.push_back({
-				"position": stern_world,
-				"radius": maxf(minf(bounds.size.x, bounds.size.z) * 0.18, 0.6),
-				"strength": clampf(body_speed * interaction_strength * 0.75, 0.0, 1.0),
-				"foam": clampf(body_speed / 8.0, 0.0, 1.0),
-				"velocity": rigid_body.linear_velocity,
-			})
-	return sources
 
 
 func set_debug_sample_state(
@@ -706,22 +615,6 @@ func _apply_mass_to_parent() -> void:
 	body.center_of_mass = transform * get_center_of_mass()
 
 
-func _get_enabled_cell_bounds() -> AABB:
-	var bounds := AABB()
-	var has_bounds := false
-	for cell in _get_cells():
-		if cell == null or not cell.enabled:
-			continue
-		var half_size : Vector3 = cell.size * 0.5
-		var cell_bounds := AABB(cell.position - half_size, cell.size)
-		if not has_bounds:
-			bounds = cell_bounds
-			has_bounds = true
-		else:
-			bounds = bounds.merge(cell_bounds)
-	return bounds if has_bounds else AABB()
-
-
 func _get_cell_vertical_half_extent(cell: BuoyancyCellNode) -> float:
 	var half_size : Vector3 = cell.size * 0.5
 	var basis := cell.global_transform.basis
@@ -731,34 +624,6 @@ func _get_cell_vertical_half_extent(cell: BuoyancyCellNode) -> float:
 		+ absf(basis.z.y) * half_size.z,
 		0.0005
 	)
-
-
-func _get_interaction_zone_index(local_position: Vector3, bounds: AABB, zone_count: int) -> int:
-	if zone_count <= 1:
-		return 0
-	var center := bounds.get_center()
-	if zone_count <= 3:
-		var z_t := inverse_lerp(bounds.position.z, bounds.position.z + bounds.size.z, local_position.z)
-		return clampi(int(floor(z_t * float(zone_count))), 0, zone_count - 1)
-	if zone_count <= 5:
-		if local_position.z > center.z + bounds.size.z * 0.2:
-			return 0
-		if local_position.z < center.z - bounds.size.z * 0.2:
-			return 1
-		if local_position.x < center.x:
-			return 2
-		return 3
-	var z_t_full := inverse_lerp(bounds.position.z, bounds.position.z + bounds.size.z, local_position.z)
-	var z_band := clampi(int(floor(z_t_full * 3.0)), 0, 2)
-	var side := 0 if local_position.x < center.x else 1
-	return clampi(z_band * 2 + side, 0, zone_count - 1)
-
-
-func _get_forward_direction() -> Vector3:
-	var forward := local_forward_axis
-	if forward.length_squared() <= 0.0001:
-		forward = Vector3.FORWARD
-	return forward.normalized()
 
 
 func _queue_debug_rebuild() -> void:

@@ -154,9 +154,6 @@ func _apply_player_controlled_state() -> void:
 			child.set(&"enabled", player_controlled)
 
 	for child in _find_descendants():
-		var buoyant_body := child as BuoyantBody
-		if buoyant_body != null:
-			buoyant_body.submit_water_interactions = false
 		if child.is_in_group(&"boat_controller"):
 			child.set(&"enabled", player_controlled)
 		if child.is_in_group(&"boat_water_interactor"):

@@ -13,7 +13,6 @@ extends Node
 @export_range(0.0, 100.0, 0.01, "or_greater") var longitudinal_water_drag := 0.45
 @export_range(0.0, 100.0, 0.01, "or_greater") var lateral_water_drag := 0.45
 @export_range(0.0, 100.0, 0.1, "or_greater") var max_cell_acceleration := 35.0
-@export var submit_water_interactions := true
 @export var apply_forces := true
 
 var rigid_body : RigidBody3D
@@ -57,8 +56,6 @@ func _physics_process(_delta : float) -> void:
 	for i in sample_points.size():
 		total_external_force += _apply_sample_forces(sample_points[i], samples[i], total_volume, gravity)
 	_update_body_debug(total_external_force, gravity)
-	if submit_water_interactions:
-		_submit_water_interactions(sample_points, samples)
 
 
 func refresh_volumes() -> void:
@@ -185,24 +182,3 @@ func _update_body_debug(total_external_force: Vector3, gravity: float) -> void:
 		if cell_volume == null or not cell_volume.has_method(&"set_debug_body_state"):
 			continue
 		cell_volume.call(&"set_debug_body_state", center_of_mass_world, gravity_force, total_external_force, true)
-
-
-func _submit_water_interactions(sample_points: Array[Dictionary], samples: Array[WaterSurfaceSample]) -> void:
-	if ocean == null or not ocean.has_method(&"queue_water_interaction_source"):
-		return
-	var grouped_points := {}
-	var grouped_samples := {}
-	var sample_count := mini(sample_points.size(), samples.size())
-	for i in sample_count:
-		var source : Object = sample_points[i].get("source")
-		if source == null or not source.has_method(&"get_water_interaction_sources"):
-			continue
-		if not grouped_points.has(source):
-			grouped_points[source] = []
-			grouped_samples[source] = []
-		grouped_points[source].push_back(sample_points[i])
-		grouped_samples[source].push_back(samples[i])
-	for source in grouped_points.keys():
-		var sources : Array = source.call(&"get_water_interaction_sources", grouped_points[source], grouped_samples[source], rigid_body)
-		for interaction_source in sources:
-			ocean.call(&"queue_water_interaction_source", interaction_source)

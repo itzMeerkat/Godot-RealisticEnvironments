@@ -9,12 +9,10 @@ const OCEAN_REFLECTION_RENDERER := preload('res://addons/ocean_system/ocean_refl
 const MAX_CASCADES := 8
 const MAX_HULL_CUTOUTS := 16
 const MAX_MANUAL_FOAM_SOURCES := 96
-const SPECTRUM_SLOT_COUNT := 2
 const SURFACE_QUERY_WORKGROUP_SIZE := 64
 const SURFACE_QUERY_BYTES_PER_POINT := 16
 const SURFACE_QUERY_BYTES_PER_CASCADE := 32
 const SURFACE_QUERY_BYTES_PER_SAMPLE := 48
-const MAX_WATER_INTERACTION_SOURCES := 64
 const EXTERNAL_WIND_SPEED_DIRTY_THRESHOLD := 0.25
 const EXTERNAL_WIND_DIRECTION_DIRTY_THRESHOLD := 2.0
 const EXTERNAL_WIND_SPECTRUM_REFRESH_INTERVAL := 0.5
@@ -64,7 +62,7 @@ const EXTERNAL_WIND_SPECTRUM_REFRESH_INTERVAL := 0.5
 		normal_strength = value
 		_set_water_shader_parameter(&'normal_strength', normal_strength)
 ## Enables smoother but more expensive normal sampling for close wave detail.
-@export var use_bicubic_normals := false :
+@export var use_bicubic_normals := true :
 	set(value):
 		use_bicubic_normals = value
 		_set_water_shader_parameter(&'use_bicubic_normals', use_bicubic_normals)
@@ -182,7 +180,6 @@ const EXTERNAL_WIND_SPECTRUM_REFRESH_INTERVAL := 0.5
 @export_enum('128x128:128', '256x256:256', '512x512:512', '1024x1024:1024') var map_size := 1024 :
 	set(value):
 		map_size = value
-		_clear_height_cache()
 		_setup_wave_generator()
 
 @export_group('Mesh')
@@ -224,40 +221,6 @@ const EXTERNAL_WIND_SPECTRUM_REFRESH_INTERVAL := 0.5
 @export_group('Water Queries')
 ## The still-water height in world units. Wave displacement is added on top.
 @export var water_level := 0.0
-## Enables a CPU-side height cache copied from the GPU displacement maps.
-@export var enable_height_queries := false :
-	set(value):
-		enable_height_queries = value
-		if not enable_height_queries:
-			_clear_height_cache()
-## How often the CPU-side height cache is refreshed. Querying cached heights is cheap;
-## refreshing the cache can stall the GPU, so keep this lower than the render frame rate.
-@export_range(0, 60) var height_query_updates_per_second := 5.0
-@export_group('Water Interaction')
-## Enables the local heightfield used for wakes, ripples, and object reactions.
-@export var enable_water_interaction := true :
-	set(value):
-		enable_water_interaction = value
-		_update_water_interaction_shader_parameters()
-## Resolution of the local interaction heightfield.
-@export_range(32, 512, 1) var interaction_map_size := 128 :
-	set(value):
-		interaction_map_size = clampi(value, 32, 512)
-		_reset_water_interaction_field()
-## World-space side length covered by the local interaction heightfield.
-@export_range(8.0, 256.0, 1.0, "or_greater") var interaction_world_size := 64.0 :
-	set(value):
-		interaction_world_size = maxf(value, 1.0)
-		_update_water_interaction_shader_parameters()
-## How often the local interaction field is advanced.
-@export_range(0, 60, 1) var interaction_updates_per_second := 30.0
-@export_range(0.0, 30.0, 0.01, "or_greater") var interaction_decay := 2.4
-@export_range(0.0, 1.0, 0.01) var interaction_persistence := 0.84
-@export_range(0.0, 200.0, 0.1, "or_greater") var interaction_propagation := 42.0
-@export_range(0.0, 4.0, 0.01, "or_greater") var interaction_height_strength := 1.0 :
-	set(value):
-		interaction_height_strength = maxf(value, 0.0)
-		_update_water_interaction_shader_parameters()
 @export_group('Visual Smoothing')
 ## Blends between previous and current wave maps to reduce low update-rate stutter.
 @export var smooth_wave_interpolation := true
@@ -329,14 +292,10 @@ var displacement_maps := Texture2DArrayRD.new()
 var normal_maps := Texture2DArrayRD.new()
 var previous_displacement_maps := Texture2DArrayRD.new()
 var previous_normal_maps := Texture2DArrayRD.new()
-var _height_images : Array[Image] = []
-var _previous_height_images : Array[Image] = []
-var _next_height_query_update_time := 0.0
 var _has_wave_output := false
 var _last_wave_output_time := 0.0
 var _wave_blend_start_time := 0.0
 var _wave_blend_duration := 1.0 / 60.0
-var _height_cache_refresh_pending := false
 var _surface_query_capacity := 0
 var _surface_query_shader := RID()
 var _surface_query_pipeline := RID()
@@ -351,12 +310,6 @@ var _surface_query_cached_results := {}
 var _surface_query_has_pending_readback := false
 var _surface_query_pending_draw_frame := -1
 var _reflection_renderer : OceanReflectionRenderer
-var interaction_height_texture : ImageTexture
-var _interaction_current_image : Image
-var _interaction_previous_image : Image
-var _interaction_next_image : Image
-var _queued_water_interaction_sources : Array[Dictionary] = []
-var _next_water_interaction_update_time := 0.0
 
 func _init() -> void:
 	rng.set_seed(1234) # This seed gives big waves!
@@ -381,8 +334,6 @@ func _ready() -> void:
 	_set_water_shader_parameter(&'foam_intensity', foam_intensity)
 	_set_water_shader_parameter(&'foam_threshold', foam_threshold)
 	_set_water_shader_parameter(&'foam_softness', foam_softness)
-	_ensure_water_interaction_field()
-	_update_water_interaction_shader_parameters()
 	_update_hull_cutouts()
 	_update_manual_foam_sources()
 	_update_far_lod_shader_parameters()
@@ -393,7 +344,6 @@ func _process(delta : float) -> void:
 	_update_follow_camera()
 	if _reflection_renderer != null:
 		_reflection_renderer.set_water_level(water_level)
-	_update_water_interaction_field(delta)
 	_update_hull_cutouts()
 	_update_manual_foam_sources()
 	_update_external_wind_state()
@@ -418,9 +368,7 @@ func _setup_wave_generator() -> void:
 		if param:
 			param.mark_all_spectra_dirty()
 
-	_clear_height_cache()
 	_reset_surface_query_resources()
-	_height_cache_refresh_pending = false
 	wave_generator = WaveGenerator.new()
 	wave_generator.map_size = map_size
 	# The output ping-pong path expects at least two texture-array layers.
@@ -471,39 +419,6 @@ func _update_water(delta : float) -> void:
 		return
 	wave_generator.update(delta, parameters, get_external_wind_speed(), get_external_wind_direction(), should_use_external_wind())
 	_update_spectrum_blend_uniform()
-	if enable_height_queries and (height_query_updates_per_second == 0 or time >= _next_height_query_update_time):
-		var target_update_delta := 1.0 / (height_query_updates_per_second + 1e-10)
-		_next_height_query_update_time = time + target_update_delta
-		_height_cache_refresh_pending = true
-
-func get_water_height(world_position: Vector3) -> float:
-	var height := water_level
-	for i in parameters.size():
-		height += _sample_wave_displacement(i, world_position).y
-	height += _sample_interaction_height_cpu(world_position)
-	return height
-
-func get_water_displacement(world_position: Vector3) -> Vector3:
-	var displacement := Vector3.ZERO
-	for i in parameters.size():
-		displacement += _sample_wave_displacement(i, world_position)
-	displacement.y += _sample_interaction_height_cpu(world_position)
-	return displacement
-
-func get_water_surface_velocity(world_position: Vector3) -> Vector3:
-	if _height_images.is_empty() or _previous_height_images.is_empty():
-		return Vector3.ZERO
-	var current_displacement := _sample_total_wave_displacement_from_images(_height_images, world_position)
-	var previous_displacement := _sample_total_wave_displacement_from_images(_previous_height_images, world_position)
-	return (current_displacement - previous_displacement) / maxf(_wave_blend_duration, 1.0 / 60.0)
-
-func get_water_normal(world_position: Vector3) -> Vector3:
-	var e := 0.25
-	var h_l := get_water_height(world_position + Vector3(-e, 0, 0))
-	var h_r := get_water_height(world_position + Vector3( e, 0, 0))
-	var h_b := get_water_height(world_position + Vector3(0, 0, -e))
-	var h_f := get_water_height(world_position + Vector3(0, 0,  e))
-	return Vector3(h_l - h_r, 2.0 * e, h_b - h_f).normalized()
 
 func sample_water_surface(world_position: Vector3) -> WaterSurfaceSample:
 	var points := PackedVector3Array()
@@ -581,93 +496,7 @@ func _mark_spectra_dirty() -> void:
 		if params:
 			params.mark_all_spectra_dirty()
 
-func refresh_height_cache() -> void:
-	if not wave_generator or not wave_generator.context: return
-	var displacement_rid : RID = wave_generator.descriptors[&'displacement_map'].rid
-	if not displacement_rid.is_valid(): return
-
-	_height_images.clear()
-	var device := wave_generator.context.device
-	_height_images = _read_height_images(device, displacement_rid)
-	_previous_height_images = _read_height_images(device, wave_generator.descriptors[&'previous_displacement_map'].rid)
-
-func _get_ocean_time() -> float:
-	return time
-
-func _sample_wave_displacement(cascade_index: int, world_position: Vector3) -> Vector3:
-	var displacement := _sample_wave_displacement_from_images(_height_images, cascade_index, world_position)
-	if not _previous_height_images.is_empty():
-		var previous_displacement := _sample_wave_displacement_from_images(_previous_height_images, cascade_index, world_position)
-		displacement = previous_displacement.lerp(displacement, _get_wave_blend_alpha())
-	return displacement
-
-func _sample_total_wave_displacement_from_images(images: Array[Image], world_position: Vector3) -> Vector3:
-	var displacement := Vector3.ZERO
-	for i in parameters.size():
-		displacement += _sample_wave_displacement_from_images(images, i, world_position)
-	return displacement
-
-func _sample_wave_displacement_from_images(images: Array[Image], cascade_index: int, world_position: Vector3) -> Vector3:
-	var params := parameters[cascade_index]
-	if params == null:
-		return Vector3.ZERO
-	var uv := Vector2(world_position.x / params.tile_length.x, world_position.z / params.tile_length.y)
-	var blend_state := params.get_spectrum_blend_state(cascade_index)
-	var active_displacement := _sample_displacement_layer(images, int(blend_state.x), uv)
-	var pending_displacement := _sample_displacement_layer(images, int(blend_state.y), uv)
-	var displacement := active_displacement.lerp(pending_displacement, blend_state.z)
-	return displacement * params.displacement_scale
-
-func _sample_displacement_layer(images: Array[Image], layer: int, uv: Vector2) -> Vector3:
-	if layer < 0 or layer >= images.size():
-		return Vector3.ZERO
-	var image := images[layer]
-	if image == null or image.is_empty():
-		return Vector3.ZERO
-	var color := _sample_image_bilinear(image, uv)
-	return Vector3(color.r, color.g, color.b)
-
-func _sample_image_bilinear(image: Image, uv: Vector2) -> Color:
-	var width := image.get_width()
-	var height := image.get_height()
-	if width <= 0 or height <= 0: return Color.BLACK
-
-	var x := fposmod(uv.x, 1.0) * width
-	var y := fposmod(uv.y, 1.0) * height
-	var x0 := int(floor(x)) % width
-	var y0 := int(floor(y)) % height
-	var x1 := (x0 + 1) % width
-	var y1 := (y0 + 1) % height
-	var fx: float = x - floor(x)
-	var fy : float = y - floor(y)
-
-	var c00 := image.get_pixel(x0, y0)
-	var c10 := image.get_pixel(x1, y0)
-	var c01 := image.get_pixel(x0, y1)
-	var c11 := image.get_pixel(x1, y1)
-	return c00.lerp(c10, fx).lerp(c01.lerp(c11, fx), fy)
-
-
-func _sample_interaction_height_cpu(world_position: Vector3) -> float:
-	if not enable_water_interaction or interaction_height_strength <= 0.0:
-		return 0.0
-	if _interaction_current_image == null or _interaction_current_image.is_empty():
-		return 0.0
-	var origin := _get_interaction_map_origin()
-	var uv := Vector2(world_position.x - origin.x, world_position.z - origin.y) / maxf(interaction_world_size, 0.001)
-	if uv.x < 0.0 or uv.y < 0.0 or uv.x > 1.0 or uv.y > 1.0:
-		return 0.0
-	uv = uv.clamp(Vector2.ZERO, Vector2(0.99999, 0.99999))
-	return _sample_image_bilinear(_interaction_current_image, uv).r * interaction_height_strength
-
-func _clear_height_cache() -> void:
-	_height_images.clear()
-	_previous_height_images.clear()
-	_next_height_query_update_time = 0.0
-	_height_cache_refresh_pending = false
-
 func _clear_wave_generator() -> void:
-	_clear_height_cache()
 	_reset_surface_query_resources()
 	wave_generator = null
 	_has_wave_output = false
@@ -994,151 +823,11 @@ func _set_water_shader_parameter(parameter: StringName, value: Variant) -> void:
 		WATER_MAT.set_shader_parameter(parameter, value)
 
 
-func queue_water_interaction_source(source: Dictionary) -> void:
-	if not enable_water_interaction:
-		return
-	if _queued_water_interaction_sources.size() >= MAX_WATER_INTERACTION_SOURCES:
-		return
-	if not source.has("position"):
-		return
-	_queued_water_interaction_sources.push_back(source)
-
-
-func _ensure_water_interaction_field() -> void:
-	if interaction_height_texture != null and _interaction_current_image != null:
-		return
-	var size := clampi(interaction_map_size, 32, 512)
-	_interaction_current_image = Image.create(size, size, false, Image.FORMAT_RF)
-	_interaction_previous_image = Image.create(size, size, false, Image.FORMAT_RF)
-	_interaction_next_image = Image.create(size, size, false, Image.FORMAT_RF)
-	_interaction_current_image.fill(Color(0.0, 0.0, 0.0, 1.0))
-	_interaction_previous_image.fill(Color(0.0, 0.0, 0.0, 1.0))
-	_interaction_next_image.fill(Color(0.0, 0.0, 0.0, 1.0))
-	interaction_height_texture = ImageTexture.create_from_image(_interaction_current_image)
-	_clear_surface_query_uniform_sets()
-
-
-func _reset_water_interaction_field() -> void:
-	interaction_height_texture = null
-	_interaction_current_image = null
-	_interaction_previous_image = null
-	_interaction_next_image = null
-	_clear_surface_query_uniform_sets()
-	if is_inside_tree():
-		_ensure_water_interaction_field()
-		_update_water_interaction_shader_parameters()
-
-
-func _update_water_interaction_shader_parameters() -> void:
-	_ensure_water_interaction_field()
-	var origin := _get_interaction_map_origin()
-	_set_water_shader_parameter(&'water_interaction_enabled', enable_water_interaction)
-	_set_water_shader_parameter(&'interaction_height_map', interaction_height_texture)
-	_set_water_shader_parameter(&'interaction_map_origin_size', Vector4(origin.x, origin.y, interaction_world_size, interaction_height_strength))
-
-
-func _get_interaction_map_origin() -> Vector2:
-	var half_size := interaction_world_size * 0.5
-	return Vector2(global_position.x - half_size, global_position.z - half_size)
-
-
-func _update_water_interaction_field(delta: float) -> void:
-	if not enable_water_interaction:
-		_queued_water_interaction_sources.clear()
-		return
-	_ensure_water_interaction_field()
-	if interaction_updates_per_second > 0.0 and time < _next_water_interaction_update_time:
-		return
-	var update_delta := delta
-	if interaction_updates_per_second > 0.0:
-		var target_delta := 1.0 / maxf(interaction_updates_per_second, 0.001)
-		update_delta = target_delta + maxf(time - _next_water_interaction_update_time, 0.0)
-		_next_water_interaction_update_time = time + target_delta
-
-	_step_water_interaction_field(update_delta)
-	for source in _queued_water_interaction_sources:
-		_splat_water_interaction_source(source)
-	_queued_water_interaction_sources.clear()
-
-	var old_previous := _interaction_previous_image
-	_interaction_previous_image = _interaction_current_image
-	_interaction_current_image = _interaction_next_image
-	_interaction_next_image = old_previous
-	if interaction_height_texture == null:
-		interaction_height_texture = ImageTexture.create_from_image(_interaction_current_image)
-	else:
-		interaction_height_texture.update(_interaction_current_image)
-	_update_water_interaction_shader_parameters()
-
-
-func _step_water_interaction_field(delta: float) -> void:
-	var size := _interaction_current_image.get_width()
-	var decay := maxf(1.0 - interaction_decay * delta, 0.0)
-	var wave_gain := interaction_propagation * delta * delta / maxf(interaction_world_size, 0.001)
-	for y in size:
-		for x in size:
-			var h := _interaction_current_image.get_pixel(x, y).r
-			var p := _interaction_previous_image.get_pixel(x, y).r
-			var l := _interaction_current_image.get_pixel(maxi(x - 1, 0), y).r
-			var r := _interaction_current_image.get_pixel(mini(x + 1, size - 1), y).r
-			var b := _interaction_current_image.get_pixel(x, maxi(y - 1, 0)).r
-			var f := _interaction_current_image.get_pixel(x, mini(y + 1, size - 1)).r
-			var laplacian := l + r + b + f - h * 4.0
-			var next_h := (h + (h - p) * interaction_persistence + laplacian * wave_gain) * decay
-			_interaction_next_image.set_pixel(x, y, Color(next_h, 0.0, 0.0, 1.0))
-
-
-func _splat_water_interaction_source(source: Dictionary) -> void:
-	var position : Vector3 = source["position"]
-	var radius := maxf(float(source.get("radius", 1.0)), 0.05)
-	var strength := float(source.get("strength", 0.0))
-	if absf(strength) <= 0.0001:
-		return
-	var origin := _get_interaction_map_origin()
-	var size := _interaction_next_image.get_width()
-	var px_per_meter := float(size) / maxf(interaction_world_size, 0.001)
-	var center_x := int(round((position.x - origin.x) * px_per_meter))
-	var center_y := int(round((position.z - origin.y) * px_per_meter))
-	var radius_px := maxi(int(ceil(radius * px_per_meter)), 1)
-	var velocity : Vector3 = source.get("velocity", Vector3.ZERO)
-	var direction := Vector2(velocity.x, velocity.z)
-	if direction.length_squared() > 0.0001:
-		direction = direction.normalized()
-	var min_x := maxi(center_x - radius_px, 0)
-	var max_x := mini(center_x + radius_px, size - 1)
-	var min_y := maxi(center_y - radius_px, 0)
-	var max_y := mini(center_y + radius_px, size - 1)
-	for y in range(min_y, max_y + 1):
-		for x in range(min_x, max_x + 1):
-			var delta_px := Vector2(float(x - center_x), float(y - center_y))
-			var dist := delta_px.length() / float(radius_px)
-			if dist > 1.0:
-				continue
-			var directional_gain := 1.0
-			if direction.length_squared() > 0.0001 and delta_px.length_squared() > 0.0001:
-				var delta_dir := delta_px.normalized()
-				directional_gain = lerpf(0.65, 1.35, clampf(delta_dir.dot(direction) * -0.5 + 0.5, 0.0, 1.0))
-			var falloff := exp(-dist * dist * 4.0) * directional_gain
-			var current := _interaction_next_image.get_pixel(x, y).r
-			_interaction_next_image.set_pixel(x, y, Color(current + strength * falloff, 0.0, 0.0, 1.0))
-
 func _ensure_unique_water_material() -> void:
 	if material_override is ShaderMaterial:
 		material_override = (material_override as ShaderMaterial).duplicate()
 	else:
 		material_override = WATER_MAT.duplicate()
-
-func _read_height_images(device: RenderingDevice, texture_rid: RID) -> Array[Image]:
-	var images : Array[Image] = []
-	if not texture_rid.is_valid(): return images
-	var layer_count := parameters.size() * SPECTRUM_SLOT_COUNT
-	for i in layer_count:
-		var data := device.texture_get_data(texture_rid, i)
-		if data.is_empty():
-			images.push_back(Image.new())
-		else:
-			images.push_back(Image.create_from_data(map_size, map_size, false, Image.FORMAT_RGBAH, data))
-	return images
 
 func _sample_water_surface_batch_gpu(points: PackedVector3Array, request_owner: Object = null) -> Array[WaterSurfaceSample]:
 	_read_surface_query_results_if_ready()
@@ -1215,7 +904,6 @@ func _dispatch_surface_query_requests() -> void:
 		return
 
 	var groups := int(ceil(float(total_count) / float(SURFACE_QUERY_WORKGROUP_SIZE)))
-	var interaction_origin := _get_interaction_map_origin()
 	var compute_list := context.compute_list_begin()
 	device.compute_list_bind_compute_pipeline(compute_list, _surface_query_pipeline)
 	device.compute_list_bind_uniform_set(compute_list, uniform_set, 0)
@@ -1230,12 +918,8 @@ func _dispatch_surface_query_requests() -> void:
 			maxf(_wave_blend_duration, 1.0 / 60.0),
 			0.25,
 			0.0,
-			interaction_origin.x,
-			interaction_origin.y,
-			interaction_world_size,
-			interaction_height_strength if enable_water_interaction else 0.0,
 		]),
-		48
+		32
 	)
 	device.compute_list_dispatch(compute_list, groups, 1, 1)
 	context.compute_list_end()
@@ -1410,11 +1094,6 @@ func _empty_surface_samples() -> Array[WaterSurfaceSample]:
 	return samples
 
 
-func _clear_surface_query_uniform_sets() -> void:
-	_surface_query_sets.clear()
-	_surface_query_has_pending_readback = false
-
-
 func _reset_surface_query_resources() -> void:
 	_surface_query_capacity = 0
 	_surface_query_shader = RID()
@@ -1454,9 +1133,6 @@ func _on_wave_output_maps_swapped(current_displacement: RID, previous_displaceme
 	_set_water_shader_parameter(&'normals', normal_maps)
 	_set_water_shader_parameter(&'previous_displacements', previous_displacement_maps)
 	_set_water_shader_parameter(&'previous_normals', previous_normal_maps)
-	if _height_cache_refresh_pending and enable_height_queries:
-		refresh_height_cache()
-		_height_cache_refresh_pending = false
 
 func _update_wave_blend_alpha() -> void:
 	_set_water_shader_parameter(&'wave_blend_alpha', _get_wave_blend_alpha())

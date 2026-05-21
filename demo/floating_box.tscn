@@ -422,9 +422,6 @@ voxel_size = Vector3(0.4, 0.4, 0.4)
 max_generated_cells = 640
 default_density = 180.0
 default_buoyancy_efficiency = 0.4
-interaction_strength = 0.025
-interaction_radius_scale = 0.65
-max_interaction_sources = 4
 debug_draw = false
 
 [node name="DebugDraw" type="MeshInstance3D" parent="BuoyancyCellVolume" unique_id=1102676112]
@@ -770,7 +767,6 @@ buoyancy_efficiency = 0.4
 script = ExtResource("4_buoyant")
 rigid_body_path = NodePath("..")
 vertical_damping = 30.0
-submit_water_interactions = false
 
 [node name="BoatWaterInteractor" type="Node3D" parent="." unique_id=1023630386]
 script = ExtResource("9_interactor")

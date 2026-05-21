@@ -8,7 +8,7 @@
 
 ## 主要脚本
 
-- `ocean_system.gd`：系统协调者，负责导出参数、材质参数同步、网格生成、风源读取、波浪更新节流、双缓冲纹理绑定和 CPU 高度查询。
+- `ocean_system.gd`：系统协调者，负责导出参数、材质参数同步、网格生成、风源读取、波浪更新节流、双缓冲纹理绑定和 GPU point-query 调度。
 - `wave_cascade_parameters.gd`：每个 wave cascade 的参数资源。setter 会标记频谱需要重算，缩放相关参数会发出 `scale_changed`。
 - `wave_generator.gd`：RenderingDevice compute 管线封装，负责生成频谱、调制频谱、FFT、unpack displacement/normal/foam。
 - `rendering/render_context.gd`：RenderingDevice 辅助类，统一创建 shader、buffer、texture、descriptor set、pipeline，并在释放时回收 RID。
@@ -67,9 +67,7 @@ compute pass 顺序是：
 
 ## 水面查询
 
-开启 `enable_height_queries` 后，系统会按 `height_query_updates_per_second` 将 GPU displacement texture 读回 `_height_images`。缓存图像包含每个 cascade 的 active/pending 两层。`get_water_height()` 和 `get_water_displacement()` 在 CPU 侧双线性采样缓存图像，同时应用 spectrum blend 和 wave output blend。`get_water_surface_velocity()` 用当前/上一 displacement 缓存估算表面速度。`get_water_normal()` 用周围高度差估算法线。
-
-`sample_water_surface()` 和 `sample_water_surface_batch()` 通过 GPU point-query 返回高度、法线、位移与表面速度。批量接口使用 `surface_query.glsl`：调用方提交世界坐标与 owner，`OceanSystem` 在 `_process()` 中把本帧所有 owner 的请求合并到一个大 point buffer，一次 compute dispatch 后只读回一个 sample buffer，再按 offset/count 分发缓存结果。浮力系统走该路径，不依赖 `enable_height_queries`；当主 RenderingDevice 的异步结果尚未就绪时返回空结果，不生成静水替代样本。
+`sample_water_surface()` 和 `sample_water_surface_batch()` 通过 GPU point-query 返回高度、法线、位移与表面速度。批量接口使用 `surface_query.glsl`：调用方提交世界坐标与 owner，`OceanSystem` 在 `_process()` 中把本帧所有 owner 的请求合并到一个大 point buffer，一次 compute dispatch 后只读回一个 sample buffer，再按 offset/count 分发缓存结果。浮力系统走该路径；当主 RenderingDevice 的异步结果尚未就绪时返回空结果，不生成静水替代样本。
 
 ## 依赖边界
 
