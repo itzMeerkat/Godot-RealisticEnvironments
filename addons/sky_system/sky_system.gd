@@ -187,6 +187,26 @@ func get_sun_visibility() -> float:
 	return _sun_altitude_visibility(get_sun_direction().y)
 
 
+func get_sun_color() -> Color:
+	return _get_profile().sample_sun_color(_profile_sample_time)
+
+
+func get_sky_top_color() -> Color:
+	return _get_profile().sample_sky_top_color(_profile_sample_time)
+
+
+func get_sky_horizon_color() -> Color:
+	return _get_profile().sample_sky_horizon_color(_profile_sample_time)
+
+
+func get_sky_ground_horizon_color() -> Color:
+	return get_sky_horizon_color().darkened(0.25)
+
+
+func get_sky_ground_bottom_color() -> Color:
+	return get_sky_top_color().darkened(0.55)
+
+
 func get_moon_visibility() -> float:
 	return _moon_altitude_visibility(get_moon_direction().y)
 

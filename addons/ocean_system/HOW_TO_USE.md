@@ -15,6 +15,9 @@
 - `ocean_radius`、`generated_inner_extent`、`generated_base_cell_size`、`generated_ring_count`：控制近处海面网格密度和范围。
 - `enable_far_lod`、`far_lod_radius`、`far_lod_blend_distance`：控制远海网格和远处细节淡出。
 - `water_color`、`foam_color`、`clear_roughness`、`normal_strength`、`foam_intensity`：控制材质外观。
+- `sky_source_path`：可指向 `SkySystem` 或任何提供 `get_sun_direction()`、`get_sun_color()`、
+  `get_sky_top_color()`、`get_sky_horizon_color()`、`get_sun_visibility()` 的节点，用于远海程序化天空反射和浪尖逆光 glow。
+- `sky_reflection_*`、`sun_glitter_*`、`crest_glow_*`：控制远海天空反射、太阳闪光带和低太阳逆光浪尖散射。
 
 所有主要参数都导出到 Inspector，也可以直接在代码中设置：
 

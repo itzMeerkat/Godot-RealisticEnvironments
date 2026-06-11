@@ -195,6 +195,7 @@ material_override = SubResource("ShaderMaterial_ycdy4")
 extra_cull_margin = 1000.0
 gi_mode = 0
 skeleton = NodePath("")
+sky_source_path = NodePath("../SkySystem")
 use_external_wind = true
 wind_source_path = NodePath("../WindSystem")
 parameters = Array[ExtResource("2_pw5n6")]([SubResource("Resource_adqv5"), SubResource("Resource_luhq0"), SubResource("Resource_83u3u")])

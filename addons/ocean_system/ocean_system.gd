@@ -72,6 +72,128 @@ const EXTERNAL_WIND_SPECTRUM_REFRESH_INTERVAL := 0.5
 		fragment_cascade_limit = clampi(value, 1, MAX_CASCADES)
 		_set_water_shader_parameter(&'fragment_cascade_limit', fragment_cascade_limit)
 
+@export_group('Sky Reflection')
+## Optional sky source. SkySystem exposes sun direction, sun color, and sky colors.
+@export var sky_source_path : NodePath :
+	set(value):
+		sky_source_path = value
+		sky_source = null
+		_update_sky_lighting_shader_parameters()
+@export_color_no_alpha var manual_sky_top_color : Color = Color(0.12, 0.42, 0.78) :
+	set(value):
+		manual_sky_top_color = value
+		_update_sky_lighting_shader_parameters()
+@export_color_no_alpha var manual_sky_horizon_color : Color = Color(0.58, 0.78, 0.94) :
+	set(value):
+		manual_sky_horizon_color = value
+		_update_sky_lighting_shader_parameters()
+@export_color_no_alpha var manual_sun_color : Color = Color(1.0, 0.92, 0.72) :
+	set(value):
+		manual_sun_color = value
+		_update_sky_lighting_shader_parameters()
+@export var manual_sun_direction := Vector3(0.0, 0.2, -1.0) :
+	set(value):
+		manual_sun_direction = value
+		_update_sky_lighting_shader_parameters()
+@export_range(0.0, 1.0, 0.01) var manual_sun_visibility := 1.0 :
+	set(value):
+		manual_sun_visibility = value
+		_update_sky_lighting_shader_parameters()
+@export var sky_reflection_enabled := true :
+	set(value):
+		sky_reflection_enabled = value
+		_set_water_shader_parameter(&'sky_reflection_enabled', sky_reflection_enabled)
+@export_range(0.0, 2.0, 0.01) var sky_reflection_strength := 0.42 :
+	set(value):
+		sky_reflection_strength = value
+		_set_water_shader_parameter(&'sky_reflection_strength', sky_reflection_strength)
+@export_range(0.25, 8.0, 0.05) var sky_reflection_fresnel_power := 5.0 :
+	set(value):
+		sky_reflection_fresnel_power = value
+		_set_water_shader_parameter(&'sky_reflection_fresnel_power', sky_reflection_fresnel_power)
+@export_range(0.0, 0.12, 0.001) var sky_reflection_f0 := 0.02 :
+	set(value):
+		sky_reflection_f0 = value
+		_set_water_shader_parameter(&'sky_reflection_f0', sky_reflection_f0)
+@export_range(0.0, 3.0, 0.01) var sky_horizon_boost := 1.15 :
+	set(value):
+		sky_horizon_boost = value
+		_set_water_shader_parameter(&'sky_horizon_boost', sky_horizon_boost)
+@export_range(0.0, 2.0, 0.01) var sky_reflection_roughness_strength := 0.75 :
+	set(value):
+		sky_reflection_roughness_strength = value
+		_set_water_shader_parameter(&'sky_reflection_roughness_strength', sky_reflection_roughness_strength)
+@export_range(0.0, 1.0, 0.01) var sky_reflection_far_roughness := 0.35 :
+	set(value):
+		sky_reflection_far_roughness = value
+		_set_water_shader_parameter(&'sky_reflection_far_roughness', sky_reflection_far_roughness)
+@export_range(0.0, 4.0, 0.01) var sun_glitter_strength := 0.75 :
+	set(value):
+		sun_glitter_strength = value
+		_set_water_shader_parameter(&'sun_glitter_strength', sun_glitter_strength)
+@export_range(8.0, 512.0, 1.0) var sun_glitter_power := 96.0 :
+	set(value):
+		sun_glitter_power = value
+		_set_water_shader_parameter(&'sun_glitter_power', sun_glitter_power)
+@export_range(0.0, 4.0, 0.01) var sun_glitter_low_sun_boost := 1.4 :
+	set(value):
+		sun_glitter_low_sun_boost = value
+		_set_water_shader_parameter(&'sun_glitter_low_sun_boost', sun_glitter_low_sun_boost)
+
+@export_group('Crest Glow')
+@export var crest_glow_enabled := true :
+	set(value):
+		crest_glow_enabled = value
+		_set_water_shader_parameter(&'crest_glow_enabled', crest_glow_enabled)
+@export_color_no_alpha var crest_glow_color : Color = Color(0.08, 0.58, 0.46) :
+	set(value):
+		crest_glow_color = value
+		_set_water_shader_parameter(&'crest_glow_color', crest_glow_color)
+@export_range(0.0, 4.0, 0.01) var crest_glow_strength := 0.45 :
+	set(value):
+		crest_glow_strength = value
+		_set_water_shader_parameter(&'crest_glow_strength', crest_glow_strength)
+@export_range(0.0, 2.0, 0.01) var crest_glow_emission_strength := 0.08 :
+	set(value):
+		crest_glow_emission_strength = value
+		_set_water_shader_parameter(&'crest_glow_emission_strength', crest_glow_emission_strength)
+@export_range(-2.0, 4.0, 0.01) var crest_height_start := 0.18 :
+	set(value):
+		crest_height_start = value
+		_set_water_shader_parameter(&'crest_height_start', crest_height_start)
+@export_range(-2.0, 6.0, 0.01) var crest_height_end := 0.85 :
+	set(value):
+		crest_height_end = value
+		_set_water_shader_parameter(&'crest_height_end', crest_height_end)
+@export_range(0.0, 4.0, 0.01) var crest_slope_start := 0.18 :
+	set(value):
+		crest_slope_start = value
+		_set_water_shader_parameter(&'crest_slope_start', crest_slope_start)
+@export_range(0.0, 8.0, 0.01) var crest_slope_end := 0.85 :
+	set(value):
+		crest_slope_end = value
+		_set_water_shader_parameter(&'crest_slope_end', crest_slope_end)
+@export_range(0.25, 8.0, 0.05) var crest_back_view_power := 1.6 :
+	set(value):
+		crest_back_view_power = value
+		_set_water_shader_parameter(&'crest_back_view_power', crest_back_view_power)
+@export_range(0.25, 8.0, 0.05) var crest_back_normal_power := 1.25 :
+	set(value):
+		crest_back_normal_power = value
+		_set_water_shader_parameter(&'crest_back_normal_power', crest_back_normal_power)
+@export_range(-0.1, 1.0, 0.01) var crest_low_sun_start := 0.02 :
+	set(value):
+		crest_low_sun_start = value
+		_set_water_shader_parameter(&'crest_low_sun_start', crest_low_sun_start)
+@export_range(-0.1, 1.0, 0.01) var crest_low_sun_end := 0.38 :
+	set(value):
+		crest_low_sun_end = value
+		_set_water_shader_parameter(&'crest_low_sun_end', crest_low_sun_end)
+@export_enum('Normal:0', 'Sky Reflection:1', 'Sky Color:2', 'Sun Glitter:3', 'Crest Height:4', 'Crest Slope:5', 'Crest Backlight:6', 'Crest Final:7', 'Reflection Direction Y:8', 'Reflection Roughness:9') var water_debug_view := 0 :
+	set(value):
+		water_debug_view = value
+		_set_water_shader_parameter(&'water_debug_view', water_debug_view)
+
 @export_group('Foam Shading')
 ## Multiplies the foam signal produced by the wave compute pass.
 @export_range(0.0, 4.0, 0.01) var foam_intensity := 1.25 :
@@ -284,6 +406,7 @@ var rng = RandomNumberGenerator.new()
 var time := 0.0
 var next_update_time := 0.0
 var wind_source : Node
+var sky_source : Node
 var _last_external_wind_speed := -1.0
 var _last_external_wind_direction := -999999.0
 var _last_external_wind_spectrum_time := -1.0e20
@@ -320,6 +443,7 @@ func _ready() -> void:
 	if not Engine.is_editor_hint():
 		_ensure_unique_water_material()
 	_resolve_wind_source()
+	_resolve_sky_source()
 	_set_water_shader_parameter(&'water_color', water_color)
 	_set_water_shader_parameter(&'foam_color', foam_color)
 	_set_water_shader_parameter(&'wave_blend_alpha', 1.0)
@@ -334,6 +458,8 @@ func _ready() -> void:
 	_set_water_shader_parameter(&'foam_intensity', foam_intensity)
 	_set_water_shader_parameter(&'foam_threshold', foam_threshold)
 	_set_water_shader_parameter(&'foam_softness', foam_softness)
+	_update_sky_shading_static_parameters()
+	_update_sky_lighting_shader_parameters()
 	_update_hull_cutouts()
 	_update_manual_foam_sources()
 	_update_far_lod_shader_parameters()
@@ -347,6 +473,7 @@ func _process(delta : float) -> void:
 	_update_hull_cutouts()
 	_update_manual_foam_sources()
 	_update_external_wind_state()
+	_update_sky_lighting_shader_parameters()
 	# Update waves once every 1.0/updates_per_second.
 	if updates_per_second == 0 or time >= next_update_time:
 		var target_update_delta := 1.0 / (updates_per_second + 1e-10)
@@ -459,10 +586,94 @@ func get_external_wind_direction() -> float:
 	var value = external_wind.get(&'wind_direction')
 	return 0.0 if value == null else float(value)
 
+func get_sky_source() -> Node:
+	if sky_source == null:
+		_resolve_sky_source()
+	return sky_source
+
+func _update_sky_shading_static_parameters() -> void:
+	_set_water_shader_parameter(&'sky_reflection_enabled', sky_reflection_enabled)
+	_set_water_shader_parameter(&'sky_reflection_strength', sky_reflection_strength)
+	_set_water_shader_parameter(&'sky_reflection_fresnel_power', sky_reflection_fresnel_power)
+	_set_water_shader_parameter(&'sky_reflection_f0', sky_reflection_f0)
+	_set_water_shader_parameter(&'sky_horizon_boost', sky_horizon_boost)
+	_set_water_shader_parameter(&'sky_reflection_roughness_strength', sky_reflection_roughness_strength)
+	_set_water_shader_parameter(&'sky_reflection_far_roughness', sky_reflection_far_roughness)
+	_set_water_shader_parameter(&'sun_glitter_strength', sun_glitter_strength)
+	_set_water_shader_parameter(&'sun_glitter_power', sun_glitter_power)
+	_set_water_shader_parameter(&'sun_glitter_low_sun_boost', sun_glitter_low_sun_boost)
+	_set_water_shader_parameter(&'crest_glow_enabled', crest_glow_enabled)
+	_set_water_shader_parameter(&'crest_glow_color', crest_glow_color)
+	_set_water_shader_parameter(&'crest_glow_strength', crest_glow_strength)
+	_set_water_shader_parameter(&'crest_glow_emission_strength', crest_glow_emission_strength)
+	_set_water_shader_parameter(&'crest_height_start', crest_height_start)
+	_set_water_shader_parameter(&'crest_height_end', crest_height_end)
+	_set_water_shader_parameter(&'crest_slope_start', crest_slope_start)
+	_set_water_shader_parameter(&'crest_slope_end', crest_slope_end)
+	_set_water_shader_parameter(&'crest_back_view_power', crest_back_view_power)
+	_set_water_shader_parameter(&'crest_back_normal_power', crest_back_normal_power)
+	_set_water_shader_parameter(&'crest_low_sun_start', crest_low_sun_start)
+	_set_water_shader_parameter(&'crest_low_sun_end', crest_low_sun_end)
+	_set_water_shader_parameter(&'water_debug_view', water_debug_view)
+
+func _update_sky_lighting_shader_parameters() -> void:
+	var sun_direction := _get_sky_vector(&'get_sun_direction', &'sun_direction', manual_sun_direction)
+	if sun_direction.length_squared() < 0.0001:
+		sun_direction = Vector3(0.0, 0.2, -1.0)
+	sun_direction = sun_direction.normalized()
+	_set_water_shader_parameter(&'sky_sun_direction', sun_direction)
+	_set_water_shader_parameter(&'sky_sun_color', _get_sky_color(&'get_sun_color', &'sun_color', manual_sun_color))
+	_set_water_shader_parameter(&'sky_top_color', _get_sky_color(&'get_sky_top_color', &'sky_top_color', manual_sky_top_color))
+	_set_water_shader_parameter(&'sky_horizon_color', _get_sky_color(&'get_sky_horizon_color', &'sky_horizon_color', manual_sky_horizon_color))
+	_set_water_shader_parameter(&'sky_ground_horizon_color', _get_sky_color(&'get_sky_ground_horizon_color', &'sky_ground_horizon_color', manual_sky_horizon_color.darkened(0.25)))
+	_set_water_shader_parameter(&'sky_ground_bottom_color', _get_sky_color(&'get_sky_ground_bottom_color', &'sky_ground_bottom_color', manual_sky_top_color.darkened(0.55)))
+	_set_water_shader_parameter(&'sky_sun_visibility', _get_sky_float(&'get_sun_visibility', &'sun_visibility', manual_sun_visibility))
+
+func _get_sky_vector(method: StringName, property: StringName, fallback: Vector3) -> Vector3:
+	var source := get_sky_source()
+	if source != null:
+		if source.has_method(method):
+			var method_value = source.call(method)
+			if method_value is Vector3:
+				return method_value
+		var property_value = source.get(property)
+		if property_value is Vector3:
+			return property_value
+	return fallback
+
+func _get_sky_color(method: StringName, property: StringName, fallback: Color) -> Color:
+	var source := get_sky_source()
+	if source != null:
+		if source.has_method(method):
+			var method_value = source.call(method)
+			if method_value is Color:
+				return method_value
+		var property_value = source.get(property)
+		if property_value is Color:
+			return property_value
+	return fallback
+
+func _get_sky_float(method: StringName, property: StringName, fallback: float) -> float:
+	var source := get_sky_source()
+	if source != null:
+		if source.has_method(method):
+			var method_value = source.call(method)
+			if method_value != null:
+				return float(method_value)
+		var property_value = source.get(property)
+		if property_value != null:
+			return float(property_value)
+	return fallback
+
 func _resolve_wind_source() -> void:
 	if wind_source_path.is_empty():
 		return
 	wind_source = get_node_or_null(wind_source_path)
+
+func _resolve_sky_source() -> void:
+	if sky_source_path.is_empty() or not is_inside_tree():
+		return
+	sky_source = get_node_or_null(sky_source_path)
 
 func _update_external_wind_state() -> void:
 	if not should_use_external_wind():
