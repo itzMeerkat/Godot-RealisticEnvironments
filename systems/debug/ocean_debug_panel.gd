@@ -180,6 +180,18 @@ func _add_ocean_controls(parent : VBoxContainer) -> void:
 			water.water_color = value
 	)
 
+	var water_scatter_color := _add_color_row(parent, "Water Scatter", "Tint used by sun-lit water body scattering.")
+	water_scatter_color.color_changed.connect(func(value : Color) -> void:
+		if not _is_syncing and water:
+			water.water_scatter_color = value
+	)
+
+	var diffuse_strength := _add_float_row(parent, "Diffuse Strength", "How much water_color contributes to diffuse albedo. Keep low for realistic water.", 0.0, 1.0, 0.01, false)
+	diffuse_strength.value_changed.connect(func(value : float) -> void:
+		if not _is_syncing and water:
+			water.water_diffuse_strength = value
+	)
+
 	var foam_color := _add_color_row(parent, "Foam Color", "")
 	foam_color.color_changed.connect(func(value : Color) -> void:
 		if not _is_syncing and water:
@@ -237,6 +249,8 @@ func _add_ocean_controls(parent : VBoxContainer) -> void:
 	update_spin.name = "UpdatesPerSecond"
 	ocean_radius.name = "OceanRadius"
 	water_color.name = "WaterColor"
+	water_scatter_color.name = "WaterScatterColor"
+	diffuse_strength.name = "WaterDiffuseStrength"
 	foam_color.name = "FoamColor"
 	clear_roughness.name = "WaterClearRoughness"
 	foam_roughness.name = "WaterFoamRoughness"
@@ -267,6 +281,10 @@ func _add_sky_reflection_controls(parent : VBoxContainer) -> void:
 		"Crest Final",
 		"Reflection Dir Y",
 		"Reflection Roughness",
+		"Sun Scatter",
+		"Sun Scatter NoL",
+		"View Sun Phase",
+		"Micro Slope Energy",
 	]
 	for i in debug_items.size():
 		debug_view.add_item(debug_items[i], i)
@@ -322,6 +340,27 @@ func _add_sky_reflection_controls(parent : VBoxContainer) -> void:
 	glitter_power.value_changed.connect(func(value : float) -> void:
 		if not _is_syncing and water:
 			water.sun_glitter_power = value
+	)
+
+	var scatter_strength := _add_float_row(parent, "Sun Scatter", "Broad sun-lit water scattering visible when looking away from the sun.", 0.0, 2.0, 0.01, false)
+	scatter_strength.name = "SunScatterStrength"
+	scatter_strength.value_changed.connect(func(value : float) -> void:
+		if not _is_syncing and water:
+			water.sun_scatter_strength = value
+	)
+
+	var scatter_base := _add_float_row(parent, "Scatter Base", "Minimum sun scatter before view-sun alignment is added.", 0.0, 1.0, 0.01, false)
+	scatter_base.name = "SunScatterBase"
+	scatter_base.value_changed.connect(func(value : float) -> void:
+		if not _is_syncing and water:
+			water.sun_scatter_base = value
+	)
+
+	var scatter_phase := _add_float_row(parent, "Scatter Phase", "Higher values concentrate scatter when looking more directly away from the sun.", 0.25, 8.0, 0.05, false)
+	scatter_phase.name = "SunScatterPhase"
+	scatter_phase.value_changed.connect(func(value : float) -> void:
+		if not _is_syncing and water:
+			water.sun_scatter_phase_power = value
 	)
 
 	var crest_enabled := _add_check_row(parent, "Crest Glow", "Adds low-sun backlit color to high, steep wave crests.")
@@ -641,6 +680,8 @@ func _populate_values() -> void:
 	_set_named_spin("UpdatesPerSecond", water.updates_per_second)
 	_set_named_spin("OceanRadius", water.ocean_radius)
 	_set_named_color("WaterColor", water.water_color)
+	_set_named_color("WaterScatterColor", water.water_scatter_color)
+	_set_named_spin("WaterDiffuseStrength", water.water_diffuse_strength)
 	_set_named_color("FoamColor", water.foam_color)
 	_set_named_spin("WaterClearRoughness", water.clear_roughness)
 	_set_named_spin("WaterFoamRoughness", water.foam_roughness)
@@ -658,6 +699,9 @@ func _populate_values() -> void:
 	_set_named_spin("SkyReflectionFarRoughness", water.sky_reflection_far_roughness)
 	_set_named_spin("SunGlitterStrength", water.sun_glitter_strength)
 	_set_named_spin("SunGlitterPower", water.sun_glitter_power)
+	_set_named_spin("SunScatterStrength", water.sun_scatter_strength)
+	_set_named_spin("SunScatterBase", water.sun_scatter_base)
+	_set_named_spin("SunScatterPhase", water.sun_scatter_phase_power)
 	_set_named_check("CrestGlowEnabled", water.crest_glow_enabled)
 	_set_named_spin("CrestGlowStrength", water.crest_glow_strength)
 	_set_named_spin("CrestGlowEmission", water.crest_glow_emission_strength)

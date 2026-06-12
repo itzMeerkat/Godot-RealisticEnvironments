@@ -18,6 +18,8 @@
 - `sky_source_path`：可指向 `SkySystem` 或任何提供 `get_sun_direction()`、`get_sun_color()`、
   `get_sky_top_color()`、`get_sky_horizon_color()`、`get_sun_visibility()` 的节点，用于远海程序化天空反射和浪尖逆光 glow。
 - `sky_reflection_*`、`sun_glitter_*`、`crest_glow_*`：控制远海天空反射、太阳闪光带和低太阳逆光浪尖散射。
+- 清水区域默认使用很低的 diffuse/specular，程序化天空、平面反射、太阳 glitter、背向太阳的
+  `sun_scatter_*` 和浪尖 glow 会作为 radiance 叠加，避免把反射混入 `ALBEDO` 后产生塑料感。
 
 所有主要参数都导出到 Inspector，也可以直接在代码中设置：
 

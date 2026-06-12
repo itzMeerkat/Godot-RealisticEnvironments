@@ -12,10 +12,12 @@ render_mode world_vertex_coords, cull_disabled, shadows_disabled;
 uniform vec4 water_color : source_color;
 uniform vec4 foam_color : source_color;
 
-uniform float clear_roughness : hint_range(0.0, 1.0) = 0.06;
+uniform float water_diffuse_strength : hint_range(0.0, 1.0) = 0.08;
+uniform vec4 water_scatter_color : source_color = vec4(0.045, 0.18, 0.20, 1.0);
+uniform float clear_roughness : hint_range(0.0, 1.0) = 0.10;
 uniform float foam_roughness : hint_range(0.0, 1.0) = 0.24;
-uniform float clear_specular : hint_range(0.0, 1.0) = 0.85;
-uniform float foam_specular : hint_range(0.0, 1.0) = 0.35;
+uniform float clear_specular : hint_range(0.0, 1.0) = 0.25;
+uniform float foam_specular : hint_range(0.0, 1.0) = 0.08;
 uniform float slope_roughness_strength : hint_range(0.0, 4.0) = 0.55;
 uniform float normal_strength : hint_range(0.0, 1.0) = 1.0; // Global normal strength
 uniform float foam_intensity : hint_range(0.0, 4.0) = 1.25;
@@ -29,19 +31,25 @@ uniform vec3 sky_sun_direction = vec3(0.0, 0.2, -1.0);
 uniform vec4 sky_sun_color : source_color = vec4(1.0, 0.92, 0.72, 1.0);
 uniform float sky_sun_visibility : hint_range(0.0, 1.0) = 1.0;
 uniform bool sky_reflection_enabled = true;
-uniform float sky_reflection_strength : hint_range(0.0, 2.0) = 0.42;
+uniform float sky_reflection_strength : hint_range(0.0, 2.0) = 0.55;
 uniform float sky_reflection_fresnel_power : hint_range(0.25, 8.0) = 5.0;
 uniform float sky_reflection_f0 : hint_range(0.0, 0.12) = 0.02;
-uniform float sky_horizon_boost : hint_range(0.0, 3.0) = 1.15;
+uniform float sky_horizon_boost : hint_range(0.0, 3.0) = 0.85;
 uniform float sky_reflection_roughness_strength : hint_range(0.0, 2.0) = 0.75;
 uniform float sky_reflection_far_roughness : hint_range(0.0, 1.0) = 0.35;
-uniform float sun_glitter_strength : hint_range(0.0, 4.0) = 0.75;
-uniform float sun_glitter_power : hint_range(8.0, 512.0) = 96.0;
+uniform float sun_glitter_strength : hint_range(0.0, 4.0) = 0.42;
+uniform float sun_glitter_power : hint_range(8.0, 512.0) = 64.0;
 uniform float sun_glitter_low_sun_boost : hint_range(0.0, 4.0) = 1.4;
+uniform float sun_scatter_strength : hint_range(0.0, 2.0) = 0.24;
+uniform float sun_scatter_base : hint_range(0.0, 1.0) = 0.08;
+uniform float sun_scatter_phase_power : hint_range(0.25, 8.0) = 2.0;
+uniform float sun_scatter_normal_power : hint_range(0.25, 4.0) = 0.75;
+uniform float sun_scatter_slope_strength : hint_range(0.0, 2.0) = 0.65;
+uniform float sun_scatter_distance_strength : hint_range(0.0, 2.0) = 0.25;
 uniform bool crest_glow_enabled = true;
 uniform vec4 crest_glow_color : source_color = vec4(0.08, 0.58, 0.46, 1.0);
-uniform float crest_glow_strength : hint_range(0.0, 4.0) = 0.45;
-uniform float crest_glow_emission_strength : hint_range(0.0, 2.0) = 0.08;
+uniform float crest_glow_strength : hint_range(0.0, 4.0) = 0.75;
+uniform float crest_glow_emission_strength : hint_range(0.0, 2.0) = 0.35;
 uniform float crest_height_start : hint_range(-2.0, 4.0) = 0.18;
 uniform float crest_height_end : hint_range(-2.0, 6.0) = 0.85;
 uniform float crest_slope_start : hint_range(0.0, 4.0) = 0.18;
@@ -50,7 +58,7 @@ uniform float crest_back_view_power : hint_range(0.25, 8.0) = 1.6;
 uniform float crest_back_normal_power : hint_range(0.25, 8.0) = 1.25;
 uniform float crest_low_sun_start : hint_range(-0.1, 1.0) = 0.02;
 uniform float crest_low_sun_end : hint_range(-0.1, 1.0) = 0.38;
-uniform int water_debug_view : hint_range(0, 9) = 0;
+uniform int water_debug_view : hint_range(0, 13) = 0;
 uniform bool planar_reflection_enabled = false;
 uniform sampler2D planar_reflection_texture;
 uniform mat4 planar_reflection_view_projection;
@@ -300,12 +308,20 @@ void fragment() {
 	float sky_reflection_amount = 0.0;
 	vec3 reflected_sky_color = vec3(0.0);
 	vec3 sky_reflection_radiance = vec3(0.0);
+	vec3 planar_reflection_radiance = vec3(0.0);
+	vec3 sun_scatter_radiance = vec3(0.0);
 	float sun_glitter_amount = 0.0;
+	float sun_scatter_amount = 0.0;
+	float sun_scatter_no_l = 0.0;
+	float view_sun_phase = 0.0;
+	float micro_slope_energy = 0.0;
 	float effective_reflection_roughness = 0.0;
 	float crest_height_mask = 0.0;
 	float crest_slope_mask = 0.0;
 	float crest_backlight_mask = 0.0;
 	float crest_glow_mask = 0.0;
+	vec2 macro_gradient = vec2(0.0);
+	vec3 macro_world_normal = vec3(0.0, 1.0, 0.0);
 
 	if (num_cascades > 0) {
 		float map_size = float(textureSize(normals, 0).x);
@@ -335,10 +351,17 @@ void fragment() {
 			vec4 active_sample = mix(previous_active_sample, current_active_sample, wave_blend_alpha);
 			vec4 pending_sample = mix(previous_pending_sample, current_pending_sample, wave_blend_alpha);
 			vec4 normal_sample = mix(active_sample, pending_sample, blend_state.z);
-			gradient += normal_sample.xyw * vec3(scales.ww, 1.0) * cascade_weight;
+			vec3 normal_signal = normal_sample.xyw * vec3(scales.ww, 1.0) * cascade_weight;
+			float tile_length = 1.0 / max(min(scales.x, scales.y), 0.0001);
+			float macro_weight = smoothstep(18.0, 80.0, tile_length);
+			gradient += normal_signal;
+			macro_gradient += normal_signal.xy * macro_weight;
+			micro_slope_energy += length(normal_signal.xy) * (1.0 - macro_weight);
 		}
 
 		raw_wave_slope = length(gradient.xy);
+		micro_slope_energy = saturate(micro_slope_energy * 0.75 + raw_wave_slope * 0.15);
+		macro_world_normal = normalize(vec3(-macro_gradient.x * 0.45, 1.0, -macro_gradient.y * 0.45));
 		float foam_signal = gradient.z * 0.75 * foam_intensity;
 		float foam_edge = foam_threshold + far_foam_threshold_boost * distance_lod;
 		float foam_distance_fade = mix(1.0, far_foam_coverage, distance_lod);
@@ -354,7 +377,8 @@ void fragment() {
 	}
 	foam_factor = max(max(foam_factor, hull_edge_foam), manual_foam);
 
-	vec3 base_albedo = mix(water_color.rgb, foam_color.rgb, foam_factor);
+	vec3 water_body_albedo = water_color.rgb * water_diffuse_strength;
+	vec3 base_albedo = mix(water_body_albedo, foam_color.rgb, foam_factor);
 	vec3 view_direction_world = safe_normalize_vec3(CAMERA_POSITION_WORLD - water_world_position, vec3(0.0, 0.0, 1.0));
 	vec3 sun_dir = safe_normalize_vec3(sky_sun_direction, vec3(0.0, 0.2, -1.0));
 	vec3 reflection_direction = reflect(-view_direction_world, world_normal);
@@ -366,7 +390,8 @@ void fragment() {
 		reflected_sky_color = sample_rough_procedural_environment(reflection_direction, effective_reflection_roughness);
 		float no_v = saturate(dot(world_normal, view_direction_world));
 		float sky_fresnel = fresnel_schlick(no_v, sky_reflection_f0, sky_reflection_fresnel_power);
-		sky_reflection_amount = saturate(sky_reflection_strength * sky_fresnel * clear_water_mask * mix(1.0, 1.18, distance_lod));
+		float rough_fresnel_floor = sky_reflection_f0 + effective_reflection_roughness * (0.05 + micro_slope_energy * 0.08);
+		sky_reflection_amount = saturate(sky_reflection_strength * max(sky_fresnel, rough_fresnel_floor) * clear_water_mask * mix(1.0, 1.18, distance_lod));
 		sky_reflection_radiance = reflected_sky_color * sky_reflection_amount;
 
 		vec3 half_vector = safe_normalize_vec3(view_direction_world + sun_dir, world_normal);
@@ -383,6 +408,13 @@ void fragment() {
 			* glitter_focus * sun_glitter_strength * sky_sun_visibility * glitter_low_boost * clear_water_mask;
 	}
 
+	sun_scatter_no_l = pow(saturate(dot(macro_world_normal, sun_dir)), sun_scatter_normal_power);
+	view_sun_phase = pow(saturate(dot(view_direction_world, sun_dir)), sun_scatter_phase_power);
+	float scatter_slope = mix(1.0, 0.5 + micro_slope_energy, sun_scatter_slope_strength);
+	float scatter_distance = 1.0 + distance_lod * sun_scatter_distance_strength;
+	sun_scatter_amount = sun_scatter_strength * sky_sun_visibility * sun_scatter_no_l * (sun_scatter_base + view_sun_phase) * scatter_slope * scatter_distance * clear_water_mask;
+	sun_scatter_radiance = water_scatter_color.rgb * sky_sun_color.rgb * sun_scatter_amount;
+
 	if (planar_reflection_enabled && planar_reflection_strength > 0.0) {
 		vec3 reflection_project_position = vec3(water_world_position.x, planar_reflection_plane_y, water_world_position.z);
 		vec4 reflection_clip = planar_reflection_view_projection * vec4(reflection_project_position, 1.0);
@@ -398,11 +430,11 @@ void fragment() {
 		vec4 reflected_sample = texture(planar_reflection_texture, reflection_uv);
 		float view_dot = clamp(dot(normalize(NORMAL), normalize(VIEW)), 0.0, 1.0);
 		float fresnel = pow(1.0 - view_dot, planar_reflection_fresnel_power);
-		float water_reflectance = 0.04 + 0.96 * fresnel;
+		float water_reflectance = sky_reflection_f0 + (1.0 - sky_reflection_f0) * fresnel;
 		float foam_mask = 1.0 - foam_factor * 0.85;
 		float reflected_geometry_mask = reflected_sample.a;
 		float reflection_amount = planar_reflection_strength * water_reflectance * foam_mask * reflection_in_bounds * reflected_geometry_mask;
-		base_albedo = mix(base_albedo, reflected_sample.rgb, reflection_amount);
+		planar_reflection_radiance = reflected_sample.rgb * reflection_amount;
 	}
 
 	vec3 crest_emission = vec3(0.0);
@@ -415,8 +447,7 @@ void fragment() {
 		crest_backlight_mask = back_view * back_normal * low_sun;
 		crest_glow_mask = crest_height_mask * crest_slope_mask * crest_backlight_mask * clear_water_mask;
 		vec3 crest_light = crest_glow_color.rgb * sky_sun_color.rgb;
-		base_albedo = mix(base_albedo, crest_light, saturate(crest_glow_mask * crest_glow_strength));
-		crest_emission = crest_light * crest_glow_mask * crest_glow_emission_strength;
+		crest_emission = crest_light * crest_glow_mask * crest_glow_strength * crest_glow_emission_strength;
 	}
 
 	if (water_debug_view > 0) {
@@ -439,6 +470,14 @@ void fragment() {
 			debug_color = vec3(reflection_direction.y * 0.5 + 0.5);
 		} else if (water_debug_view == 9) {
 			debug_color = vec3(effective_reflection_roughness);
+		} else if (water_debug_view == 10) {
+			debug_color = vec3(sun_scatter_amount);
+		} else if (water_debug_view == 11) {
+			debug_color = vec3(sun_scatter_no_l);
+		} else if (water_debug_view == 12) {
+			debug_color = vec3(view_sun_phase);
+		} else if (water_debug_view == 13) {
+			debug_color = vec3(micro_slope_energy);
 		}
 		ALBEDO = debug_color;
 		METALLIC = 0.0;
@@ -450,6 +489,6 @@ void fragment() {
 		METALLIC = 0.0;
 		ROUGHNESS = mix(clear_roughness, foam_roughness, max(foam_factor, wave_slope));
 		SPECULAR = mix(clear_specular, foam_specular, foam_factor);
-		EMISSION = sky_reflection_radiance + sky_sun_color.rgb * sun_glitter_amount + crest_emission;
+		EMISSION = sky_reflection_radiance + planar_reflection_radiance + sky_sun_color.rgb * sun_glitter_amount + sun_scatter_radiance + crest_emission;
 	}
 }

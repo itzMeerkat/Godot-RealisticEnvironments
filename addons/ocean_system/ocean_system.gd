@@ -31,8 +31,16 @@ const EXTERNAL_WIND_SPECTRUM_REFRESH_INTERVAL := 0.5
 		_set_water_shader_parameter(&'foam_color', foam_color)
 
 @export_group('Surface Shading')
+@export_range(0.0, 1.0, 0.01) var water_diffuse_strength := 0.08 :
+	set(value):
+		water_diffuse_strength = value
+		_set_water_shader_parameter(&'water_diffuse_strength', water_diffuse_strength)
+@export_color_no_alpha var water_scatter_color : Color = Color(0.045, 0.18, 0.20) :
+	set(value):
+		water_scatter_color = value
+		_set_water_shader_parameter(&'water_scatter_color', water_scatter_color)
 ## Roughness for clear water areas.
-@export_range(0.0, 1.0, 0.01) var clear_roughness := 0.06 :
+@export_range(0.0, 1.0, 0.01) var clear_roughness := 0.10 :
 	set(value):
 		clear_roughness = value
 		_set_water_shader_parameter(&'clear_roughness', clear_roughness)
@@ -42,12 +50,12 @@ const EXTERNAL_WIND_SPECTRUM_REFRESH_INTERVAL := 0.5
 		foam_roughness = value
 		_set_water_shader_parameter(&'foam_roughness', foam_roughness)
 ## Specular intensity for clear water areas.
-@export_range(0.0, 1.0, 0.01) var clear_specular := 0.85 :
+@export_range(0.0, 1.0, 0.01) var clear_specular := 0.25 :
 	set(value):
 		clear_specular = value
 		_set_water_shader_parameter(&'clear_specular', clear_specular)
 ## Specular intensity for foam-covered areas.
-@export_range(0.0, 1.0, 0.01) var foam_specular := 0.35 :
+@export_range(0.0, 1.0, 0.01) var foam_specular := 0.08 :
 	set(value):
 		foam_specular = value
 		_set_water_shader_parameter(&'foam_specular', foam_specular)
@@ -103,7 +111,7 @@ const EXTERNAL_WIND_SPECTRUM_REFRESH_INTERVAL := 0.5
 	set(value):
 		sky_reflection_enabled = value
 		_set_water_shader_parameter(&'sky_reflection_enabled', sky_reflection_enabled)
-@export_range(0.0, 2.0, 0.01) var sky_reflection_strength := 0.42 :
+@export_range(0.0, 2.0, 0.01) var sky_reflection_strength := 0.55 :
 	set(value):
 		sky_reflection_strength = value
 		_set_water_shader_parameter(&'sky_reflection_strength', sky_reflection_strength)
@@ -115,7 +123,7 @@ const EXTERNAL_WIND_SPECTRUM_REFRESH_INTERVAL := 0.5
 	set(value):
 		sky_reflection_f0 = value
 		_set_water_shader_parameter(&'sky_reflection_f0', sky_reflection_f0)
-@export_range(0.0, 3.0, 0.01) var sky_horizon_boost := 1.15 :
+@export_range(0.0, 3.0, 0.01) var sky_horizon_boost := 0.85 :
 	set(value):
 		sky_horizon_boost = value
 		_set_water_shader_parameter(&'sky_horizon_boost', sky_horizon_boost)
@@ -127,11 +135,11 @@ const EXTERNAL_WIND_SPECTRUM_REFRESH_INTERVAL := 0.5
 	set(value):
 		sky_reflection_far_roughness = value
 		_set_water_shader_parameter(&'sky_reflection_far_roughness', sky_reflection_far_roughness)
-@export_range(0.0, 4.0, 0.01) var sun_glitter_strength := 0.75 :
+@export_range(0.0, 4.0, 0.01) var sun_glitter_strength := 0.42 :
 	set(value):
 		sun_glitter_strength = value
 		_set_water_shader_parameter(&'sun_glitter_strength', sun_glitter_strength)
-@export_range(8.0, 512.0, 1.0) var sun_glitter_power := 96.0 :
+@export_range(8.0, 512.0, 1.0) var sun_glitter_power := 64.0 :
 	set(value):
 		sun_glitter_power = value
 		_set_water_shader_parameter(&'sun_glitter_power', sun_glitter_power)
@@ -139,6 +147,30 @@ const EXTERNAL_WIND_SPECTRUM_REFRESH_INTERVAL := 0.5
 	set(value):
 		sun_glitter_low_sun_boost = value
 		_set_water_shader_parameter(&'sun_glitter_low_sun_boost', sun_glitter_low_sun_boost)
+@export_range(0.0, 2.0, 0.01) var sun_scatter_strength := 0.24 :
+	set(value):
+		sun_scatter_strength = value
+		_set_water_shader_parameter(&'sun_scatter_strength', sun_scatter_strength)
+@export_range(0.0, 1.0, 0.01) var sun_scatter_base := 0.08 :
+	set(value):
+		sun_scatter_base = value
+		_set_water_shader_parameter(&'sun_scatter_base', sun_scatter_base)
+@export_range(0.25, 8.0, 0.05) var sun_scatter_phase_power := 2.0 :
+	set(value):
+		sun_scatter_phase_power = value
+		_set_water_shader_parameter(&'sun_scatter_phase_power', sun_scatter_phase_power)
+@export_range(0.25, 4.0, 0.05) var sun_scatter_normal_power := 0.75 :
+	set(value):
+		sun_scatter_normal_power = value
+		_set_water_shader_parameter(&'sun_scatter_normal_power', sun_scatter_normal_power)
+@export_range(0.0, 2.0, 0.01) var sun_scatter_slope_strength := 0.65 :
+	set(value):
+		sun_scatter_slope_strength = value
+		_set_water_shader_parameter(&'sun_scatter_slope_strength', sun_scatter_slope_strength)
+@export_range(0.0, 2.0, 0.01) var sun_scatter_distance_strength := 0.25 :
+	set(value):
+		sun_scatter_distance_strength = value
+		_set_water_shader_parameter(&'sun_scatter_distance_strength', sun_scatter_distance_strength)
 
 @export_group('Crest Glow')
 @export var crest_glow_enabled := true :
@@ -149,11 +181,11 @@ const EXTERNAL_WIND_SPECTRUM_REFRESH_INTERVAL := 0.5
 	set(value):
 		crest_glow_color = value
 		_set_water_shader_parameter(&'crest_glow_color', crest_glow_color)
-@export_range(0.0, 4.0, 0.01) var crest_glow_strength := 0.45 :
+@export_range(0.0, 4.0, 0.01) var crest_glow_strength := 0.75 :
 	set(value):
 		crest_glow_strength = value
 		_set_water_shader_parameter(&'crest_glow_strength', crest_glow_strength)
-@export_range(0.0, 2.0, 0.01) var crest_glow_emission_strength := 0.08 :
+@export_range(0.0, 2.0, 0.01) var crest_glow_emission_strength := 0.35 :
 	set(value):
 		crest_glow_emission_strength = value
 		_set_water_shader_parameter(&'crest_glow_emission_strength', crest_glow_emission_strength)
@@ -189,7 +221,7 @@ const EXTERNAL_WIND_SPECTRUM_REFRESH_INTERVAL := 0.5
 	set(value):
 		crest_low_sun_end = value
 		_set_water_shader_parameter(&'crest_low_sun_end', crest_low_sun_end)
-@export_enum('Normal:0', 'Sky Reflection:1', 'Sky Color:2', 'Sun Glitter:3', 'Crest Height:4', 'Crest Slope:5', 'Crest Backlight:6', 'Crest Final:7', 'Reflection Direction Y:8', 'Reflection Roughness:9') var water_debug_view := 0 :
+@export_enum('Normal:0', 'Sky Reflection:1', 'Sky Color:2', 'Sun Glitter:3', 'Crest Height:4', 'Crest Slope:5', 'Crest Backlight:6', 'Crest Final:7', 'Reflection Direction Y:8', 'Reflection Roughness:9', 'Sun Scatter:10', 'Sun Scatter NoL:11', 'View Sun Phase:12', 'Micro Slope Energy:13') var water_debug_view := 0 :
 	set(value):
 		water_debug_view = value
 		_set_water_shader_parameter(&'water_debug_view', water_debug_view)
@@ -447,6 +479,8 @@ func _ready() -> void:
 	_set_water_shader_parameter(&'water_color', water_color)
 	_set_water_shader_parameter(&'foam_color', foam_color)
 	_set_water_shader_parameter(&'wave_blend_alpha', 1.0)
+	_set_water_shader_parameter(&'water_diffuse_strength', water_diffuse_strength)
+	_set_water_shader_parameter(&'water_scatter_color', water_scatter_color)
 	_set_water_shader_parameter(&'clear_roughness', clear_roughness)
 	_set_water_shader_parameter(&'foam_roughness', foam_roughness)
 	_set_water_shader_parameter(&'clear_specular', clear_specular)
@@ -592,6 +626,8 @@ func get_sky_source() -> Node:
 	return sky_source
 
 func _update_sky_shading_static_parameters() -> void:
+	_set_water_shader_parameter(&'water_diffuse_strength', water_diffuse_strength)
+	_set_water_shader_parameter(&'water_scatter_color', water_scatter_color)
 	_set_water_shader_parameter(&'sky_reflection_enabled', sky_reflection_enabled)
 	_set_water_shader_parameter(&'sky_reflection_strength', sky_reflection_strength)
 	_set_water_shader_parameter(&'sky_reflection_fresnel_power', sky_reflection_fresnel_power)
@@ -602,6 +638,12 @@ func _update_sky_shading_static_parameters() -> void:
 	_set_water_shader_parameter(&'sun_glitter_strength', sun_glitter_strength)
 	_set_water_shader_parameter(&'sun_glitter_power', sun_glitter_power)
 	_set_water_shader_parameter(&'sun_glitter_low_sun_boost', sun_glitter_low_sun_boost)
+	_set_water_shader_parameter(&'sun_scatter_strength', sun_scatter_strength)
+	_set_water_shader_parameter(&'sun_scatter_base', sun_scatter_base)
+	_set_water_shader_parameter(&'sun_scatter_phase_power', sun_scatter_phase_power)
+	_set_water_shader_parameter(&'sun_scatter_normal_power', sun_scatter_normal_power)
+	_set_water_shader_parameter(&'sun_scatter_slope_strength', sun_scatter_slope_strength)
+	_set_water_shader_parameter(&'sun_scatter_distance_strength', sun_scatter_distance_strength)
 	_set_water_shader_parameter(&'crest_glow_enabled', crest_glow_enabled)
 	_set_water_shader_parameter(&'crest_glow_color', crest_glow_color)
 	_set_water_shader_parameter(&'crest_glow_strength', crest_glow_strength)
