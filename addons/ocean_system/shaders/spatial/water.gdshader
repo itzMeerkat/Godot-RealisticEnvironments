@@ -141,7 +141,9 @@ float get_hull_cutout_sdf(vec3 world_position, int index) {
 float get_hull_cutout_height_mask(vec3 world_position, int index) {
 	vec4 vertical = hull_cutout_verticals[index];
 	float height_feather = max(vertical.z, 0.001);
-	return 1.0 - smoothstep(vertical.y, vertical.y + height_feather, world_position.y);
+	float lower_mask = smoothstep(vertical.x - height_feather, vertical.x, world_position.y);
+	float upper_mask = 1.0 - smoothstep(vertical.y, vertical.y + height_feather, world_position.y);
+	return lower_mask * upper_mask;
 }
 
 float sample_manual_foam(vec3 world_position) {

@@ -12,10 +12,6 @@ extends Resource
 @export var sky_top_gradient : Gradient
 ## Horizon sky color across the day.
 @export var sky_horizon_gradient : Gradient
-## Optional ocean water color across the day.
-@export var water_color_gradient : Gradient
-## Optional ocean foam color across the day.
-@export var foam_color_gradient : Gradient
 ## Sun light energy across the day.
 @export var sun_energy_curve : Curve
 ## Moon light energy across the day.
@@ -48,16 +44,6 @@ func sample_sky_top_color(time_of_day : float) -> Color:
 func sample_sky_horizon_color(time_of_day : float) -> Color:
 	_ensure_defaults()
 	return sky_horizon_gradient.sample(_wrap_time(time_of_day))
-
-
-func sample_water_color(time_of_day : float) -> Color:
-	_ensure_defaults()
-	return water_color_gradient.sample(_wrap_time(time_of_day))
-
-
-func sample_foam_color(time_of_day : float) -> Color:
-	_ensure_defaults()
-	return foam_color_gradient.sample(_wrap_time(time_of_day))
 
 
 func sample_sun_energy(time_of_day : float) -> float:
@@ -112,22 +98,6 @@ func _ensure_defaults() -> void:
 			Color(0.58, 0.78, 0.94),
 			Color(1.0, 0.36, 0.18),
 			Color(0.015, 0.018, 0.035),
-		])
-	if water_color_gradient == null:
-		water_color_gradient = _make_gradient([
-			Color(0.015, 0.025, 0.045),
-			Color(0.05, 0.08, 0.10),
-			Color(0.10, 0.15, 0.18),
-			Color(0.05, 0.07, 0.09),
-			Color(0.015, 0.025, 0.045),
-		])
-	if foam_color_gradient == null:
-		foam_color_gradient = _make_gradient([
-			Color(0.28, 0.32, 0.40),
-			Color(0.82, 0.63, 0.48),
-			Color(0.73, 0.67, 0.62),
-			Color(0.82, 0.58, 0.45),
-			Color(0.28, 0.32, 0.40),
 		])
 	if sun_energy_curve == null:
 		sun_energy_curve = _make_curve([

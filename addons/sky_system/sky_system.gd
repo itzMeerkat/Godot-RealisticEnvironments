@@ -103,19 +103,6 @@ const MIDNIGHT_PROFILE_TIME := 0.0
 		radiance_sun_halo_strength = value
 		_update_sky()
 
-@export_group("Ocean Integration")
-## Optional ocean node whose water_color and foam_color can be driven by SkyProfile.
-@export var ocean_path : NodePath :
-	set(value):
-		ocean_path = value
-		_ocean = null
-		_update_sky()
-## If enabled, writes profile water/foam colors into the referenced ocean node.
-@export var drive_ocean_colors := false :
-	set(value):
-		drive_ocean_colors = value
-		_update_sky()
-
 @onready var _world_environment := $WorldEnvironment as WorldEnvironment
 @onready var _sun_light := $SunLight as DirectionalLight3D
 @onready var _moon_light := $MoonLight as DirectionalLight3D
@@ -123,7 +110,6 @@ const MIDNIGHT_PROFILE_TIME := 0.0
 @onready var _moon_visual := $MoonVisual as MeshInstance3D
 @onready var _starfield := $Starfield as MeshInstance3D
 
-var _ocean : Node
 var _elapsed_time := 0.0
 var _sun_hour_angle := 0.0
 var _moon_phase := 1.0
@@ -246,7 +232,6 @@ func _update_sky() -> void:
 	_update_environment(active_profile, sun_direction, moon_direction, sun_visibility, moon_visibility)
 	_update_starfield_visibility(active_profile.sample_star_visibility(_star_visibility) * star_brightness)
 	_update_visual_colors(active_profile, sun_visibility, moon_visibility)
-	_update_ocean_colors(active_profile)
 	_update_visual_positions()
 	lighting_changed.emit()
 
@@ -362,18 +347,6 @@ func _position_body_visual(visual : MeshInstance3D, origin : Vector3, direction 
 	visual.look_at(origin, _get_look_up(direction))
 
 
-func _update_ocean_colors(active_profile) -> void:
-	if not drive_ocean_colors:
-		return
-	var ocean := _get_ocean()
-	if ocean == null:
-		return
-	if ocean.get(&"water_color") != null:
-		ocean.set(&"water_color", active_profile.sample_water_color(_profile_sample_time))
-	if ocean.get(&"foam_color") != null:
-		ocean.set(&"foam_color", active_profile.sample_foam_color(_profile_sample_time))
-
-
 func _get_solar_equatorial_coordinates() -> Vector2:
 	var obliquity := deg_to_rad(axis_tilt_degrees)
 	var solar_longitude := _get_solar_ecliptic_longitude()
@@ -476,12 +449,6 @@ func _get_active_camera() -> Camera3D:
 	if viewport == null:
 		return null
 	return viewport.get_camera_3d()
-
-
-func _get_ocean() -> Node:
-	if _ocean == null and not ocean_path.is_empty():
-		_ocean = get_node_or_null(ocean_path)
-	return _ocean
 
 
 func _get_profile():

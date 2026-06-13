@@ -3,65 +3,76 @@ class_name WaterCutoutTrapezoid
 extends MeshInstance3D
 ## Editable top-view trapezoid water cutout segment.
 
-signal cutout_changed
-
 const DEBUG_COLOR := Color(0.2, 0.7, 1.0, 0.9)
 
+## Enables this trapezoid cutout. Disabled cutouts stay editable and visible in
+## debug mode but are not submitted to the ocean shader.
 @export var enabled := true :
 	set(value):
 		enabled = value
-		_emit_cutout_changed()
 
+## Half of the trapezoid length along local Z, in meters. Increase this to cover
+## more of the hull length; decrease it if water disappears beyond the hull.
 @export_range(0.01, 100.0, 0.01, "or_greater") var half_length := 1.0 :
 	set(value):
 		half_length = maxf(value, 0.01)
 		_rebuild_mesh()
-		_emit_cutout_changed()
 
+## Half width at the local -Z end of the trapezoid, in meters. This is usually
+## one end of the hull segment, such as bow-side or stern-side width.
 @export_range(0.01, 100.0, 0.01, "or_greater") var start_half_width := 1.0 :
 	set(value):
 		start_half_width = maxf(value, 0.01)
 		_rebuild_mesh()
-		_emit_cutout_changed()
 
+## Half width at the local +Z end of the trapezoid, in meters. Use different
+## start/end widths to approximate a tapering hull instead of a rectangle.
 @export_range(0.01, 100.0, 0.01, "or_greater") var end_half_width := 1.0 :
 	set(value):
 		end_half_width = maxf(value, 0.01)
 		_rebuild_mesh()
-		_emit_cutout_changed()
 
+## Lower height boundary relative to this cutout's origin. Water below this
+## boundary fades back in, which helps when the hull lifts partly out of water.
 @export_range(-20.0, 20.0, 0.01) var vertical_min_offset := -1.0 :
 	set(value):
 		vertical_min_offset = value
 		_rebuild_mesh()
-		_emit_cutout_changed()
 
+## Upper height boundary relative to this cutout's origin. Water above this
+## boundary fades back in so tall waves are not hidden too far up the hull.
 @export_range(-20.0, 20.0, 0.01) var vertical_max_offset := 0.35 :
 	set(value):
 		vertical_max_offset = value
 		_rebuild_mesh()
-		_emit_cutout_changed()
 
+## Vertical soft edge distance for both min and max height boundaries. Larger
+## values hide hard transitions but can mask more water around the hull.
 @export_range(0.001, 10.0, 0.01, "or_greater") var height_feather := 0.35 :
 	set(value):
 		height_feather = maxf(value, 0.001)
-		_emit_cutout_changed()
 
+## Horizontal feather width in meters around the trapezoid outline. This does
+## not change the discarded area, but controls how much edge foam blends over it.
 @export_range(0.0, 4.0, 0.01, "or_greater") var feather := 0.85 :
 	set(value):
 		feather = maxf(value, 0.0)
-		_emit_cutout_changed()
 
+## Foam amount added at the cutout edge. Higher values hide the boundary better;
+## lower values keep the hull-water contact cleaner and less white.
 @export_range(0.0, 1.0, 0.01) var foam_amount := 0.75 :
 	set(value):
 		foam_amount = clampf(value, 0.0, 1.0)
-		_emit_cutout_changed()
 
+## Shows the editable cutout wireframe in the editor. The wireframe is only a
+## helper mesh and is not rendered as water.
 @export var debug_draw := true :
 	set(value):
 		debug_draw = value
 		_update_debug_visibility()
 
+## Shows the helper wireframe at runtime. Leave off for gameplay and turn on
+## only when tuning cutouts in a running scene.
 @export var debug_draw_in_game := false :
 	set(value):
 		debug_draw_in_game = value
@@ -72,19 +83,12 @@ var _debug_material : StandardMaterial3D
 
 
 func _ready() -> void:
-	set_notify_transform(true)
 	cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	extra_cull_margin = 10000.0
 	mesh = _debug_mesh
 	_rebuild_mesh()
 	_update_material()
 	_update_debug_visibility()
-
-
-func _notification(what: int) -> void:
-	if what == NOTIFICATION_TRANSFORM_CHANGED:
-		_emit_cutout_changed()
-
 
 func get_exclusion_segment() -> Dictionary:
 	return {
@@ -138,8 +142,3 @@ func _update_material() -> void:
 
 func _update_debug_visibility() -> void:
 	visible = debug_draw and (Engine.is_editor_hint() or debug_draw_in_game)
-
-
-func _emit_cutout_changed() -> void:
-	if is_inside_tree():
-		cutout_changed.emit()

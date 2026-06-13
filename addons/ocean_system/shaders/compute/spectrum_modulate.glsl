@@ -52,7 +52,6 @@ float dispersion_relation(in float k) {
 #define FFT_DATA(id, layer) (data[(id.z)*map_size*map_size*NUM_SPECTRA*2 + (layer)*map_size*map_size + (id.y)*map_size + (id.x)])
 void main() {
 	const uint map_size = gl_NumWorkGroups.x * gl_WorkGroupSize.x;
-	const uint num_stages = findMSB(map_size); // Equivalent: log2(map_size) (assuming map_size is a power of 2)
 	const ivec2 dims = imageSize(spectrum).xy;
 	const ivec3 id = ivec3(gl_GlobalInvocationID.xy, cascade_index);
 

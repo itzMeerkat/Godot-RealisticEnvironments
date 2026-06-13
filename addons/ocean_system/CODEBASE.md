@@ -67,7 +67,7 @@ compute pass 顺序是：
 
 ## 水面查询
 
-`sample_water_surface()` 和 `sample_water_surface_batch()` 通过 GPU point-query 返回高度、法线、位移与表面速度。批量接口使用 `surface_query.glsl`：调用方提交世界坐标与 owner，`OceanSystem` 在 `_process()` 中把本帧所有 owner 的请求合并到一个大 point buffer，一次 compute dispatch 后只读回一个 sample buffer，再按 offset/count 分发缓存结果。浮力系统走该路径；当主 RenderingDevice 的异步结果尚未就绪时返回空结果，不生成静水替代样本。
+`sample_water_surface()` 和 `sample_water_surface_batch()` 通过 GPU point-query 返回高度、法线、位移与表面速度。批量接口使用 `surface_query.glsl`：调用方提交世界坐标与稳定 owner，`OceanSystem` 在 `_process()` 中把本帧所有 owner 的请求合并到一个大 point buffer，一次 compute dispatch 后只读回一个 sample buffer，再按 offset/count 分发缓存结果。浮力系统走该路径；当主 RenderingDevice 的异步结果尚未就绪时返回空结果，不生成静水替代样本。
 
 ## 依赖边界
 

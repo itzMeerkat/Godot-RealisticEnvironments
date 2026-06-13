@@ -40,12 +40,10 @@ layout(rgba16f, set = 0, binding = 4) restrict readonly uniform image2DArray pre
 layout(push_constant) restrict readonly uniform PushConstants {
 	uint point_count;
 	uint cascade_count;
-	uint map_size;
 	float water_level;
 	float wave_blend_alpha;
 	float wave_blend_duration;
 	float normal_sample_distance;
-	float _pad0;
 };
 
 vec4 sample_current_layer_bilinear(int layer, vec2 uv) {

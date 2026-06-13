@@ -44,11 +44,11 @@ The runtime ocean scene has no ImGui dependency. The demo scene uses an optional
 The scene exposes GPU batched water queries for buoyancy and gameplay:
 
 ```gdscript
-func sample_water_surface(world_position: Vector3) -> WaterSurfaceSample
-func sample_water_surface_batch(points: PackedVector3Array, request_owner: Object = null) -> Array[WaterSurfaceSample]
+func sample_water_surface(world_position: Vector3, request_owner: Object) -> WaterSurfaceSample
+func sample_water_surface_batch(points: PackedVector3Array, request_owner: Object) -> Array[WaterSurfaceSample]
 ```
 
-These functions use world-space positions, so boats and floating objects can sample the water consistently even when the render mesh follows a moving camera. Point queries avoid reading full displacement textures back to the CPU.
+These functions use world-space positions, so boats and floating objects can sample the water consistently even when the render mesh follows a moving camera. Pass a stable request owner, usually `self`, so asynchronous query results are routed back to the right caller. Point queries avoid reading full displacement textures back to the CPU.
 
 ### Performance and smoothing changes
 The wave update path now supports lower simulation update rates while preserving smoother visuals:

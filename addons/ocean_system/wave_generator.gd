@@ -23,7 +23,6 @@ var write_output_index := 1
 var pass_parameters : Array[WaveCascadeParameters]
 var pass_num_cascades_remaining : int
 var pass_external_wind_speed := 0.0
-var pass_external_wind_direction := 0.0
 var pass_use_external_wind := false
 var pending_update_delta := 0.0
 
@@ -65,6 +64,7 @@ func init_gpu(num_cascades : int) -> void:
 	var spectrum_modulate_set := context.create_descriptor_set([descriptors[&'spectrum']], spectrum_modulate_shader, 0)
 	var fft_butterfly_set := context.create_descriptor_set([descriptors[&'butterfly_factors']], fft_butterfly_shader, 0)
 	var fft_compute_set := context.create_descriptor_set([descriptors[&'butterfly_factors'], descriptors[&'fft_buffer']], fft_compute_shader, 0)
+	var transpose_set := context.create_descriptor_set([descriptors[&'fft_buffer']], transpose_shader, 0)
 	fft_buffer_set = context.create_descriptor_set([descriptors[&'fft_buffer']], spectrum_modulate_shader, 1)
 	for i in range(output_descriptors.size()):
 		var output := output_descriptors[i]
@@ -79,7 +79,7 @@ func init_gpu(num_cascades : int) -> void:
 	pipelines[&'spectrum_modulate'] = context.create_pipeline([groups_16, groups_16, 1], [spectrum_modulate_set, fft_buffer_set], spectrum_modulate_shader)
 	pipelines[&'fft_butterfly'] = context.create_pipeline([butterfly_groups, num_fft_stages, 1], [fft_butterfly_set], fft_butterfly_shader)
 	pipelines[&'fft_compute'] = context.create_pipeline([1, map_size, 4], [fft_compute_set], fft_compute_shader)
-	pipelines[&'transpose'] = context.create_pipeline([int(map_size / 32), int(map_size / 32), 4], [fft_compute_set], transpose_shader)
+	pipelines[&'transpose'] = context.create_pipeline([int(map_size / 32), int(map_size / 32), 4], [transpose_set], transpose_shader)
 	pipelines[&'fft_unpack'] = context.create_pipeline([groups_16, groups_16, 1], [unpack_sets[write_output_index], fft_buffer_set], fft_unpack_shader)
 
 	# We only need to generate butterfly factors once for each map_size.
@@ -155,7 +155,6 @@ func update(delta : float, parameters : Array[WaveCascadeParameters], external_w
 
 	pass_parameters = parameters
 	pass_external_wind_speed = external_wind_speed
-	pass_external_wind_direction = external_wind_direction
 	pass_use_external_wind = use_external_wind
 	pass_num_cascades_remaining = pass_cascade_count
 	return true

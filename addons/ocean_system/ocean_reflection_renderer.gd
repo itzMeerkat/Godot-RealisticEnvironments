@@ -3,6 +3,8 @@ extends Node
 
 const DEFAULT_WATER_LAYER := 20
 
+## Enables the offscreen mirrored camera pass. When disabled, the viewport stops
+## rendering and the water material receives zero planar reflection strength.
 @export var enabled := true :
 	set(value):
 		enabled = value
@@ -11,35 +13,49 @@ const DEFAULT_WATER_LAYER := 20
 			_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS if enabled else SubViewport.UPDATE_DISABLED
 		_update_water_material()
 
+## Maximum side length of the planar reflection texture in pixels. Larger values
+## sharpen reflected objects but increase render cost and memory use.
 @export_range(128, 4096, 1) var texture_size := 1024 :
 	set(value):
 		texture_size = value
 		_update_viewport_size()
 
+## Multiplier applied to the main viewport size before clamping to texture_size.
+## Lower values are cheaper and blurrier; higher values preserve detail.
 @export_range(0.1, 1.0, 0.05) var resolution_scale := 0.5 :
 	set(value):
 		resolution_scale = value
 		_update_viewport_size()
 
+## Overall brightness of dynamic geometry reflections. This is multiplied by the
+## water Fresnel term, so grazing angles still appear stronger.
 @export_range(0.0, 1.0, 0.01) var reflection_strength := 0.42 :
 	set(value):
 		reflection_strength = value
 		_update_water_material()
 
+## UV distortion amount from wave normals. Higher values make reflected objects
+## wobble and break up more; too high can make reflections hard to read.
 @export_range(0.0, 0.08, 0.001) var reflection_distortion := 0.018 :
 	set(value):
 		reflection_distortion = value
 		_update_water_material()
 
+## Fresnel falloff exponent for planar reflections. Higher values concentrate
+## reflections near grazing angles; lower values make them visible head-on.
 @export_range(0.25, 8.0, 0.05) var fresnel_power := 4.0 :
 	set(value):
 		fresnel_power = value
 		_update_water_material()
 
+## Render layers visible to the reflection camera. The configured water layer is
+## always removed so the ocean does not recursively reflect itself.
 @export_flags_3d_render var reflection_cull_mask := 0xFFFFF :
 	set(value):
 		reflection_cull_mask = value
 		_update_water_material()
+## Render layer assigned to the water mesh for exclusion from the reflection
+## camera. Keep this layer reserved for water if planar reflections are enabled.
 @export_range(1, 20, 1) var water_layer := DEFAULT_WATER_LAYER :
 	set(value):
 		water_layer = value
