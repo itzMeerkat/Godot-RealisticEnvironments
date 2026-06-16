@@ -544,8 +544,8 @@ const EXTERNAL_WIND_SPECTRUM_REFRESH_INTERVAL := 0.5
 	set(value):
 		far_foam_coverage = value
 		_update_far_lod_shader_parameters()
-## Extra foam threshold added with distance. Raise to remove scattered far foam;
-## lower if distant whitecaps disappear too aggressively.
+## Extra foam edge softness added with distance. Raise to smooth distant foam;
+## lower if far whitecaps become too broad or faded.
 @export_range(0.0, 1.0, 0.01) var far_foam_threshold_boost := 0.2 :
 	set(value):
 		far_foam_threshold_boost = value

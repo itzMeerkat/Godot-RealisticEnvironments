@@ -76,7 +76,7 @@ uniform float far_lod_curve : hint_range(0.25, 4.0) = 1.8;
 uniform float far_low_frequency_tile_length : hint_range(1.0, 512.0) = 32.0;
 uniform float far_normal_strength : hint_range(0.0, 2.0) = 0.14;
 uniform float far_foam_coverage : hint_range(0.0, 1.0) = 0.24;
-uniform float far_foam_threshold_boost : hint_range(0.0, 1.0) = 0.2;
+uniform float far_foam_threshold_boost : hint_range(0.0, 1.0) = 0.2; // Historical name: widens far foam softness.
 uniform int hull_cutout_count = 0;
 uniform vec4 hull_cutout_centers[MAX_HULL_CUTOUTS]; // xyz center, feather in meters
 uniform vec4 hull_cutout_axes[MAX_HULL_CUTOUTS];    // right.xz, forward.xz
@@ -300,8 +300,10 @@ void fragment() {
 		hull_edge_foam = max(hull_edge_foam, (1.0 - smoothstep(0.0, feather, cutout_sdf)) * shape.z * height_mask);
 	}
 
-	float dist = distance_to_camera;
-	vec3 gradient = vec3(0);
+	float dist = length(water_world_position.xz - CAMERA_POSITION_WORLD.xz);
+	float fragment_distance_lod = get_distance_lod(dist);
+	vec2 gradient = vec2(0.0);
+	float foam_signal = 0.0;
 	float wave_slope = 0.0;
 	foam_factor = 0.0;
 	float manual_foam = sample_manual_foam(water_world_position);
@@ -331,7 +333,7 @@ void fragment() {
 		uint cascade_count = min(uint(num_cascades), uint(fragment_cascade_limit));
 		for (uint i = 0U; i < cascade_count; ++i) {
 			vec4 scales = map_scales[i];
-			float cascade_weight = get_cascade_lod_weight(scales, distance_lod);
+			float cascade_weight = get_cascade_lod_weight(scales, fragment_distance_lod);
 			if (cascade_weight <= 0.0)
 				continue;
 			vec4 blend_state = spectrum_blend_states[i];
@@ -353,27 +355,28 @@ void fragment() {
 			vec4 active_sample = mix(previous_active_sample, current_active_sample, wave_blend_alpha);
 			vec4 pending_sample = mix(previous_pending_sample, current_pending_sample, wave_blend_alpha);
 			vec4 normal_sample = mix(active_sample, pending_sample, blend_state.z);
-			vec3 normal_signal = normal_sample.xyw * vec3(scales.ww, 1.0) * cascade_weight;
+			vec2 normal_signal = normal_sample.xy * scales.w * cascade_weight;
 			float tile_length = 1.0 / max(min(scales.x, scales.y), 0.0001);
 			float macro_weight = smoothstep(18.0, 80.0, tile_length);
 			gradient += normal_signal;
-			macro_gradient += normal_signal.xy * macro_weight;
-			micro_slope_energy += length(normal_signal.xy) * (1.0 - macro_weight);
+			foam_signal += normal_sample.w * cascade_weight;
+			macro_gradient += normal_signal * macro_weight;
+			micro_slope_energy += length(normal_signal) * (1.0 - macro_weight);
 		}
 
-		raw_wave_slope = length(gradient.xy);
+		raw_wave_slope = length(gradient);
 		micro_slope_energy = saturate(micro_slope_energy * 0.75 + raw_wave_slope * 0.15);
 		macro_world_normal = normalize(vec3(-macro_gradient.x * 0.45, 1.0, -macro_gradient.y * 0.45));
-		float foam_signal = gradient.z * 0.75 * foam_intensity;
-		float foam_edge = foam_threshold + far_foam_threshold_boost * distance_lod;
-		float foam_distance_fade = mix(1.0, far_foam_coverage, distance_lod);
-		foam_factor = smoothstep(foam_edge, foam_edge + foam_softness, foam_signal) * exp(-dist*0.0075) * foam_distance_fade;
+		float visible_foam_signal = foam_signal * 0.75 * foam_intensity;
+		float far_foam_softness = foam_softness * (1.0 + far_foam_threshold_boost * fragment_distance_lod * 4.0);
+		float foam_distance_fade = mix(1.0, far_foam_coverage, fragment_distance_lod);
+		foam_factor = smoothstep(foam_threshold, foam_threshold + far_foam_softness, visible_foam_signal) * exp(-dist*0.0075) * foam_distance_fade;
 		foam_factor = max(max(foam_factor, hull_edge_foam), manual_foam);
-		wave_slope = clamp(length(gradient.xy) * slope_roughness_strength, 0.0, 1.0);
+		wave_slope = clamp(length(gradient) * slope_roughness_strength, 0.0, 1.0);
 
 		float near_normal_fade = exp(-dist*0.0175);
-		float far_normal_fade = max(far_normal_strength * 0.35, 0.015);
-		gradient *= mix(0.015, normal_strength, mix(near_normal_fade, far_normal_fade, distance_lod));
+		float far_normal_fade = far_normal_strength * 0.35;
+		gradient *= normal_strength * mix(max(near_normal_fade, 0.015), far_normal_fade, fragment_distance_lod);
 		world_normal = normalize(vec3(-gradient.x, 1.0, -gradient.y));
 		NORMAL = (VIEW_MATRIX * vec4(world_normal, 0.0)).xyz;
 	}
@@ -386,16 +389,18 @@ void fragment() {
 	vec3 reflection_direction = reflect(-view_direction_world, world_normal);
 	float low_sun = sky_low_sun_factor(sun_dir);
 	float clear_water_mask = 1.0 - foam_factor * 0.85;
+	float no_v = saturate(dot(world_normal, view_direction_world));
+	effective_reflection_roughness = saturate(clear_roughness + wave_slope * sky_reflection_roughness_strength + fragment_distance_lod * sky_reflection_far_roughness);
 
 	if (sky_reflection_enabled && sky_reflection_strength > 0.0) {
-		effective_reflection_roughness = saturate(clear_roughness + wave_slope * sky_reflection_roughness_strength + distance_lod * sky_reflection_far_roughness);
 		reflected_sky_color = sample_rough_procedural_environment(reflection_direction, effective_reflection_roughness);
-		float no_v = saturate(dot(world_normal, view_direction_world));
 		float sky_fresnel = fresnel_schlick(no_v, sky_reflection_f0, sky_reflection_fresnel_power);
 		float rough_fresnel_floor = sky_reflection_f0 + effective_reflection_roughness * (0.05 + micro_slope_energy * 0.08);
-		sky_reflection_amount = saturate(sky_reflection_strength * max(sky_fresnel, rough_fresnel_floor) * clear_water_mask * mix(1.0, 1.18, distance_lod));
+		sky_reflection_amount = saturate(sky_reflection_strength * max(sky_fresnel, rough_fresnel_floor) * clear_water_mask * mix(1.0, 1.18, fragment_distance_lod));
 		sky_reflection_radiance = reflected_sky_color * sky_reflection_amount;
+	}
 
+	if (sun_glitter_strength > 0.0) {
 		vec3 half_vector = safe_normalize_vec3(view_direction_world + sun_dir, world_normal);
 		float no_l = saturate(dot(world_normal, sun_dir));
 		float no_h = saturate(dot(world_normal, half_vector));
@@ -413,7 +418,7 @@ void fragment() {
 	sun_scatter_no_l = pow(saturate(dot(macro_world_normal, sun_dir)), sun_scatter_normal_power);
 	view_sun_phase = pow(saturate(dot(view_direction_world, sun_dir)), sun_scatter_phase_power);
 	float scatter_slope = mix(1.0, 0.5 + micro_slope_energy, sun_scatter_slope_strength);
-	float scatter_distance = 1.0 + distance_lod * sun_scatter_distance_strength;
+	float scatter_distance = 1.0 + fragment_distance_lod * sun_scatter_distance_strength;
 	sun_scatter_amount = sun_scatter_strength * sky_sun_visibility * sun_scatter_no_l * (sun_scatter_base + view_sun_phase) * scatter_slope * scatter_distance * clear_water_mask;
 	sun_scatter_radiance = water_scatter_color.rgb * sky_sun_color.rgb * sun_scatter_amount;
 
@@ -426,7 +431,7 @@ void fragment() {
 		}
 		vec2 reflection_uv = reflection_clip.xy / reflection_w * 0.5 + 0.5;
 		reflection_uv.y = 1.0 - reflection_uv.y;
-		reflection_uv += gradient.xy * planar_reflection_distortion;
+		reflection_uv += gradient * planar_reflection_distortion;
 		vec2 reflection_bounds = step(vec2(0.0), reflection_uv) * step(reflection_uv, vec2(1.0));
 		float reflection_in_bounds = reflection_bounds.x * reflection_bounds.y * step(0.0001, reflection_clip.w);
 		vec4 reflected_sample = texture(planar_reflection_texture, reflection_uv);

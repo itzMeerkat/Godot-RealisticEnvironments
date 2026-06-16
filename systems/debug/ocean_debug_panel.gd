@@ -498,7 +498,7 @@ func _add_far_lod_controls(parent : VBoxContainer) -> void:
 			water.far_foam_coverage = value
 	)
 
-	var far_foam_threshold := _add_float_row(parent, "Far Foam Threshold", "Additional foam threshold applied as the surface enters far LOD.", 0.0, 1.0, 0.01, false)
+	var far_foam_threshold := _add_float_row(parent, "Far Foam Softness", "Additional foam edge softness applied as the surface enters far LOD.", 0.0, 1.0, 0.01, false)
 	far_foam_threshold.name = "FarFoamThresholdBoost"
 	far_foam_threshold.value_changed.connect(func(value : float) -> void:
 		if not _is_syncing and water:

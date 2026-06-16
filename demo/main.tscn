@@ -155,7 +155,7 @@ shader_parameter/displacements = SubResource("Texture2DArrayRD_6g5ly")
 shader_parameter/normals = SubResource("Texture2DArrayRD_ucu34")
 shader_parameter/previous_displacements = SubResource("Texture2DArrayRD_f8mb2")
 shader_parameter/previous_normals = SubResource("Texture2DArrayRD_ykfgg")
-shader_parameter/wave_blend_alpha = 1.0
+shader_parameter/wave_blend_alpha = 0.5177440000001394
 
 [sub_resource type="Resource" id="Resource_adqv5"]
 script = ExtResource("2_pw5n6")
