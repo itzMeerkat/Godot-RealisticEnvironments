@@ -284,13 +284,13 @@ const EXTERNAL_WIND_SPECTRUM_REFRESH_INTERVAL := 0.5
 		_set_water_shader_parameter(&'crest_slope_end', crest_slope_end)
 ## View-angle exponent for backlit crest glow. Higher values require the camera
 ## to look more directly against the sun to see the glow.
-@export_range(0.25, 8.0, 0.05) var crest_back_view_power := 1.6 :
+@export_range(0.1, 8.0, 0.05) var crest_back_view_power := 1.6 :
 	set(value):
 		crest_back_view_power = value
 		_set_water_shader_parameter(&'crest_back_view_power', crest_back_view_power)
 ## Normal-angle exponent for backlit crest glow. Higher values require crests to
 ## be more strongly back-facing relative to the sun.
-@export_range(0.25, 8.0, 0.05) var crest_back_normal_power := 1.25 :
+@export_range(0.1, 8.0, 0.05) var crest_back_normal_power := 1.25 :
 	set(value):
 		crest_back_normal_power = value
 		_set_water_shader_parameter(&'crest_back_normal_power', crest_back_normal_power)

@@ -83,16 +83,16 @@ shader_parameter/clear_specular = 0.25
 shader_parameter/foam_specular = 0.08
 shader_parameter/slope_roughness_strength = 0.55
 shader_parameter/normal_strength = 1.0
-shader_parameter/foam_intensity = 0.34
+shader_parameter/foam_intensity = 0.5
 shader_parameter/foam_threshold = 0.05
 shader_parameter/foam_softness = 0.35
-shader_parameter/sky_top_color = Color(0.31241983, 0.3237901, 0.49137026, 1)
-shader_parameter/sky_horizon_color = Color(0.9167347, 0.52344024, 0.36274058, 1)
-shader_parameter/sky_ground_horizon_color = Color(0.687551, 0.39258018, 0.27205545, 1)
-shader_parameter/sky_ground_bottom_color = Color(0.14058892, 0.14570554, 0.22111662, 1)
-shader_parameter/sky_sun_direction = Vector3(1, 5.015694e-17, 3.512027e-17)
-shader_parameter/sky_sun_color = Color(1, 0.5751604, 0.33895046, 1)
-shader_parameter/sky_sun_visibility = 0.406738281250001
+shader_parameter/sky_top_color = Color(0.12, 0.42, 0.78, 1)
+shader_parameter/sky_horizon_color = Color(0.58, 0.78, 0.94, 1)
+shader_parameter/sky_ground_horizon_color = Color(0.435, 0.585, 0.705, 1)
+shader_parameter/sky_ground_bottom_color = Color(0.053999998, 0.189, 0.35099998, 1)
+shader_parameter/sky_sun_direction = Vector3(0.95105654, 0.2531319, 0.17724487)
+shader_parameter/sky_sun_color = Color(1, 0.96, 0.82, 1)
+shader_parameter/sky_sun_visibility = 1.0
 shader_parameter/sky_reflection_enabled = true
 shader_parameter/sky_reflection_strength = 0.55
 shader_parameter/sky_reflection_fresnel_power = 5.0
@@ -111,20 +111,20 @@ shader_parameter/sun_scatter_slope_strength = 0.65
 shader_parameter/sun_scatter_distance_strength = 0.25
 shader_parameter/crest_glow_enabled = true
 shader_parameter/crest_glow_color = Color(0.08, 0.58, 0.46, 1)
-shader_parameter/crest_glow_strength = 0.75
-shader_parameter/crest_glow_emission_strength = 0.35
+shader_parameter/crest_glow_strength = 2.2
+shader_parameter/crest_glow_emission_strength = 0.75
 shader_parameter/crest_height_start = 0.18
 shader_parameter/crest_height_end = 0.85
 shader_parameter/crest_slope_start = 0.18
 shader_parameter/crest_slope_end = 0.85
-shader_parameter/crest_back_view_power = 1.6
-shader_parameter/crest_back_normal_power = 1.25
+shader_parameter/crest_back_view_power = 0.1
+shader_parameter/crest_back_normal_power = 1.0
 shader_parameter/crest_low_sun_start = 0.02
 shader_parameter/crest_low_sun_end = 0.38
 shader_parameter/water_debug_view = 0
-shader_parameter/planar_reflection_enabled = false
+shader_parameter/planar_reflection_enabled = true
 shader_parameter/planar_reflection_view_projection = Projection(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1)
-shader_parameter/planar_reflection_strength = 0.0
+shader_parameter/planar_reflection_strength = 0.42
 shader_parameter/planar_reflection_distortion = 0.018
 shader_parameter/planar_reflection_fresnel_power = 4.0
 shader_parameter/planar_reflection_plane_y = 0.0
@@ -155,7 +155,7 @@ shader_parameter/displacements = SubResource("Texture2DArrayRD_6g5ly")
 shader_parameter/normals = SubResource("Texture2DArrayRD_ucu34")
 shader_parameter/previous_displacements = SubResource("Texture2DArrayRD_f8mb2")
 shader_parameter/previous_normals = SubResource("Texture2DArrayRD_ykfgg")
-shader_parameter/wave_blend_alpha = 0.5177440000001394
+shader_parameter/wave_blend_alpha = 0.6915295636630473
 
 [sub_resource type="Resource" id="Resource_adqv5"]
 script = ExtResource("2_pw5n6")
@@ -200,7 +200,8 @@ foam_amount = 0.8
 script = ExtResource("1_skarq")
 
 [node name="SkySystem" parent="." unique_id=447290062 instance=ExtResource("11_sky")]
-time_of_day = 0.25
+time_of_day = 0.3
+cycle_enabled = false
 cycle_duration_seconds = 30.0
 profile = SubResource("Resource_msmub")
 
@@ -217,18 +218,21 @@ script = ExtResource("10_tfjfv")
 wind_direction = 0.0
 
 [node name="Water" parent="." unique_id=1159832475 instance=ExtResource("7_s0x5e")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -45, 0, 475)
 material_override = SubResource("ShaderMaterial_ycdy4")
 extra_cull_margin = 1000.0
 gi_mode = 0
 skeleton = NodePath("")
 sky_source_path = NodePath("../SkySystem")
-foam_intensity = 0.34
-enable_planar_reflections = false
-reflection_strength = 0.0
+crest_glow_strength = 2.2
+crest_glow_emission_strength = 0.75
+crest_back_view_power = 0.1
+crest_back_normal_power = 1.0
+foam_intensity = 0.5
 use_external_wind = true
 wind_source_path = NodePath("../WindSystem")
 parameters = Array[ExtResource("2_pw5n6")]([SubResource("Resource_adqv5"), SubResource("Resource_luhq0"), SubResource("Resource_83u3u")])
+map_size = 512
+generated_base_cell_size = 1.0
 
 [node name="OceanAudioPlayer" type="AudioStreamPlayer" parent="." unique_id=1224032298]
 stream = ExtResource("6_jpklm")
