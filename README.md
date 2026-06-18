@@ -99,3 +99,8 @@ Run the `demo/main.tscn`. You will see everything.
 ## License
 
 MIT license.
+
+## AI Usage
+All modifications in addons are done by GPT 5.5, with OpenCode.
+Demo scene is hand tuned.
+I have gone through the codes manually, I don't see major issue but I'm not an expert in shader/godot.
