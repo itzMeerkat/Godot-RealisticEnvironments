@@ -5,9 +5,7 @@
 [ext_resource type="Script" uid="uid://bw2332cbm64tv" path="res://addons/sky_system/sky_profile.gd" id="3_nr2wj"]
 [ext_resource type="PackedScene" uid="uid://c4amd8o0cttut" path="res://systems/camera/player_camera_rig.tscn" id="4_camera_rig"]
 [ext_resource type="Shader" uid="uid://cjhn8nkfr4mn0" path="res://addons/ocean_system/shaders/spatial/water.gdshader" id="4_dg77c"]
-[ext_resource type="AudioStream" uid="uid://cvvn0vke5comw" path="res://demo/media/ocean_loop.wav" id="6_jpklm"]
 [ext_resource type="PackedScene" uid="uid://lsh7kr3nyl2t" path="res://addons/ocean_system/ocean_system.tscn" id="7_s0x5e"]
-[ext_resource type="AudioStream" uid="uid://ck6vmandgjhy0" path="res://demo/media/wind_loop.wav" id="8_6r5si"]
 [ext_resource type="PackedScene" uid="uid://bm4bg7uoyr0xy" path="res://systems/debug/ocean_debug_panel.tscn" id="9_gb4mm"]
 [ext_resource type="Script" uid="uid://btyuqnmfuyrr6" path="res://addons/wind_system/wind_system.gd" id="10_tfjfv"]
 [ext_resource type="PackedScene" uid="uid://ckdc57htjsaad" path="res://addons/sky_system/sky_system.tscn" id="11_sky"]
@@ -19,10 +17,6 @@
 _limits = [0.0, 2.0, 0.0, 1.0]
 _data = [Vector2(0, 0.035), 0.0, 0.0, 0, 0, Vector2(0.25, 0.22), 0.0, 0.0, 0, 0, Vector2(0.5, 0.65), 0.0, 0.0, 0, 0, Vector2(0.75, 0.22), 0.0, 0.0, 0, 0, Vector2(1, 0.035), 0.0, 0.0, 0, 0]
 point_count = 5
-
-[sub_resource type="Gradient" id="Gradient_6g5ly"]
-offsets = PackedFloat32Array(0, 0.25, 0.5, 0.75, 1)
-colors = PackedColorArray(0.28, 0.32, 0.4, 1, 0.82, 0.63, 0.48, 1, 0.73, 0.67, 0.62, 1, 0.82, 0.58, 0.45, 1, 0.28, 0.32, 0.4, 1)
 
 [sub_resource type="Gradient" id="Gradient_ucu34"]
 offsets = PackedFloat32Array(0, 0.25, 0.5, 0.75, 1)
@@ -55,18 +49,12 @@ _limits = [0.0, 2.0, 0.0, 1.0]
 _data = [Vector2(0, 0), 0.0, 0.0, 0, 0, Vector2(0.23, 0), 0.0, 0.0, 0, 0, Vector2(0.3, 0.65), 0.0, 0.0, 0, 0, Vector2(0.5, 1.25), 0.0, 0.0, 0, 0, Vector2(0.7, 0.65), 0.0, 0.0, 0, 0, Vector2(0.77, 0), 0.0, 0.0, 0, 0, Vector2(1, 0), 0.0, 0.0, 0, 0]
 point_count = 7
 
-[sub_resource type="Gradient" id="Gradient_a6ksj"]
-offsets = PackedFloat32Array(0, 0.25, 0.5, 0.75, 1)
-colors = PackedColorArray(0.015, 0.025, 0.045, 1, 0.05, 0.08, 0.1, 1, 0.1, 0.15, 0.18, 1, 0.05, 0.07, 0.09, 1, 0.015, 0.025, 0.045, 1)
-
 [sub_resource type="Resource" id="Resource_msmub"]
 script = ExtResource("3_nr2wj")
 sun_color_gradient = SubResource("Gradient_haa2m")
 moon_color_gradient = SubResource("Gradient_ucu34")
 sky_top_gradient = SubResource("Gradient_4bnku")
 sky_horizon_gradient = SubResource("Gradient_ykfgg")
-water_color_gradient = SubResource("Gradient_a6ksj")
-foam_color_gradient = SubResource("Gradient_6g5ly")
 sun_energy_curve = SubResource("Curve_27lkm")
 moon_energy_curve = SubResource("Curve_f8mb2")
 star_visibility_curve = SubResource("Curve_dls5p")
@@ -85,15 +73,53 @@ render_priority = 1
 shader = ExtResource("4_dg77c")
 shader_parameter/water_color = Color(0.1, 0.15, 0.18, 1)
 shader_parameter/foam_color = Color(0.73, 0.67, 0.62, 1)
-shader_parameter/clear_roughness = 0.06
+shader_parameter/water_diffuse_strength = 0.08
+shader_parameter/water_scatter_color = Color(0.045, 0.18, 0.2, 1)
+shader_parameter/clear_roughness = 0.1
 shader_parameter/foam_roughness = 0.24
-shader_parameter/clear_specular = 0.85
-shader_parameter/foam_specular = 0.35
+shader_parameter/clear_specular = 0.25
+shader_parameter/foam_specular = 0.08
 shader_parameter/slope_roughness_strength = 0.55
 shader_parameter/normal_strength = 1.0
-shader_parameter/foam_intensity = 1.25
+shader_parameter/foam_intensity = 0.5
 shader_parameter/foam_threshold = 0.05
 shader_parameter/foam_softness = 0.35
+shader_parameter/sky_top_color = Color(0.12, 0.42, 0.78, 1)
+shader_parameter/sky_horizon_color = Color(0.58, 0.78, 0.94, 1)
+shader_parameter/sky_ground_horizon_color = Color(0.435, 0.585, 0.705, 1)
+shader_parameter/sky_ground_bottom_color = Color(0.053999998, 0.189, 0.35099998, 1)
+shader_parameter/sky_sun_direction = Vector3(0.95105654, 0.2531319, 0.17724487)
+shader_parameter/sky_sun_color = Color(1, 0.96, 0.82, 1)
+shader_parameter/sky_sun_visibility = 1.0
+shader_parameter/sky_reflection_enabled = true
+shader_parameter/sky_reflection_strength = 0.55
+shader_parameter/sky_reflection_fresnel_power = 5.0
+shader_parameter/sky_reflection_f0 = 0.02
+shader_parameter/sky_horizon_boost = 0.85
+shader_parameter/sky_reflection_roughness_strength = 0.75
+shader_parameter/sky_reflection_far_roughness = 0.35
+shader_parameter/sun_glitter_strength = 0.42
+shader_parameter/sun_glitter_power = 64.0
+shader_parameter/sun_glitter_low_sun_boost = 1.4
+shader_parameter/sun_scatter_strength = 0.24
+shader_parameter/sun_scatter_base = 0.08
+shader_parameter/sun_scatter_phase_power = 2.0
+shader_parameter/sun_scatter_normal_power = 0.75
+shader_parameter/sun_scatter_slope_strength = 0.65
+shader_parameter/sun_scatter_distance_strength = 0.25
+shader_parameter/crest_glow_enabled = true
+shader_parameter/crest_glow_color = Color(0.08, 0.58, 0.46, 1)
+shader_parameter/crest_glow_strength = 1.25
+shader_parameter/crest_glow_emission_strength = 0.75
+shader_parameter/crest_height_start = 0.18
+shader_parameter/crest_height_end = 0.85
+shader_parameter/crest_slope_start = 0.18
+shader_parameter/crest_slope_end = 0.85
+shader_parameter/crest_back_view_power = 0.5
+shader_parameter/crest_back_normal_power = 1.0
+shader_parameter/crest_low_sun_start = 0.02
+shader_parameter/crest_low_sun_end = 0.38
+shader_parameter/water_debug_view = 0
 shader_parameter/planar_reflection_enabled = true
 shader_parameter/planar_reflection_view_projection = Projection(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1)
 shader_parameter/planar_reflection_strength = 0.42
@@ -127,7 +153,7 @@ shader_parameter/displacements = SubResource("Texture2DArrayRD_6g5ly")
 shader_parameter/normals = SubResource("Texture2DArrayRD_ucu34")
 shader_parameter/previous_displacements = SubResource("Texture2DArrayRD_f8mb2")
 shader_parameter/previous_normals = SubResource("Texture2DArrayRD_ykfgg")
-shader_parameter/wave_blend_alpha = 0.49368125000049323
+shader_parameter/wave_blend_alpha = 0.6530699607373669
 
 [sub_resource type="Resource" id="Resource_adqv5"]
 script = ExtResource("2_pw5n6")
@@ -172,10 +198,10 @@ foam_amount = 0.8
 script = ExtResource("1_skarq")
 
 [node name="SkySystem" parent="." unique_id=447290062 instance=ExtResource("11_sky")]
-time_of_day = 0.25
+time_of_day = 0.3
+cycle_enabled = false
 cycle_duration_seconds = 30.0
 profile = SubResource("Resource_msmub")
-ocean_path = NodePath("../Water")
 
 [node name="PlayerCameraRig" parent="." unique_id=436407652 instance=ExtResource("4_camera_rig")]
 active_mode = 0
@@ -190,23 +216,21 @@ script = ExtResource("10_tfjfv")
 wind_direction = 0.0
 
 [node name="Water" parent="." unique_id=1159832475 instance=ExtResource("7_s0x5e")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -45, 0, 475)
 material_override = SubResource("ShaderMaterial_ycdy4")
 extra_cull_margin = 1000.0
 gi_mode = 0
 skeleton = NodePath("")
+sky_source_path = NodePath("../SkySystem")
+crest_glow_strength = 1.25
+crest_glow_emission_strength = 0.75
+crest_back_view_power = 0.5
+crest_back_normal_power = 1.0
+foam_intensity = 0.5
 use_external_wind = true
 wind_source_path = NodePath("../WindSystem")
 parameters = Array[ExtResource("2_pw5n6")]([SubResource("Resource_adqv5"), SubResource("Resource_luhq0"), SubResource("Resource_83u3u")])
-
-[node name="OceanAudioPlayer" type="AudioStreamPlayer" parent="." unique_id=1224032298]
-stream = ExtResource("6_jpklm")
-autoplay = true
-
-[node name="WindAudioPlayer" type="AudioStreamPlayer" parent="." unique_id=1606028856]
-stream = ExtResource("8_6r5si")
-volume_db = -18.333334
-autoplay = true
+map_size = 512
+generated_base_cell_size = 1.0
 
 [node name="OceanDebugPanel" parent="." unique_id=900526538 instance=ExtResource("9_gb4mm")]
 visible = false

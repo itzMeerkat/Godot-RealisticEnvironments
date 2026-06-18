@@ -50,17 +50,16 @@
 3. 调用 `_update_light()` 更新 `SunLight` 和 `MoonLight` 的方向、颜色、能量和可见性。
 4. 调用 `_update_environment()` 写入 ambient light 和 sky shader 参数。
 5. 调用 `_update_starfield_visibility()`、`_update_visual_colors()` 和 `_update_visual_positions()`。
-6. 如果开启 ocean 联动，调用 `_update_ocean_colors()`。
-7. 发出 `lighting_changed`。
+6. 发出 `lighting_changed`。
 
 `render_bodies_in_sky` 为 true 时，太阳/月亮通过 sky shader 绘制，`SunVisual` 和 `MoonVisual` 保持隐藏。为 false 时，脚本会使用两个 mesh visual 显示天体。
 
 ## Profile 采样
 
-`SkyProfile` 存储 sun、moon、sky、water、foam 的 Gradient，以及 sun、moon、star、ambient 的 Curve。`sample_*()` 方法统一 wrap 时间或 clamp 夜晚因子，然后返回采样结果。
+`SkyProfile` 存储 sun、moon、sky 的 Gradient，以及 sun、moon、star、ambient 的 Curve。`sample_*()` 方法统一 wrap 时间或 clamp 夜晚因子，然后返回采样结果。
 
 默认 profile 在 `_ensure_defaults()` 中创建。Gradient 使用五个关键颜色点，Curve 使用若干 `Vector2` 点并调用 `bake()`。
 
 ## Ocean 联动
 
-Sky System 不直接依赖 Ocean System 类型。`ocean_path` 解析到任意 Node 后，`_update_ocean_colors()` 只检查目标是否有 `water_color` 和 `foam_color` 属性，再用 `set()` 写入 profile 采样值。
+Sky System 不直接依赖 Ocean System 类型，也不写回水色。Ocean System 可以通过 `sky_source_path` 读取 `get_sun_direction()`、`get_sun_color()`、`get_sky_top_color()`、`get_sky_horizon_color()` 和 `get_sun_visibility()`。

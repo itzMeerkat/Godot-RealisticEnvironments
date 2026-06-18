@@ -141,13 +141,6 @@ func _apply_player_controlled_state() -> void:
 			cell_volume.set(&"debug_draw", player_controlled)
 
 	for child in _find_descendants():
-		var cutout := child as WaterHullCutout
-		if cutout == null:
-			continue
-		if sync_child_water_cutout_with_player_control:
-			cutout.enabled = player_controlled
-
-	for child in _find_descendants():
 		if not child.is_in_group(&"water_cutout_provider"):
 			continue
 		if sync_child_water_cutout_with_player_control:

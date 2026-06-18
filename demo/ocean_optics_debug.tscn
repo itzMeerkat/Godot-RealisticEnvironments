@@ -1,0 +1,48 @@
+[gd_scene format=3 uid="uid://hh83vpvyyuxa"]
+
+[ext_resource type="Script" uid="uid://behd6pbdvdjv6" path="res://demo/ocean_optics_debug.gd" id="1_debug"]
+[ext_resource type="PackedScene" uid="uid://ckdc57htjsaad" path="res://addons/sky_system/sky_system.tscn" id="2_sky"]
+[ext_resource type="PackedScene" uid="uid://lsh7kr3nyl2t" path="res://addons/ocean_system/ocean_system.tscn" id="3_water"]
+[ext_resource type="Script" uid="uid://btyuqnmfuyrr6" path="res://addons/wind_system/wind_system.gd" id="4_wind"]
+[ext_resource type="PackedScene" uid="uid://bm4bg7uoyr0xy" path="res://systems/debug/ocean_debug_panel.tscn" id="5_panel"]
+
+[node name="OceanOpticsDebug" type="Node3D" unique_id=1794523757]
+script = ExtResource("1_debug")
+
+[node name="SkySystem" parent="." unique_id=264105475 instance=ExtResource("2_sky")]
+time_of_day = 0.75
+cycle_enabled = false
+cycle_duration_seconds = 120.0
+radiance_sun_disk_strength = 0.24
+radiance_sun_halo_strength = 0.28
+
+[node name="WindSystem" type="Node" parent="." unique_id=1423349862]
+script = ExtResource("4_wind")
+
+[node name="Water" parent="." unique_id=1264596026 instance=ExtResource("3_water")]
+extra_cull_margin = 10000.0
+water_color = Color(0.035, 0.075, 0.105, 1)
+sky_source_path = NodePath("../SkySystem")
+sun_glitter_strength = 0.55
+sun_scatter_strength = 0.32
+crest_height_start = 0.1
+crest_height_end = 0.75
+crest_slope_start = 0.12
+crest_slope_end = 0.7
+foam_intensity = 0.0
+use_external_wind = true
+wind_source_path = NodePath("../WindSystem")
+ocean_radius = 512.0
+generated_inner_extent = 192.0
+generated_ring_count = 3
+far_lod_radius = 10000.0
+far_lod_blend_distance = 2200.0
+far_normal_strength = 0.18
+far_foam_coverage = 0.0
+
+[node name="Camera3D" type="Camera3D" parent="." unique_id=537177153]
+current = true
+fov = 65.0
+far = 20000.0
+
+[node name="OceanDebugPanel" parent="." unique_id=2096117271 instance=ExtResource("5_panel")]

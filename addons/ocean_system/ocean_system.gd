@@ -18,127 +18,382 @@ const EXTERNAL_WIND_DIRECTION_DIRTY_THRESHOLD := 2.0
 const EXTERNAL_WIND_SPECTRUM_REFRESH_INTERVAL := 0.5
 
 @export_group('Wave Parameters')
-## Deep-water tint used before foam is blended in.
+## Base deep-water tint before foam, reflections, and emission are added. This
+## should usually stay dark and low-saturation because sky and sun lighting are
+## layered on top by the shader.
 @export_color_no_alpha var water_color : Color = Color(0.1, 0.15, 0.18) :
 	set(value):
 		water_color = value
 		_set_water_shader_parameter(&'water_color', water_color)
 
-## Foam albedo tint used where the wave maps report whitecaps.
+## Albedo tint used where the compute-generated foam mask, manual foam sources,
+## or hull cutout edge foam are visible. Slightly warm off-white values usually
+## look more natural than pure white.
 @export_color_no_alpha var foam_color : Color = Color(0.73, 0.67, 0.62) :
 	set(value):
 		foam_color = value
 		_set_water_shader_parameter(&'foam_color', foam_color)
 
 @export_group('Surface Shading')
-## Roughness for clear water areas.
-@export_range(0.0, 1.0, 0.01) var clear_roughness := 0.06 :
+## Amount of water_color that contributes to diffuse ALBEDO. Keep this low for
+## realistic water because most visible brightness should come from reflection,
+## sun glitter, scatter, and crest emission rather than matte diffuse color.
+@export_range(0.0, 1.0, 0.01) var water_diffuse_strength := 0.08 :
+	set(value):
+		water_diffuse_strength = value
+		_set_water_shader_parameter(&'water_diffuse_strength', water_diffuse_strength)
+## Tint for broad sun-lit water-body scattering. This is added as radiance in
+## the shader and is most visible at low angles or when looking away from the sun.
+@export_color_no_alpha var water_scatter_color : Color = Color(0.045, 0.18, 0.20) :
+	set(value):
+		water_scatter_color = value
+		_set_water_shader_parameter(&'water_scatter_color', water_scatter_color)
+## PBR roughness for clear water before slope and distance adjustments. Lower
+## values make sharper highlights and reflections; higher values look windier.
+@export_range(0.0, 1.0, 0.01) var clear_roughness := 0.10 :
 	set(value):
 		clear_roughness = value
 		_set_water_shader_parameter(&'clear_roughness', clear_roughness)
-## Roughness for foam-covered areas.
+## PBR roughness where foam is visible. Foam usually looks best rougher than
+## clear water so it does not produce mirror-like highlights.
 @export_range(0.0, 1.0, 0.01) var foam_roughness := 0.24 :
 	set(value):
 		foam_roughness = value
 		_set_water_shader_parameter(&'foam_roughness', foam_roughness)
-## Specular intensity for clear water areas.
-@export_range(0.0, 1.0, 0.01) var clear_specular := 0.85 :
+## PBR specular strength for clear water. Raise for stronger direct highlights;
+## lower if reflections and glitter already make the surface too bright.
+@export_range(0.0, 1.0, 0.01) var clear_specular := 0.25 :
 	set(value):
 		clear_specular = value
 		_set_water_shader_parameter(&'clear_specular', clear_specular)
-## Specular intensity for foam-covered areas.
-@export_range(0.0, 1.0, 0.01) var foam_specular := 0.35 :
+## PBR specular strength for foam-covered areas. Foam generally needs less
+## specular than clear water to avoid a plastic look.
+@export_range(0.0, 1.0, 0.01) var foam_specular := 0.08 :
 	set(value):
 		foam_specular = value
 		_set_water_shader_parameter(&'foam_specular', foam_specular)
-## How strongly wave slope increases surface roughness.
+## How strongly wave slope increases material roughness before foam appears.
+## Higher values make steep waves look broader and less mirror-smooth.
 @export_range(0.0, 4.0, 0.01) var slope_roughness_strength := 0.55 :
 	set(value):
 		slope_roughness_strength = value
 		_set_water_shader_parameter(&'slope_roughness_strength', slope_roughness_strength)
-## Overall strength of normal-map lighting. Lower values make the water calmer visually.
+## Overall strength of normal-map lighting in the fragment shader. Lower values
+## make the water calmer visually without changing mesh displacement or queries.
 @export_range(0.0, 1.0, 0.01) var normal_strength := 1.0 :
 	set(value):
 		normal_strength = value
 		_set_water_shader_parameter(&'normal_strength', normal_strength)
-## Enables smoother but more expensive normal sampling for close wave detail.
+## Enables bicubic normal filtering for smoother close-up wave detail. This costs
+## extra texture samples per cascade, so disable it for low-end presets.
 @export var use_bicubic_normals := true :
 	set(value):
 		use_bicubic_normals = value
 		_set_water_shader_parameter(&'use_bicubic_normals', use_bicubic_normals)
-## Maximum number of cascades sampled in the fragment shader for foam and normals.
+## Maximum number of cascades sampled per pixel for foam and normals. Reducing
+## this can improve fragment performance while retaining vertex displacement.
 @export_range(1, 8, 1) var fragment_cascade_limit := 3 :
 	set(value):
 		fragment_cascade_limit = clampi(value, 1, MAX_CASCADES)
 		_set_water_shader_parameter(&'fragment_cascade_limit', fragment_cascade_limit)
 
+@export_group('Sky Reflection')
+## Optional sky source node. SkySystem exposes the expected getters, but any node
+## with get_sun_direction(), get_sun_color(), get_sky_top_color(),
+## get_sky_horizon_color(), and get_sun_visibility() can be used.
+@export var sky_source_path : NodePath :
+	set(value):
+		sky_source_path = value
+		sky_source = null
+		_update_sky_lighting_shader_parameters()
+## Fallback zenith sky color used when sky_source_path is empty or the source
+## does not expose sky color data.
+@export_color_no_alpha var manual_sky_top_color : Color = Color(0.12, 0.42, 0.78) :
+	set(value):
+		manual_sky_top_color = value
+		_update_sky_lighting_shader_parameters()
+## Fallback horizon sky color used by procedural reflections when no sky source
+## provides a horizon color.
+@export_color_no_alpha var manual_sky_horizon_color : Color = Color(0.58, 0.78, 0.94) :
+	set(value):
+		manual_sky_horizon_color = value
+		_update_sky_lighting_shader_parameters()
+## Fallback direct sun color used for glitter, scatter, and crest glow when no
+## sky source provides a sun color.
+@export_color_no_alpha var manual_sun_color : Color = Color(1.0, 0.92, 0.72) :
+	set(value):
+		manual_sun_color = value
+		_update_sky_lighting_shader_parameters()
+## Fallback normalized sun direction in world space when no sky source provides
+## one. The shader uses this for glitter direction and backlit crest masks.
+@export var manual_sun_direction := Vector3(0.0, 0.2, -1.0) :
+	set(value):
+		manual_sun_direction = value
+		_update_sky_lighting_shader_parameters()
+## Fallback sun visibility from 0 to 1 when no sky source provides one. This lets
+## manual scenes fade glitter and glow at night without a full SkySystem.
+@export_range(0.0, 1.0, 0.01) var manual_sun_visibility := 1.0 :
+	set(value):
+		manual_sun_visibility = value
+		_update_sky_lighting_shader_parameters()
+## Enables procedural sky reflection radiance. This is separate from planar
+## reflections and remains useful even when no reflected geometry is rendered.
+@export var sky_reflection_enabled := true :
+	set(value):
+		sky_reflection_enabled = value
+		_set_water_shader_parameter(&'sky_reflection_enabled', sky_reflection_enabled)
+## Overall strength of the procedural sky reflection. Increase for brighter open
+## ocean reflections; decrease if the water looks too emissive or glassy.
+@export_range(0.0, 2.0, 0.01) var sky_reflection_strength := 0.55 :
+	set(value):
+		sky_reflection_strength = value
+		_set_water_shader_parameter(&'sky_reflection_strength', sky_reflection_strength)
+## Fresnel exponent for procedural sky reflection. Higher values push reflection
+## toward grazing view angles; lower values show more reflection from above.
+@export_range(0.25, 8.0, 0.05) var sky_reflection_fresnel_power := 5.0 :
+	set(value):
+		sky_reflection_fresnel_power = value
+		_set_water_shader_parameter(&'sky_reflection_fresnel_power', sky_reflection_fresnel_power)
+## Base water reflectance at normal incidence. Real water is near 0.02; artistic
+## values above that make reflections visible from more angles.
+@export_range(0.0, 0.12, 0.001) var sky_reflection_f0 := 0.02 :
+	set(value):
+		sky_reflection_f0 = value
+		_set_water_shader_parameter(&'sky_reflection_f0', sky_reflection_f0)
+## Multiplier for reflected horizon color. Raising it emphasizes the bright band
+## near the horizon, especially in distant water.
+@export_range(0.0, 3.0, 0.01) var sky_horizon_boost := 0.85 :
+	set(value):
+		sky_horizon_boost = value
+		_set_water_shader_parameter(&'sky_horizon_boost', sky_horizon_boost)
+## How much wave slope broadens the procedural reflection. Higher values make
+## rough seas blur sky reflection more strongly.
+@export_range(0.0, 2.0, 0.01) var sky_reflection_roughness_strength := 0.75 :
+	set(value):
+		sky_reflection_roughness_strength = value
+		_set_water_shader_parameter(&'sky_reflection_roughness_strength', sky_reflection_roughness_strength)
+## Extra reflection roughness added by far-ocean LOD. This softens distant sky
+## reflection and helps hide high-frequency tiling near the horizon.
+@export_range(0.0, 1.0, 0.01) var sky_reflection_far_roughness := 0.35 :
+	set(value):
+		sky_reflection_far_roughness = value
+		_set_water_shader_parameter(&'sky_reflection_far_roughness', sky_reflection_far_roughness)
+## Strength of sun glitter generated from wave normals. Increase for sharper,
+## brighter sparkling highlights along the reflected sun path.
+@export_range(0.0, 4.0, 0.01) var sun_glitter_strength := 0.42 :
+	set(value):
+		sun_glitter_strength = value
+		_set_water_shader_parameter(&'sun_glitter_strength', sun_glitter_strength)
+## Sharpness of sun glitter. Higher values create smaller, tighter glints;
+## lower values create broader highlights.
+@export_range(8.0, 512.0, 1.0) var sun_glitter_power := 64.0 :
+	set(value):
+		sun_glitter_power = value
+		_set_water_shader_parameter(&'sun_glitter_power', sun_glitter_power)
+## Extra glitter multiplier when the sun is low. Use this to emphasize sunrise
+## and sunset sparkle without over-brightening midday water.
+@export_range(0.0, 4.0, 0.01) var sun_glitter_low_sun_boost := 1.4 :
+	set(value):
+		sun_glitter_low_sun_boost = value
+		_set_water_shader_parameter(&'sun_glitter_low_sun_boost', sun_glitter_low_sun_boost)
+## Strength of broad sun-lit water scatter. This is a soft radiance term that
+## helps backlit water read as translucent instead of only reflective.
+@export_range(0.0, 2.0, 0.01) var sun_scatter_strength := 0.24 :
+	set(value):
+		sun_scatter_strength = value
+		_set_water_shader_parameter(&'sun_scatter_strength', sun_scatter_strength)
+## Minimum sun scatter before view-direction phase is applied. Raise for a more
+## constant sun tint on clear water; lower for more directional scatter.
+@export_range(0.0, 1.0, 0.01) var sun_scatter_base := 0.08 :
+	set(value):
+		sun_scatter_base = value
+		_set_water_shader_parameter(&'sun_scatter_base', sun_scatter_base)
+## View-sun phase exponent for scatter. Higher values concentrate scatter when
+## looking more directly away from the sun.
+@export_range(0.25, 8.0, 0.05) var sun_scatter_phase_power := 2.0 :
+	set(value):
+		sun_scatter_phase_power = value
+		_set_water_shader_parameter(&'sun_scatter_phase_power', sun_scatter_phase_power)
+## Normal alignment exponent for sun scatter. Higher values require wave normals
+## to face the sun more directly before scatter appears.
+@export_range(0.25, 4.0, 0.05) var sun_scatter_normal_power := 0.75 :
+	set(value):
+		sun_scatter_normal_power = value
+		_set_water_shader_parameter(&'sun_scatter_normal_power', sun_scatter_normal_power)
+## How wave micro-slope affects scatter strength. Higher values make choppy water
+## show more sunlit body color and flatter water show less.
+@export_range(0.0, 2.0, 0.01) var sun_scatter_slope_strength := 0.65 :
+	set(value):
+		sun_scatter_slope_strength = value
+		_set_water_shader_parameter(&'sun_scatter_slope_strength', sun_scatter_slope_strength)
+## Additional scatter multiplier across the far-ocean LOD fade. Raise to keep
+## distant water luminous; lower if the horizon looks too bright.
+@export_range(0.0, 2.0, 0.01) var sun_scatter_distance_strength := 0.25 :
+	set(value):
+		sun_scatter_distance_strength = value
+		_set_water_shader_parameter(&'sun_scatter_distance_strength', sun_scatter_distance_strength)
+
+@export_group('Crest Glow')
+## Enables low-sun backlit crest glow. This is an artistic scattering effect that
+## colors high, steep, backlit wave crests without changing wave physics.
+@export var crest_glow_enabled := true :
+	set(value):
+		crest_glow_enabled = value
+		_set_water_shader_parameter(&'crest_glow_enabled', crest_glow_enabled)
+## Color tint for backlit crest glow before multiplying by sun color. Blue-green
+## values suggest translucent seawater; warmer values suggest sunset glow.
+@export_color_no_alpha var crest_glow_color : Color = Color(0.08, 0.58, 0.46) :
+	set(value):
+		crest_glow_color = value
+		_set_water_shader_parameter(&'crest_glow_color', crest_glow_color)
+## Overall strength of the crest glow mask. Raise to make the color visible on
+## more crests; lower for a subtler transmission effect.
+@export_range(0.0, 4.0, 0.01) var crest_glow_strength := 0.75 :
+	set(value):
+		crest_glow_strength = value
+		_set_water_shader_parameter(&'crest_glow_strength', crest_glow_strength)
+## HDR emission multiplier for crest glow. Increase when using bloom; keep low
+## if crests should only tint rather than visibly emit light.
+@export_range(0.0, 2.0, 0.01) var crest_glow_emission_strength := 0.35 :
+	set(value):
+		crest_glow_emission_strength = value
+		_set_water_shader_parameter(&'crest_glow_emission_strength', crest_glow_emission_strength)
+## World-space wave height where crest glow starts. Lower values include more
+## waves; higher values restrict glow to taller crests.
+@export_range(-2.0, 4.0, 0.01) var crest_height_start := 0.18 :
+	set(value):
+		crest_height_start = value
+		_set_water_shader_parameter(&'crest_height_start', crest_height_start)
+## World-space wave height where the crest height mask reaches full strength.
+## Keep above crest_height_start for a smooth transition.
+@export_range(-2.0, 6.0, 0.01) var crest_height_end := 0.85 :
+	set(value):
+		crest_height_end = value
+		_set_water_shader_parameter(&'crest_height_end', crest_height_end)
+## Wave slope where crest glow starts. Lower values include gentler waves; higher
+## values restrict the effect to steep or breaking crests.
+@export_range(0.0, 4.0, 0.01) var crest_slope_start := 0.18 :
+	set(value):
+		crest_slope_start = value
+		_set_water_shader_parameter(&'crest_slope_start', crest_slope_start)
+## Wave slope where the crest slope mask reaches full strength. Keep above
+## crest_slope_start to avoid an abrupt glow cutoff.
+@export_range(0.0, 8.0, 0.01) var crest_slope_end := 0.85 :
+	set(value):
+		crest_slope_end = value
+		_set_water_shader_parameter(&'crest_slope_end', crest_slope_end)
+## View-angle exponent for backlit crest glow. Higher values require the camera
+## to look more directly against the sun to see the glow.
+@export_range(0.1, 8.0, 0.05) var crest_back_view_power := 1.6 :
+	set(value):
+		crest_back_view_power = value
+		_set_water_shader_parameter(&'crest_back_view_power', crest_back_view_power)
+## Normal-angle exponent for backlit crest glow. Higher values require crests to
+## be more strongly back-facing relative to the sun.
+@export_range(0.1, 8.0, 0.05) var crest_back_normal_power := 1.25 :
+	set(value):
+		crest_back_normal_power = value
+		_set_water_shader_parameter(&'crest_back_normal_power', crest_back_normal_power)
+## Sun height where low-sun crest glow starts fading in. Values near 0 mean the
+## effect begins around the horizon.
+@export_range(-0.1, 1.0, 0.01) var crest_low_sun_start := 0.02 :
+	set(value):
+		crest_low_sun_start = value
+		_set_water_shader_parameter(&'crest_low_sun_start', crest_low_sun_start)
+## Sun height where low-sun crest glow is fully faded out. Lower this for glow
+## only at sunrise/sunset; raise it for a broader daytime effect.
+@export_range(-0.1, 1.0, 0.01) var crest_low_sun_end := 0.38 :
+	set(value):
+		crest_low_sun_end = value
+		_set_water_shader_parameter(&'crest_low_sun_end', crest_low_sun_end)
+## Debug visualization mode for water shading masks and reflection terms. Use
+## Normal for gameplay; other modes help tune sky reflection, glitter, and glow.
+@export_enum('Normal:0', 'Sky Reflection:1', 'Sky Color:2', 'Sun Glitter:3', 'Crest Height:4', 'Crest Slope:5', 'Crest Backlight:6', 'Crest Final:7', 'Reflection Direction Y:8', 'Reflection Roughness:9', 'Sun Scatter:10', 'Sun Scatter NoL:11', 'View Sun Phase:12', 'Micro Slope Energy:13') var water_debug_view := 0 :
+	set(value):
+		water_debug_view = value
+		_set_water_shader_parameter(&'water_debug_view', water_debug_view)
+
 @export_group('Foam Shading')
-## Multiplies the foam signal produced by the wave compute pass.
+## Multiplies the foam signal produced by the wave compute pass before threshold
+## and softness are applied. Raise for more whitecaps; lower for cleaner water.
 @export_range(0.0, 4.0, 0.01) var foam_intensity := 1.25 :
 	set(value):
 		foam_intensity = value
 		_set_water_shader_parameter(&'foam_intensity', foam_intensity)
-## Minimum foam signal required before foam appears.
+## Minimum foam signal required before foam appears. Higher values keep only the
+## strongest whitecaps; lower values show foam on gentler waves.
 @export_range(0.0, 2.0, 0.01) var foam_threshold := 0.05 :
 	set(value):
 		foam_threshold = value
 		_set_water_shader_parameter(&'foam_threshold', foam_threshold)
-## Width of the transition between clear water and foam.
+## Width of the transition between clear water and foam. Lower values create
+## sharper foam edges; higher values make foam blend more softly.
 @export_range(0.01, 2.0, 0.01) var foam_softness := 0.35 :
 	set(value):
 		foam_softness = value
 		_set_water_shader_parameter(&'foam_softness', foam_softness)
 
 @export_group('Planar Reflections')
-## Renders a mirrored camera into a texture so floating objects can appear in the water.
+## Renders a mirrored camera into a texture so dynamic scene geometry can appear
+## reflected in the water. This is more expensive than procedural sky reflection
+## and is created lazily only when enabled.
 @export var enable_planar_reflections := true :
 	set(value):
 		enable_planar_reflections = value
 		_update_planar_reflection_settings()
-## Maximum side length for the reflection texture after resolution_scale is applied.
+## Maximum side length for the planar reflection texture after resolution_scale
+## is applied. Larger values sharpen reflected objects but add render cost.
 @export_range(128, 4096, 1) var reflection_texture_size := 1024 :
 	set(value):
 		reflection_texture_size = value
 		_update_planar_reflection_settings()
-## Multiplier applied to the main viewport size when sizing the reflection texture.
+## Multiplier applied to the main viewport size when sizing the reflection
+## texture. Lower values are faster; higher values reduce blur and aliasing.
 @export_range(0.1, 1.0, 0.05) var reflection_resolution_scale := 0.5 :
 	set(value):
 		reflection_resolution_scale = value
 		_update_planar_reflection_settings()
-## Overall reflected color contribution.
+## Overall dynamic reflection contribution. The shader still applies Fresnel and
+## foam masking, so this controls maximum intensity rather than a flat opacity.
 @export_range(0.0, 1.0, 0.01) var reflection_strength := 0.42 :
 	set(value):
 		reflection_strength = value
 		_update_planar_reflection_settings()
-## UV perturbation from wave normals. Higher values make reflections more broken.
+## UV perturbation from wave normals. Higher values make reflected objects wobble
+## and break up more; lower values keep reflections stable and mirror-like.
 @export_range(0.0, 0.08, 0.001) var reflection_distortion := 0.018 :
 	set(value):
 		reflection_distortion = value
 		_update_planar_reflection_settings()
-## Larger values keep reflections strongest at grazing angles.
+## Fresnel exponent for planar reflections. Larger values keep reflections mostly
+## at grazing angles; smaller values show them more from top-down views.
 @export_range(0.25, 8.0, 0.05) var reflection_fresnel_power := 4.0 :
 	set(value):
 		reflection_fresnel_power = value
 		_update_planar_reflection_settings()
-## Visual layer assigned to this ocean so the reflection camera can exclude it.
+## Visual layer assigned to the ocean while planar reflections are active. The
+## reflection camera removes this layer to avoid recursive water reflections.
 @export_range(1, 20, 1) var reflection_water_layer := 20 :
 	set(value):
 		reflection_water_layer = value
 		_update_planar_reflection_settings()
-## Objects visible to the reflection camera. The water layer is always removed.
+## Render-layer mask for objects visible to the reflection camera. The configured
+## water layer is always removed even if it is included here.
 @export_flags_3d_render var reflection_cull_mask := 0xFFFFF :
 	set(value):
 		reflection_cull_mask = value
 		_update_planar_reflection_settings()
 
 @export_group('External Wind')
-## When enabled, cascades read speed and direction from wind_source_path.
+## When enabled, cascades read wind speed and direction from wind_source_path.
+## Per-cascade wind_speed_multiplier and wind_direction_offset still apply.
 @export var use_external_wind := false :
 	set(value):
 		use_external_wind = value
 		_reset_external_wind_tracking()
 		_mark_spectra_dirty()
-## Optional node that exposes get_wind_speed/get_wind_direction_degrees or wind_speed/wind_direction.
+## Optional wind source node. It can expose get_wind_speed() and
+## get_wind_direction_degrees(), or wind_speed and wind_direction properties.
 @export var wind_source_path : NodePath :
 	set(value):
 		wind_source_path = value
@@ -146,8 +401,9 @@ const EXTERNAL_WIND_SPECTRUM_REFRESH_INTERVAL := 0.5
 		_reset_external_wind_tracking()
 		_mark_spectra_dirty()
 
-## Parameters for wave cascades. Each item represents one wave scale.
-## Adding/removing cascades recreates the compute pipelines.
+## Ordered list of wave cascades. Use long tile lengths for swell and short tile
+## lengths for chop/detail. Adding or removing cascades recreates compute GPU
+## resources; editing values inside a cascade usually only regenerates spectra.
 @export var parameters : Array[WaveCascadeParameters] :
 	set(value):
 		if parameters != null:
@@ -176,98 +432,120 @@ const EXTERNAL_WIND_SPECTRUM_REFRESH_INTERVAL := 0.5
 		_update_scales_uniform()
 
 @export_group('Performance Parameters')
-## Resolution for each generated displacement/normal texture layer.
+## Resolution for each displacement/normal texture layer and FFT simulation.
+## Cost scales roughly with resolution squared; 512 is much cheaper than 1024.
 @export_enum('128x128:128', '256x256:256', '512x512:512', '1024x1024:1024') var map_size := 1024 :
 	set(value):
 		map_size = value
 		_setup_wave_generator()
 
 @export_group('Mesh')
-## Near-ocean radius in meters before optional far LOD rings begin.
+## Radius in meters for the high-detail near-ocean mesh before optional far LOD
+## rings begin. Increase for wider close water coverage; decrease for fewer verts.
 @export_range(32.0, 4096.0, 1.0, "or_greater") var ocean_radius := 256.0 :
 	set(value):
 		ocean_radius = value
 		_update_water_mesh()
-## Full side length of the highest-density center patch, in meters.
+## Full side length of the highest-density center patch, in meters. Larger values
+## keep fine tessellation farther from the camera but increase vertex count.
 @export_range(16.0, 512.0, 1.0) var generated_inner_extent := 128.0 :
 	set(value):
 		generated_inner_extent = value
 		_update_water_mesh()
-## Vertex spacing in meters for the highest-density center patch.
+## Vertex spacing in meters for the highest-density center patch. Smaller values
+## create smoother near displacement but can add many vertices.
 @export_range(0.5, 16.0, 0.5) var generated_base_cell_size := 1.0 :
 	set(value):
 		generated_base_cell_size = value
 		_update_water_mesh()
-## Number of progressively coarser near-ocean mesh rings.
+## Number of progressively coarser rings before the outer near-ocean radius.
+## More rings preserve detail over distance; fewer rings reduce mesh complexity.
 @export_range(0, 8, 1) var generated_ring_count := 2 :
 	set(value):
 		generated_ring_count = value
 		_update_water_mesh()
-## Keeps the generated mesh centered around the active camera in XZ space.
+## Keeps the generated water mesh centered around the active camera in XZ space.
+## Wave sampling remains world-space stable, so this does not slide the waves.
 @export var follow_active_camera := true
-## Snaps follow movement to this grid size. Set to 0 for continuous following.
+## Snaps camera-follow movement to this grid size in meters. Set to 0 for smooth
+## continuous following; use snapping only if you need less frequent mesh motion.
 @export_range(0.0, 64.0, 0.25) var follow_snap_size := 0.0
-## Allows camera-follow preview while running in the editor.
+## Allows camera-follow behavior while running inside the editor. Keep disabled
+## if editor camera movement should not reposition the water node.
 @export var follow_camera_in_editor := false
 
-## How many times the wave simulation should update per second.
-## Note: This doesn't reduce the frame stutter caused by FFT calculation, only
-##       minimizes GPU time taken by it!
+## Target number of accepted wave simulation updates per second. Lower values
+## reduce GPU FFT work; smooth_wave_interpolation hides the visual stepping.
+## Set to 0 for uncapped updates.
 @export_range(0, 60) var updates_per_second := 20.0 :
 	set(value):
 		next_update_time = next_update_time - (1.0/(updates_per_second + 1e-10) - 1.0/(value + 1e-10))
 		updates_per_second = value
 
 @export_group('Water Queries')
-## The still-water height in world units. Wave displacement is added on top.
-@export var water_level := 0.0
+## Still-water height in world units. Visual displacement, point queries, planar
+## reflection plane height, and buoyancy samples all use this as the base level.
+@export var water_level := 0.0 :
+	set(value):
+		water_level = value
+		_update_planar_reflection_settings()
 @export_group('Visual Smoothing')
-## Blends between previous and current wave maps to reduce low update-rate stutter.
+## Blends between previous and current wave output maps. This reduces visible
+## stutter when updates_per_second is below the render frame rate.
 @export var smooth_wave_interpolation := true
 @export_group('Far Ocean LOD')
-## Adds lower-density rings and fades out high-frequency detail in the distance.
+## Adds lower-density far rings and fades high-frequency normals/foam with
+## distance. Disable for small contained water areas or debugging near mesh only.
 @export var enable_far_lod := true :
 	set(value):
 		enable_far_lod = value
 		_update_water_mesh()
 		_update_far_lod_shader_parameters()
-## Maximum radius of generated far-ocean geometry.
+## Maximum radius of generated far-ocean geometry in meters. Large values can
+## reach the horizon but increase mesh bounds and culling area.
 @export_range(256.0, 20000.0, 1.0, "or_greater") var far_lod_radius := 7000.0 :
 	set(value):
 		far_lod_radius = value
 		_update_water_mesh()
 		_update_far_lod_shader_parameters()
 ## Number of extra low-density rings between ocean_radius and far_lod_radius.
+## More rings improve horizon shape; fewer rings reduce vertex count.
 @export_range(4, 96, 1) var far_lod_ring_count := 36 :
 	set(value):
 		far_lod_ring_count = value
 		_update_water_mesh()
-## Distance over which near detail fades into far-ocean shading.
+## Distance over which near detail fades into far-ocean shading. Larger values
+## make the transition gradual; smaller values make far simplification start fast.
 @export_range(1.0, 4000.0, 1.0) var far_lod_blend_distance := 1400.0 :
 	set(value):
 		far_lod_blend_distance = value
 		_update_far_lod_shader_parameters()
-## Curve applied to the near-to-far LOD fade.
+## Curve exponent applied to the near-to-far LOD fade. Higher values preserve
+## near detail longer before rolling off toward the far ocean.
 @export_range(0.25, 4.0, 0.01) var far_lod_curve := 1.8 :
 	set(value):
 		far_lod_curve = value
 		_update_far_lod_shader_parameters()
-## Cascades shorter than this tile length fade out in far LOD.
+## Tile length threshold used to decide which cascades count as low frequency in
+## far LOD. Cascades shorter than this fade out more strongly with distance.
 @export_range(1.0, 512.0, 1.0) var far_low_frequency_tile_length := 32.0 :
 	set(value):
 		far_low_frequency_tile_length = value
 		_update_far_lod_shader_parameters()
-## Minimum normal detail retained in the far ocean.
+## Minimum normal strength retained in far-ocean shading. Raise if distant water
+## looks too flat; lower if the horizon looks noisy or shimmery.
 @export_range(0.0, 2.0, 0.01) var far_normal_strength := 0.14 :
 	set(value):
 		far_normal_strength = value
 		_update_far_lod_shader_parameters()
-## Foam multiplier retained in the far ocean.
+## Foam multiplier retained in the far ocean. Lower values suppress noisy horizon
+## foam; higher values keep distant whitecaps visible.
 @export_range(0.0, 1.0, 0.01) var far_foam_coverage := 0.24 :
 	set(value):
 		far_foam_coverage = value
 		_update_far_lod_shader_parameters()
-## Extra foam threshold applied with distance to avoid noisy horizon foam.
+## Extra foam edge softness added with distance. Raise to smooth distant foam;
+## lower if far whitecaps become too broad or faded.
 @export_range(0.0, 1.0, 0.01) var far_foam_threshold_boost := 0.2 :
 	set(value):
 		far_foam_threshold_boost = value
@@ -284,6 +562,7 @@ var rng = RandomNumberGenerator.new()
 var time := 0.0
 var next_update_time := 0.0
 var wind_source : Node
+var sky_source : Node
 var _last_external_wind_speed := -1.0
 var _last_external_wind_direction := -999999.0
 var _last_external_wind_spectrum_time := -1.0e20
@@ -310,6 +589,23 @@ var _surface_query_cached_results := {}
 var _surface_query_has_pending_readback := false
 var _surface_query_pending_draw_frame := -1
 var _reflection_renderer : OceanReflectionRenderer
+var _hull_cutout_centers := PackedVector4Array()
+var _hull_cutout_axes := PackedVector4Array()
+var _hull_cutout_shapes := PackedVector4Array()
+var _hull_cutout_verticals := PackedVector4Array()
+var _hull_cutout_widths := PackedVector4Array()
+var _last_hull_cutout_count := -1
+var _last_hull_cutout_centers := PackedVector4Array()
+var _last_hull_cutout_axes := PackedVector4Array()
+var _last_hull_cutout_shapes := PackedVector4Array()
+var _last_hull_cutout_verticals := PackedVector4Array()
+var _last_hull_cutout_widths := PackedVector4Array()
+var _manual_foam_sources := PackedVector4Array()
+var _manual_foam_shapes := PackedVector4Array()
+var _last_manual_foam_count := -1
+var _last_manual_foam_sources := PackedVector4Array()
+var _last_manual_foam_shapes := PackedVector4Array()
+var _last_wave_blend_alpha_sent := -1.0
 
 func _init() -> void:
 	rng.set_seed(1234) # This seed gives big waves!
@@ -320,9 +616,12 @@ func _ready() -> void:
 	if not Engine.is_editor_hint():
 		_ensure_unique_water_material()
 	_resolve_wind_source()
+	_resolve_sky_source()
 	_set_water_shader_parameter(&'water_color', water_color)
 	_set_water_shader_parameter(&'foam_color', foam_color)
-	_set_water_shader_parameter(&'wave_blend_alpha', 1.0)
+	_set_wave_blend_alpha(1.0)
+	_set_water_shader_parameter(&'water_diffuse_strength', water_diffuse_strength)
+	_set_water_shader_parameter(&'water_scatter_color', water_scatter_color)
 	_set_water_shader_parameter(&'clear_roughness', clear_roughness)
 	_set_water_shader_parameter(&'foam_roughness', foam_roughness)
 	_set_water_shader_parameter(&'clear_specular', clear_specular)
@@ -334,19 +633,20 @@ func _ready() -> void:
 	_set_water_shader_parameter(&'foam_intensity', foam_intensity)
 	_set_water_shader_parameter(&'foam_threshold', foam_threshold)
 	_set_water_shader_parameter(&'foam_softness', foam_softness)
+	_update_sky_shading_static_parameters()
+	_update_sky_lighting_shader_parameters()
 	_update_hull_cutouts()
 	_update_manual_foam_sources()
 	_update_far_lod_shader_parameters()
 	_update_water_mesh()
-	_setup_planar_reflections()
+	_update_planar_reflection_settings()
 
 func _process(delta : float) -> void:
 	_update_follow_camera()
-	if _reflection_renderer != null:
-		_reflection_renderer.set_water_level(water_level)
 	_update_hull_cutouts()
 	_update_manual_foam_sources()
 	_update_external_wind_state()
+	_update_sky_lighting_shader_parameters()
 	# Update waves once every 1.0/updates_per_second.
 	if updates_per_second == 0 or time >= next_update_time:
 		var target_update_delta := 1.0 / (updates_per_second + 1e-10)
@@ -386,7 +686,7 @@ func _setup_wave_generator() -> void:
 	_set_water_shader_parameter(&'normals', normal_maps)
 	_set_water_shader_parameter(&'previous_displacements', previous_displacement_maps)
 	_set_water_shader_parameter(&'previous_normals', previous_normal_maps)
-	_set_water_shader_parameter(&'wave_blend_alpha', 1.0)
+	_set_wave_blend_alpha(1.0)
 	_update_spectrum_blend_uniform()
 
 func _update_scales_uniform() -> void:
@@ -420,16 +720,19 @@ func _update_water(delta : float) -> void:
 	wave_generator.update(delta, parameters, get_external_wind_speed(), get_external_wind_direction(), should_use_external_wind())
 	_update_spectrum_blend_uniform()
 
-func sample_water_surface(world_position: Vector3) -> WaterSurfaceSample:
+func sample_water_surface(world_position: Vector3, request_owner: Object) -> WaterSurfaceSample:
 	var points := PackedVector3Array()
 	points.push_back(world_position)
-	var samples := sample_water_surface_batch(points)
+	var samples := sample_water_surface_batch(points, request_owner)
 	if samples.is_empty():
 		return null
 	return samples[0]
 
-func sample_water_surface_batch(points: PackedVector3Array, request_owner: Object = null) -> Array[WaterSurfaceSample]:
+func sample_water_surface_batch(points: PackedVector3Array, request_owner: Object) -> Array[WaterSurfaceSample]:
 	if points.is_empty():
+		return _empty_surface_samples()
+	if request_owner == null:
+		push_warning("sample_water_surface_batch() requires a stable request_owner so async GPU query results cannot overwrite each other.")
 		return _empty_surface_samples()
 	return _sample_water_surface_batch_gpu(points, request_owner)
 
@@ -459,10 +762,102 @@ func get_external_wind_direction() -> float:
 	var value = external_wind.get(&'wind_direction')
 	return 0.0 if value == null else float(value)
 
+func get_sky_source() -> Node:
+	if sky_source == null:
+		_resolve_sky_source()
+	return sky_source
+
+func _update_sky_shading_static_parameters() -> void:
+	_set_water_shader_parameter(&'water_diffuse_strength', water_diffuse_strength)
+	_set_water_shader_parameter(&'water_scatter_color', water_scatter_color)
+	_set_water_shader_parameter(&'sky_reflection_enabled', sky_reflection_enabled)
+	_set_water_shader_parameter(&'sky_reflection_strength', sky_reflection_strength)
+	_set_water_shader_parameter(&'sky_reflection_fresnel_power', sky_reflection_fresnel_power)
+	_set_water_shader_parameter(&'sky_reflection_f0', sky_reflection_f0)
+	_set_water_shader_parameter(&'sky_horizon_boost', sky_horizon_boost)
+	_set_water_shader_parameter(&'sky_reflection_roughness_strength', sky_reflection_roughness_strength)
+	_set_water_shader_parameter(&'sky_reflection_far_roughness', sky_reflection_far_roughness)
+	_set_water_shader_parameter(&'sun_glitter_strength', sun_glitter_strength)
+	_set_water_shader_parameter(&'sun_glitter_power', sun_glitter_power)
+	_set_water_shader_parameter(&'sun_glitter_low_sun_boost', sun_glitter_low_sun_boost)
+	_set_water_shader_parameter(&'sun_scatter_strength', sun_scatter_strength)
+	_set_water_shader_parameter(&'sun_scatter_base', sun_scatter_base)
+	_set_water_shader_parameter(&'sun_scatter_phase_power', sun_scatter_phase_power)
+	_set_water_shader_parameter(&'sun_scatter_normal_power', sun_scatter_normal_power)
+	_set_water_shader_parameter(&'sun_scatter_slope_strength', sun_scatter_slope_strength)
+	_set_water_shader_parameter(&'sun_scatter_distance_strength', sun_scatter_distance_strength)
+	_set_water_shader_parameter(&'crest_glow_enabled', crest_glow_enabled)
+	_set_water_shader_parameter(&'crest_glow_color', crest_glow_color)
+	_set_water_shader_parameter(&'crest_glow_strength', crest_glow_strength)
+	_set_water_shader_parameter(&'crest_glow_emission_strength', crest_glow_emission_strength)
+	_set_water_shader_parameter(&'crest_height_start', crest_height_start)
+	_set_water_shader_parameter(&'crest_height_end', crest_height_end)
+	_set_water_shader_parameter(&'crest_slope_start', crest_slope_start)
+	_set_water_shader_parameter(&'crest_slope_end', crest_slope_end)
+	_set_water_shader_parameter(&'crest_back_view_power', crest_back_view_power)
+	_set_water_shader_parameter(&'crest_back_normal_power', crest_back_normal_power)
+	_set_water_shader_parameter(&'crest_low_sun_start', crest_low_sun_start)
+	_set_water_shader_parameter(&'crest_low_sun_end', crest_low_sun_end)
+	_set_water_shader_parameter(&'water_debug_view', water_debug_view)
+
+func _update_sky_lighting_shader_parameters() -> void:
+	var sun_direction := _get_sky_vector(&'get_sun_direction', &'sun_direction', manual_sun_direction)
+	if sun_direction.length_squared() < 0.0001:
+		sun_direction = Vector3(0.0, 0.2, -1.0)
+	sun_direction = sun_direction.normalized()
+	_set_water_shader_parameter(&'sky_sun_direction', sun_direction)
+	_set_water_shader_parameter(&'sky_sun_color', _get_sky_color(&'get_sun_color', &'sun_color', manual_sun_color))
+	_set_water_shader_parameter(&'sky_top_color', _get_sky_color(&'get_sky_top_color', &'sky_top_color', manual_sky_top_color))
+	_set_water_shader_parameter(&'sky_horizon_color', _get_sky_color(&'get_sky_horizon_color', &'sky_horizon_color', manual_sky_horizon_color))
+	_set_water_shader_parameter(&'sky_ground_horizon_color', _get_sky_color(&'get_sky_ground_horizon_color', &'sky_ground_horizon_color', manual_sky_horizon_color.darkened(0.25)))
+	_set_water_shader_parameter(&'sky_ground_bottom_color', _get_sky_color(&'get_sky_ground_bottom_color', &'sky_ground_bottom_color', manual_sky_top_color.darkened(0.55)))
+	_set_water_shader_parameter(&'sky_sun_visibility', _get_sky_float(&'get_sun_visibility', &'sun_visibility', manual_sun_visibility))
+
+func _get_sky_vector(method: StringName, property: StringName, fallback: Vector3) -> Vector3:
+	var source := get_sky_source()
+	if source != null:
+		if source.has_method(method):
+			var method_value = source.call(method)
+			if method_value is Vector3:
+				return method_value
+		var property_value = source.get(property)
+		if property_value is Vector3:
+			return property_value
+	return fallback
+
+func _get_sky_color(method: StringName, property: StringName, fallback: Color) -> Color:
+	var source := get_sky_source()
+	if source != null:
+		if source.has_method(method):
+			var method_value = source.call(method)
+			if method_value is Color:
+				return method_value
+		var property_value = source.get(property)
+		if property_value is Color:
+			return property_value
+	return fallback
+
+func _get_sky_float(method: StringName, property: StringName, fallback: float) -> float:
+	var source := get_sky_source()
+	if source != null:
+		if source.has_method(method):
+			var method_value = source.call(method)
+			if method_value != null:
+				return float(method_value)
+		var property_value = source.get(property)
+		if property_value != null:
+			return float(property_value)
+	return fallback
+
 func _resolve_wind_source() -> void:
 	if wind_source_path.is_empty():
 		return
 	wind_source = get_node_or_null(wind_source_path)
+
+func _resolve_sky_source() -> void:
+	if sky_source_path.is_empty() or not is_inside_tree():
+		return
+	sky_source = get_node_or_null(sky_source_path)
 
 func _update_external_wind_state() -> void:
 	if not should_use_external_wind():
@@ -511,7 +906,7 @@ func _clear_wave_generator() -> void:
 	_set_water_shader_parameter(&'normals', normal_maps)
 	_set_water_shader_parameter(&'previous_displacements', previous_displacement_maps)
 	_set_water_shader_parameter(&'previous_normals', previous_normal_maps)
-	_set_water_shader_parameter(&'wave_blend_alpha', 1.0)
+	_set_wave_blend_alpha(1.0)
 
 func _update_water_mesh() -> void:
 	if Engine.is_editor_hint():
@@ -666,18 +1061,20 @@ func _update_far_lod_shader_parameters() -> void:
 	_set_water_shader_parameter(&'far_foam_threshold_boost', far_foam_threshold_boost)
 
 
-func _setup_planar_reflections() -> void:
-	if Engine.is_editor_hint():
-		return
+func _ensure_planar_reflection_renderer() -> bool:
+	if Engine.is_editor_hint() or not is_inside_tree():
+		return false
 	if _reflection_renderer == null:
 		_reflection_renderer = OCEAN_REFLECTION_RENDERER.new()
 		_reflection_renderer.name = "OceanReflectionRenderer"
 		add_child(_reflection_renderer)
 	_reflection_renderer.setup(self, water_level)
-	_update_planar_reflection_settings()
+	return true
 
 
 func _update_planar_reflection_settings() -> void:
+	if enable_planar_reflections and _reflection_renderer == null:
+		_ensure_planar_reflection_renderer()
 	if _reflection_renderer != null:
 		_reflection_renderer.enabled = enable_planar_reflections
 		_reflection_renderer.texture_size = reflection_texture_size
@@ -700,40 +1097,9 @@ func _update_hull_cutouts() -> void:
 	if not is_inside_tree():
 		return
 
-	var centers := PackedVector4Array()
-	var axes := PackedVector4Array()
-	var shapes := PackedVector4Array()
-	var verticals := PackedVector4Array()
-	var widths := PackedVector4Array()
-	centers.resize(MAX_HULL_CUTOUTS)
-	axes.resize(MAX_HULL_CUTOUTS)
-	shapes.resize(MAX_HULL_CUTOUTS)
-	verticals.resize(MAX_HULL_CUTOUTS)
-	widths.resize(MAX_HULL_CUTOUTS)
+	_ensure_hull_cutout_arrays()
 
 	var cutout_count := 0
-	for node in get_tree().get_nodes_in_group(&"water_hull_cutout"):
-		var cutout := node as WaterHullCutout
-		if cutout == null or not cutout.enabled or not _is_node_visible_in_tree(cutout):
-			continue
-		if cutout_count >= MAX_HULL_CUTOUTS:
-			break
-
-		var basis := cutout.global_transform.basis.orthonormalized()
-		var right := basis.x
-		var forward := basis.z
-		centers[cutout_count] = Vector4(
-			cutout.global_position.x,
-			cutout.global_position.y,
-			cutout.global_position.z,
-			cutout.feather
-		)
-		axes[cutout_count] = Vector4(right.x, right.z, forward.x, forward.z)
-		shapes[cutout_count] = Vector4(cutout.half_extents.x, cutout.half_extents.y, cutout.foam_amount, 0.0)
-		verticals[cutout_count] = Vector4(-100000.0, 100000.0, 1.0, 0.0)
-		widths[cutout_count] = Vector4(cutout.half_extents.x, cutout.half_extents.x, 0.0, 0.0)
-		cutout_count += 1
-
 	for node in get_tree().get_nodes_in_group(&"water_cutout_provider"):
 		var cutout_provider := node as Node
 		if cutout_provider == null or not bool(cutout_provider.get(&"enabled")) or not _is_node_visible_in_tree(cutout_provider) or not cutout_provider.has_method(&"get_exclusion_segments"):
@@ -746,16 +1112,16 @@ func _update_hull_cutouts() -> void:
 			var segment_forward : Vector3 = segment["forward"]
 			var half_extents : Vector2 = segment["half_extents"]
 			var half_widths : Vector2 = segment["half_widths"]
-			centers[cutout_count] = Vector4(
+			_hull_cutout_centers[cutout_count] = Vector4(
 				center.x,
 				center.y,
 				center.z,
 				float(segment["feather"])
 			)
-			axes[cutout_count] = Vector4(segment_right.x, segment_right.z, segment_forward.x, segment_forward.z)
-			shapes[cutout_count] = Vector4(half_extents.x, half_extents.y, float(segment["foam_amount"]), 1.0)
-			widths[cutout_count] = Vector4(half_widths.x, half_widths.y, 0.0, 0.0)
-			verticals[cutout_count] = Vector4(
+			_hull_cutout_axes[cutout_count] = Vector4(segment_right.x, segment_right.z, segment_forward.x, segment_forward.z)
+			_hull_cutout_shapes[cutout_count] = Vector4(half_extents.x, half_extents.y, float(segment["foam_amount"]), 1.0)
+			_hull_cutout_widths[cutout_count] = Vector4(half_widths.x, half_widths.y, 0.0, 0.0)
+			_hull_cutout_verticals[cutout_count] = Vector4(
 				float(segment["min_y"]),
 				float(segment["max_y"]),
 				float(segment["height_feather"]),
@@ -765,21 +1131,21 @@ func _update_hull_cutouts() -> void:
 		if cutout_count >= MAX_HULL_CUTOUTS:
 			break
 
+	if not _hull_cutout_uniforms_changed(cutout_count):
+		return
 	_set_water_shader_parameter(&'hull_cutout_count', cutout_count)
-	_set_water_shader_parameter(&'hull_cutout_centers', centers)
-	_set_water_shader_parameter(&'hull_cutout_axes', axes)
-	_set_water_shader_parameter(&'hull_cutout_shapes', shapes)
-	_set_water_shader_parameter(&'hull_cutout_verticals', verticals)
-	_set_water_shader_parameter(&'hull_cutout_widths', widths)
+	_set_water_shader_parameter(&'hull_cutout_centers', _hull_cutout_centers)
+	_set_water_shader_parameter(&'hull_cutout_axes', _hull_cutout_axes)
+	_set_water_shader_parameter(&'hull_cutout_shapes', _hull_cutout_shapes)
+	_set_water_shader_parameter(&'hull_cutout_verticals', _hull_cutout_verticals)
+	_set_water_shader_parameter(&'hull_cutout_widths', _hull_cutout_widths)
+	_store_last_hull_cutout_uniforms(cutout_count)
 
 
 func _update_manual_foam_sources() -> void:
 	if not is_inside_tree():
 		return
-	var sources := PackedVector4Array()
-	var shapes := PackedVector4Array()
-	sources.resize(MAX_MANUAL_FOAM_SOURCES)
-	shapes.resize(MAX_MANUAL_FOAM_SOURCES)
+	_ensure_manual_foam_arrays()
 	var source_count := 0
 	for node in get_tree().get_nodes_in_group(&"manual_water_foam_source"):
 		if source_count >= MAX_MANUAL_FOAM_SOURCES:
@@ -800,12 +1166,76 @@ func _update_manual_foam_sources() -> void:
 			if direction.length_squared() > 0.0001:
 				direction = direction.normalized()
 			var half_length := maxf(float(source.get("length", 0.0)) * 0.5, 0.0)
-			sources[source_count] = Vector4(position.x, position.z, radius, amount)
-			shapes[source_count] = Vector4(direction.x, direction.z, half_length, 0.0)
+			_manual_foam_sources[source_count] = Vector4(position.x, position.z, radius, amount)
+			_manual_foam_shapes[source_count] = Vector4(direction.x, direction.z, half_length, 0.0)
 			source_count += 1
+	if not _manual_foam_uniforms_changed(source_count):
+		return
 	_set_water_shader_parameter(&'manual_foam_count', source_count)
-	_set_water_shader_parameter(&'manual_foam_sources', sources)
-	_set_water_shader_parameter(&'manual_foam_shapes', shapes)
+	_set_water_shader_parameter(&'manual_foam_sources', _manual_foam_sources)
+	_set_water_shader_parameter(&'manual_foam_shapes', _manual_foam_shapes)
+	_store_last_manual_foam_uniforms(source_count)
+
+
+func _ensure_hull_cutout_arrays() -> void:
+	if _hull_cutout_centers.size() == MAX_HULL_CUTOUTS:
+		return
+	_hull_cutout_centers.resize(MAX_HULL_CUTOUTS)
+	_hull_cutout_axes.resize(MAX_HULL_CUTOUTS)
+	_hull_cutout_shapes.resize(MAX_HULL_CUTOUTS)
+	_hull_cutout_verticals.resize(MAX_HULL_CUTOUTS)
+	_hull_cutout_widths.resize(MAX_HULL_CUTOUTS)
+	_last_hull_cutout_count = -1
+
+
+func _hull_cutout_uniforms_changed(cutout_count : int) -> bool:
+	return (
+		cutout_count != _last_hull_cutout_count
+		or _hull_cutout_centers != _last_hull_cutout_centers
+		or _hull_cutout_axes != _last_hull_cutout_axes
+		or _hull_cutout_shapes != _last_hull_cutout_shapes
+		or _hull_cutout_verticals != _last_hull_cutout_verticals
+		or _hull_cutout_widths != _last_hull_cutout_widths
+	)
+
+
+func _store_last_hull_cutout_uniforms(cutout_count : int) -> void:
+	_last_hull_cutout_count = cutout_count
+	_last_hull_cutout_centers = _copy_vector4_array(_hull_cutout_centers)
+	_last_hull_cutout_axes = _copy_vector4_array(_hull_cutout_axes)
+	_last_hull_cutout_shapes = _copy_vector4_array(_hull_cutout_shapes)
+	_last_hull_cutout_verticals = _copy_vector4_array(_hull_cutout_verticals)
+	_last_hull_cutout_widths = _copy_vector4_array(_hull_cutout_widths)
+
+
+func _ensure_manual_foam_arrays() -> void:
+	if _manual_foam_sources.size() == MAX_MANUAL_FOAM_SOURCES:
+		return
+	_manual_foam_sources.resize(MAX_MANUAL_FOAM_SOURCES)
+	_manual_foam_shapes.resize(MAX_MANUAL_FOAM_SOURCES)
+	_last_manual_foam_count = -1
+
+
+func _manual_foam_uniforms_changed(source_count : int) -> bool:
+	return (
+		source_count != _last_manual_foam_count
+		or _manual_foam_sources != _last_manual_foam_sources
+		or _manual_foam_shapes != _last_manual_foam_shapes
+	)
+
+
+func _store_last_manual_foam_uniforms(source_count : int) -> void:
+	_last_manual_foam_count = source_count
+	_last_manual_foam_sources = _copy_vector4_array(_manual_foam_sources)
+	_last_manual_foam_shapes = _copy_vector4_array(_manual_foam_shapes)
+
+
+func _copy_vector4_array(source : PackedVector4Array) -> PackedVector4Array:
+	var copy := PackedVector4Array()
+	copy.resize(source.size())
+	for i in source.size():
+		copy[i] = source[i]
+	return copy
 
 
 func _is_node_visible_in_tree(node: Node) -> bool:
@@ -829,7 +1259,7 @@ func _ensure_unique_water_material() -> void:
 	else:
 		material_override = WATER_MAT.duplicate()
 
-func _sample_water_surface_batch_gpu(points: PackedVector3Array, request_owner: Object = null) -> Array[WaterSurfaceSample]:
+func _sample_water_surface_batch_gpu(points: PackedVector3Array, request_owner: Object) -> Array[WaterSurfaceSample]:
 	_read_surface_query_results_if_ready()
 	var owner_key := _get_surface_query_owner_key(request_owner)
 	_surface_query_queued_requests[owner_key] = {
@@ -842,7 +1272,7 @@ func _sample_water_surface_batch_gpu(points: PackedVector3Array, request_owner: 
 
 
 func _get_surface_query_owner_key(request_owner: Object) -> int:
-	return 0 if request_owner == null else request_owner.get_instance_id()
+	return request_owner.get_instance_id()
 
 
 func _dispatch_surface_query_requests() -> void:
@@ -912,14 +1342,12 @@ func _dispatch_surface_query_requests() -> void:
 		RenderingContext.create_push_constant([
 			total_count,
 			mini(parameters.size(), MAX_CASCADES),
-			map_size,
 			water_level,
 			_get_wave_blend_alpha(),
 			maxf(_wave_blend_duration, 1.0 / 60.0),
 			0.25,
-			0.0,
 		]),
-		32
+		24
 	)
 	device.compute_list_dispatch(compute_list, groups, 1, 1)
 	context.compute_list_end()
@@ -1121,13 +1549,13 @@ func _on_wave_output_maps_swapped(current_displacement: RID, previous_displaceme
 		_set_texture_rid(previous_normal_maps, previous_normal)
 		_wave_blend_duration = maxf(time - _last_wave_output_time, 1.0 / 60.0)
 		_wave_blend_start_time = time
-		_set_water_shader_parameter(&'wave_blend_alpha', 0.0 if smooth_wave_interpolation else 1.0)
+		_set_wave_blend_alpha(0.0 if smooth_wave_interpolation else 1.0)
 	else:
 		_set_texture_rid(previous_displacement_maps, current_displacement)
 		_set_texture_rid(previous_normal_maps, current_normal)
 		_has_wave_output = true
 		_wave_blend_start_time = time
-		_set_water_shader_parameter(&'wave_blend_alpha', 1.0)
+		_set_wave_blend_alpha(1.0)
 	_last_wave_output_time = time
 	_set_water_shader_parameter(&'displacements', displacement_maps)
 	_set_water_shader_parameter(&'normals', normal_maps)
@@ -1135,12 +1563,19 @@ func _on_wave_output_maps_swapped(current_displacement: RID, previous_displaceme
 	_set_water_shader_parameter(&'previous_normals', previous_normal_maps)
 
 func _update_wave_blend_alpha() -> void:
-	_set_water_shader_parameter(&'wave_blend_alpha', _get_wave_blend_alpha())
+	_set_wave_blend_alpha(_get_wave_blend_alpha())
 
 func _get_wave_blend_alpha() -> float:
 	if not smooth_wave_interpolation or not _has_wave_output:
 		return 1.0
 	return clampf((time - _wave_blend_start_time) / maxf(_wave_blend_duration, 1e-5), 0.0, 1.0)
+
+
+func _set_wave_blend_alpha(value : float) -> void:
+	if is_equal_approx(_last_wave_blend_alpha_sent, value):
+		return
+	_last_wave_blend_alpha_sent = value
+	_set_water_shader_parameter(&'wave_blend_alpha', value)
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_PREDELETE:

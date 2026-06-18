@@ -13,7 +13,7 @@
 - `cycle_duration_seconds`：现实多少秒走完一天。
 - `latitude_degrees`、`day_of_year`、`lunar_age_days`、`north_offset_degrees`：控制太阳、月亮和星空位置。
 - `sun_energy_multiplier`、`moon_energy_multiplier`、`star_brightness`：控制光照和星空强度。
-- `profile`：`SkyProfile` 资源，用于配置天空、太阳、月亮、环境光和可选海面颜色曲线。
+- `profile`：`SkyProfile` 资源，用于配置天空、太阳、月亮和环境光曲线。
 
 运行时设置示例：
 
@@ -43,14 +43,9 @@ sky.time_of_day_changed.connect(_on_time_changed)
 sky.lighting_changed.connect(_on_lighting_changed)
 ```
 
-## 可选 Ocean 颜色联动
+## Ocean 反射联动
 
-Sky System 不依赖 Ocean System。需要联动时，设置 `ocean_path` 并打开 `drive_ocean_colors`，它会通过通用属性名写入 `water_color` 和 `foam_color`。
-
-```gdscript
-sky.ocean_path = sky.get_path_to($OceanSystem)
-sky.drive_ocean_colors = true
-```
+Sky System 不写入 Ocean System 的水色。需要水面反射天空时，在 Ocean System 上设置 `sky_source_path` 指向 Sky System，Ocean 会读取太阳方向、太阳颜色和天空颜色。
 
 ## 独立性说明
 

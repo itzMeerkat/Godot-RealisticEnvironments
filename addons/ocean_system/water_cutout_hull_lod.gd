@@ -7,29 +7,49 @@ const GENERATED_CUTOUTS_NAME := "GeneratedCutouts"
 const POINT_DEDUP_SCALE := 1000.0
 const WATER_CUTOUT_TRAPEZOID := preload("res://addons/ocean_system/water_cutout_trapezoid.gd")
 
+## Enables this provider. When disabled, all generated child cutouts remain in
+## the scene for editing but stop contributing to the ocean shader mask.
 @export var enabled := true
 
 @export_group("Generation")
+## Optional model root used to generate cutouts. If empty, the generator scans
+## the parent Node3D, excluding this cutout provider and its generated children.
 @export var source_model_path : NodePath
+## Number of lengthwise trapezoid segments to generate from the source bounds.
+## More segments approximate curved hulls better but use more shader cutout slots.
 @export_range(1, 16, 1) var segments_count := 3 :
 	set(value):
 		segments_count = maxi(value, 1)
+## Interprets the source model's positive local Z direction as the bow when true.
+## Flip this if generated bow/stern cutouts appear swapped.
 @export var bow_is_positive_z := true
+## Extra padding added to the scanned source bounds before segmentation. Use this
+## when the mesh vertices sit inside the visible hull or miss protruding details.
 @export var bounds_padding := Vector3.ZERO :
 	set(value):
 		bounds_padding = value.max(Vector3.ZERO)
+## Shrinks generated cutout widths inward from the source mesh sides. Larger
+## values avoid hiding water outside the hull but may reveal water inside it.
 @export_range(0.0, 10.0, 0.01, "or_greater") var inset_margin := 0.25 :
 	set(value):
 		inset_margin = maxf(value, 0.0)
+## Width multiplier applied to the generated bow segment. Lower values fit sharp
+## bows and avoid a rectangular-looking masked waterline near the front.
 @export_range(0.0, 1.5, 0.01, "or_greater") var bow_width_scale := 0.55 :
 	set(value):
 		bow_width_scale = maxf(value, 0.0)
+## Width multiplier applied to the generated stern segment. Tune this separately
+## from the bow for boats with wider or narrower transoms.
 @export_range(0.0, 1.5, 0.01, "or_greater") var stern_width_scale := 0.8 :
 	set(value):
 		stern_width_scale = maxf(value, 0.0)
+## Length multiplier applied only to the bow segment. Reducing it keeps the bow
+## cutout from extending too far past a pointed front.
 @export_range(0.0, 1.0, 0.01) var bow_length_scale := 0.75 :
 	set(value):
 		bow_length_scale = clampf(value, 0.0, 1.0)
+## Editor action toggle. Set to true in the Inspector to regenerate editable
+## WaterCutoutTrapezoid children from the current source model and settings.
 @export var generate_cutouts_now := false :
 	set(value):
 		if not value:
@@ -39,18 +59,34 @@ const WATER_CUTOUT_TRAPEZOID := preload("res://addons/ocean_system/water_cutout_
 		generate_cutouts_from_source()
 
 @export_group("Defaults")
+## Default lower vertical offset assigned to generated cutouts, relative to each
+## segment center. Water below this height fades back in instead of being hidden.
 @export_range(-20.0, 20.0, 0.01) var default_vertical_min_offset := -1.0
+## Default upper vertical offset assigned to generated cutouts, relative to each
+## segment center. Water above this height fades back in to avoid over-masking.
 @export_range(-20.0, 20.0, 0.01) var default_vertical_max_offset := 0.35
+## Default soft transition distance for the lower and upper height limits.
+## Increase to hide hard cut lines when the boat pitches, rolls, or rises.
 @export_range(0.001, 10.0, 0.01, "or_greater") var default_height_feather := 0.35
+## Default horizontal edge feather in meters. This controls how wide the edge
+## foam blend is around generated cutouts.
 @export_range(0.0, 4.0, 0.01, "or_greater") var default_feather := 0.85
+## Default foam amount injected near generated cutout edges. Use enough to hide
+## the masked water boundary without creating a permanent white outline.
 @export_range(0.0, 1.0, 0.01) var default_foam_amount := 0.75
+## Multiplier applied to the bow cutout feather. Bow intersections often need a
+## slightly wider soft edge because the hull narrows quickly.
 @export_range(1.0, 4.0, 0.01, "or_greater") var bow_feather_multiplier := 1.5
 
 @export_group("Debug")
+## Shows generated cutout wireframes in the editor so each trapezoid can be
+## selected, moved, and tuned visually.
 @export var debug_draw := true :
 	set(value):
 		debug_draw = value
 		_apply_debug_settings()
+## Also shows cutout wireframes while the game is running. Keep disabled for
+## normal gameplay; enable only when debugging hull-water intersections.
 @export var debug_draw_in_game := false :
 	set(value):
 		debug_draw_in_game = value
@@ -66,7 +102,6 @@ func _exit_tree() -> void:
 
 
 func _ready() -> void:
-	_connect_cutout_signals()
 	_apply_debug_settings()
 
 
@@ -115,8 +150,6 @@ func generate_cutouts_from_source() -> void:
 		cutout.debug_draw_in_game = debug_draw_in_game
 		root.add_child(cutout)
 		cutout.owner = owner
-	_connect_cutout_signals()
-
 
 func get_exclusion_segments() -> Array[Dictionary]:
 	var segments : Array[Dictionary] = []
@@ -185,16 +218,6 @@ func _collect_cutouts(root: Node, cutouts: Array[WaterCutoutTrapezoid]) -> void:
 			cutouts.push_back(child)
 		else:
 			_collect_cutouts(child, cutouts)
-
-
-func _connect_cutout_signals() -> void:
-	for cutout in _get_cutouts():
-		if not cutout.cutout_changed.is_connected(_on_cutout_changed):
-			cutout.cutout_changed.connect(_on_cutout_changed)
-
-
-func _on_cutout_changed() -> void:
-	pass
 
 
 func _apply_debug_settings() -> void:

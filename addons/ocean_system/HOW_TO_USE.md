@@ -13,8 +13,13 @@
   使用米。保持这些值对应现实尺寸时，船体、浮力和波浪查询会处在同一尺度下。
 - `map_size`：每层 displacement/normal 贴图分辨率。越高越细，GPU 成本越高。
 - `ocean_radius`、`generated_inner_extent`、`generated_base_cell_size`、`generated_ring_count`：控制近处海面网格密度和范围。
-- `enable_far_lod`、`far_lod_radius`、`far_lod_blend_distance`：控制远海网格和远处细节淡出。
+- `enable_far_lod`、`far_lod_radius`、`far_lod_blend_distance`、`far_foam_coverage`、`far_foam_threshold_boost`：控制远海网格、远处细节淡出和远处泡沫的连续过渡。
 - `water_color`、`foam_color`、`clear_roughness`、`normal_strength`、`foam_intensity`：控制材质外观。
+- `sky_source_path`：可指向 `SkySystem` 或任何提供 `get_sun_direction()`、`get_sun_color()`、
+  `get_sky_top_color()`、`get_sky_horizon_color()`、`get_sun_visibility()` 的节点，用于远海程序化天空反射和浪尖逆光 glow。
+- `sky_reflection_*`、`sun_glitter_*`、`crest_glow_*`：控制远海天空反射、太阳闪光带和低太阳逆光浪尖散射。
+- 清水区域默认使用很低的 diffuse/specular，程序化天空、平面反射、太阳 glitter、背向太阳的
+  `sun_scatter_*` 和浪尖 glow 会作为 radiance 叠加，避免把反射混入 `ALBEDO` 后产生塑料感。
 
 所有主要参数都导出到 Inspector，也可以直接在代码中设置：
 
@@ -47,19 +52,19 @@ ocean.wind_source_path = ocean.get_path_to($WindSystem)
 水面查询统一使用 GPU point-query 后端；不再维护 CPU 高度贴图缓存。
 
 ```gdscript
-var sample := ocean.sample_water_surface(global_position)
+var sample := ocean.sample_water_surface(global_position, self)
 var samples := ocean.sample_water_surface_batch(points, self)
 ```
 
-`OceanSystem` 会收集本帧所有 owner 的请求，合并到一个大 query buffer 中一次 dispatch，并在下一帧按 owner 分发结果。如果 GPU 结果尚未就绪，会返回空数组而不是静水替代样本。
+`OceanSystem` 会收集本帧所有 owner 的请求，合并到一个大 query buffer 中一次 dispatch，并在下一帧按 owner 分发结果。调用方必须传入稳定的 owner（通常是 `self`），否则异步结果无法可靠归属。如果 GPU 结果尚未就绪，会返回空数组而不是静水替代样本。
 
 ## 船体遮水
 
 `WaterCutoutHullLOD` 用于视觉上隐藏船体内部的水面。将它作为船体子节点，设置 `source_model_path` 指向船体模型，然后 toggle `generate_cutouts_now` 生成可编辑的 `WaterCutoutTrapezoid` 子节点。每个梯形都可以在编辑器中单独选中、移动、旋转，并调整 `half_length`、`start_half_width`、`end_half_width`、垂直范围和边缘参数。
 
-`height_feather` 控制 cutout 在 `max_y` 上方的垂直渐变恢复距离，用来避免水面在高度边界处硬切。`feather` 控制顶视角轮廓边缘的水平软边。`WaterCutoutTrapezoid` 默认在编辑器中绘制线框，运行时默认不显示；如需运行时显示可开启 `debug_draw_in_game`。
+`vertical_min_offset` 和 `vertical_max_offset` 控制 cutout 的垂直生效范围；`height_feather` 控制上下边界的垂直渐变距离，用来避免船体部分离水时仍把下方水面挖空。`feather` 控制顶视角轮廓边缘的水平软边。`WaterCutoutTrapezoid` 默认在编辑器中绘制线框，运行时默认不显示；如需运行时显示可开启 `debug_draw_in_game`。
 
-简单船体也可以继续使用 `WaterHullCutout` 手工矩形遮水。遮水系统与 `BuoyancyCellVolume` 解耦；浮力 cell 只负责物理和质量。
+遮水系统与 `BuoyancyCellVolume` 解耦；浮力 cell 只负责物理和质量。
 
 ## 独立性说明
 

@@ -7,65 +7,79 @@ signal scale_changed
 
 const SPECTRUM_SLOT_COUNT := 2
 
-## Denotes the distance the cascade's tile should cover (in meters).
+## Repeating world-space size of this wave layer in meters. Larger tiles create
+## broad swell and long waves; smaller tiles add local chop and surface detail.
 @export var tile_length := Vector2(50, 50) :
 	set(value): tile_length = Vector2(maxf(0.0001, value.x), maxf(0.0001, value.y)); mark_all_spectra_dirty(); scale_changed.emit()
-## Multiplies vertex displacement from this cascade.
+## Multiplies vertex displacement contributed by this cascade. Lower this for
+## detail-only layers, raise it for visible swell, and use 0 to disable height.
 @export_range(0, 2) var displacement_scale := 1.0 :
 	set(value): displacement_scale = value; scale_changed.emit()
-## Multiplies normal and foam detail from this cascade.
+## Multiplies normal and foam detail contributed by this cascade. This affects
+## lighting and whitecap appearance without changing the mesh displacement.
 @export_range(0, 2) var normal_scale := 1.0 :
 	set(value): normal_scale = value; scale_changed.emit()
 
-## Denotes the average wind speed above the water (in meters per second). Increasing makes waves steeper and more 'chaotic'.
+## Local wind speed in meters per second when OceanSystem.use_external_wind is
+## disabled. Higher values generate taller, steeper, more energetic waves.
 @export var wind_speed := 20.0 :
 	set(value): wind_speed = max(0.0001, value); mark_all_spectra_dirty()
 ## Local wind direction in degrees when OceanSystem.use_external_wind is disabled.
+## Public heading convention is 0 = +Z and 90 = +X.
 @export_range(-360, 360) var wind_direction := 0.0 :
 	set(value): wind_direction = value; mark_all_spectra_dirty()
-## Multiplies speed from an external wind provider before generating this cascade.
+## Multiplies the external wind provider speed for this cascade. Use per-layer
+## multipliers to make small chop respond more strongly than large swell.
 @export var wind_speed_multiplier := 1.0 :
 	set(value): wind_speed_multiplier = maxf(0.0, value); mark_all_spectra_dirty()
-## Adds an offset to external wind direction for this cascade.
+## Adds a per-cascade direction offset to the external wind direction in degrees.
+## Small offsets help break up parallel layers while keeping global wind control.
 @export_range(-360, 360) var wind_direction_offset := 0.0 :
 	set(value): wind_direction_offset = value; mark_all_spectra_dirty()
-## Maximum speed at which this cascade can turn toward the target wind direction.
-## Lower values make long waves retain their old direction for longer.
+## Maximum turn speed toward the target wind direction when auto turn rate is
+## disabled. Lower values make waves preserve their old travel direction longer.
 @export_range(0.0, 180.0, 0.1, "or_greater") var wave_turn_rate_degrees_per_second := 5.0
-## When enabled, turn rate is derived from tile length. Long waves turn slowly;
-## short waves follow changing wind much faster.
+## Derives turn speed from tile_length when enabled. Long swells turn slowly,
+## while short chop follows changing wind much faster.
 @export var auto_turn_rate_from_tile_length := true
-## Starts generating a new pending spectrum once the current wave direction has
-## moved this far from the active spectrum direction.
+## Direction change threshold, in degrees, before a new pending spectrum is
+## generated. Lower values react sooner but regenerate spectra more often.
 @export_range(0.0, 45.0, 0.1) var spectrum_direction_refresh_threshold := 2.0
-## Seconds used to blend from the active spectrum to the pending spectrum.
+## Seconds used to blend from the active spectrum to the pending spectrum after
+## a direction refresh. Longer blends hide changes but delay full wind response.
 @export_range(0.01, 60.0, 0.01, "or_greater") var spectrum_direction_blend_duration := 4.0
-## Denotes the distance from shoreline (in kilometers). Increasing makes waves steeper, but reduces their 'choppiness'.
+## Effective fetch length in kilometers. Higher values represent wind blowing
+## across water for longer distance, producing more developed organized waves.
 @export var fetch_length := 550.0 :
 	set(value): fetch_length = max(0.0001, value); mark_all_spectra_dirty()
-## Mean water depth in meters for this cascade's finite-depth spectrum.
+## Mean water depth in meters for the finite-depth spectrum. Shallower water
+## changes wave speed and attenuates longer waves compared with deep water.
 @export_range(0.1, 1000.0, 0.1, "or_greater") var water_depth_meters := 20.0 :
 	set(value): water_depth_meters = maxf(0.1, value); mark_all_spectra_dirty()
-## Swell factor used by the wave spectrum. Higher values favor longer organized waves.
+## Swell bias used by the directional spectrum. Higher values favor smoother,
+## longer, more organized waves aligned with the wind direction.
 @export_range(0, 2) var swell := 0.8 :
 	set(value): swell = value; mark_all_spectra_dirty()
-## Modifies how much wind and swell affect the direction of the waves.
+## Directional spread control. Lower values make waves more aligned with wind;
+## higher values broaden directions for a rougher, less organized sea surface.
 @export_range(0, 1) var spread := 0.2 :
 	set(value): spread = value; mark_all_spectra_dirty()
-## Modifies the attenuation of high frequency waves.
+## High-frequency preservation. Lower values damp tiny ripples; higher values
+## keep more small-scale detail in this cascade.
 @export_range(0, 1) var detail := 1.0 :
 	set(value): detail = value; mark_all_spectra_dirty()
 
-## Modifies how steep a wave needs to be before foam can accumulate.
+## Steepness threshold used by the compute pass before foam can accumulate.
+## Lower values create whitecaps sooner; higher values reserve foam for breakers.
 @export_range(0, 2) var whitecap := 0.5 :
 	set(value): whitecap = value
-## Controls how quickly foam grows and decays in this cascade.
+## Foam persistence and growth strength for this cascade. Higher values create
+## more visible foam that grows quickly and decays more slowly.
 @export_range(0, 10) var foam_amount := 5.0 :
 	set(value): foam_amount = value
 
 var spectrum_seed := Vector2i.ZERO
 var has_runtime_seed := false
-var should_generate_spectrum := true
 var active_spectrum_slot := 0
 var pending_spectrum_slot := 1
 var current_wave_direction : float
@@ -154,7 +168,6 @@ func mark_spectrum_slot_clean(slot : int) -> void:
 	if slot < 0 or slot >= _spectrum_slot_dirty.size():
 		return
 	_spectrum_slot_dirty[slot] = false
-	should_generate_spectrum = _has_dirty_spectrum_slot()
 
 
 func mark_all_spectra_dirty() -> void:
@@ -162,7 +175,6 @@ func mark_all_spectra_dirty() -> void:
 	_spectrum_slot_dirty[active_spectrum_slot] = true
 	if is_blending_spectrum:
 		_spectrum_slot_dirty[pending_spectrum_slot] = true
-	should_generate_spectrum = true
 
 
 func get_spectrum_blend_state(cascade_index : int) -> Vector4:
@@ -194,15 +206,6 @@ func _begin_spectrum_direction_blend(direction : float) -> void:
 	spectrum_blend_alpha = 0.0
 	is_blending_spectrum = true
 	_spectrum_slot_dirty[pending_spectrum_slot] = true
-	should_generate_spectrum = true
-
-
-func _has_dirty_spectrum_slot() -> bool:
-	_ensure_spectrum_slot_dirty_array()
-	for dirty in _spectrum_slot_dirty:
-		if dirty:
-			return true
-	return false
 
 
 func _ensure_spectrum_slot_dirty_array() -> void:

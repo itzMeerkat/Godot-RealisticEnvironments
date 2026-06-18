@@ -15,11 +15,6 @@ class DeletionQueue:
 			device.free_rid(queue[i])
 		queue.clear()
 
-	func free_rid(device : RenderingDevice, rid : RID) -> void:
-		var rid_idx := queue.find(rid)
-		assert(rid_idx != -1, 'RID was not found in deletion queue!')
-		device.free_rid(queue.pop_at(rid_idx))
-
 class Descriptor:
 	var rid : RID
 	var type : RenderingDevice.UniformType
@@ -30,7 +25,6 @@ class Descriptor:
 var device : RenderingDevice
 var deletion_queue := DeletionQueue.new()
 var shader_cache : Dictionary
-var needs_sync := false
 
 static func create(device : RenderingDevice=null) -> RenderingContext:
 	var context := RenderingContext.new()
@@ -46,8 +40,8 @@ func _notification(what):
 			device.free()
 
 # --- WRAPPER FUNCTIONS ---
-func submit() -> void: device.submit(); needs_sync = true
-func sync() -> void: device.sync(); needs_sync = false
+func submit() -> void: device.submit()
+func sync() -> void: device.sync()
 func compute_list_begin() -> int: return device.compute_list_begin()
 func compute_list_end() -> void: device.compute_list_end()
 func compute_list_add_barrier(compute_list : int) -> void: device.compute_list_add_barrier(compute_list)
@@ -65,13 +59,6 @@ func create_storage_buffer(size : int, data : PackedByteArray=[], usage:=0) -> D
 		var padding := PackedByteArray(); padding.resize(size - len(data))
 		data += padding
 	return Descriptor.new(deletion_queue.push(device.storage_buffer_create(max(size, len(data)), data, usage)), RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER)
-
-func create_uniform_buffer(size : int, data : PackedByteArray=[]) -> Descriptor:
-	size = max(16, size)
-	if size > len(data):
-		var padding := PackedByteArray(); padding.resize(size - len(data))
-		data += padding
-	return Descriptor.new(deletion_queue.push(device.uniform_buffer_create(max(size, len(data)), data)), RenderingDevice.UNIFORM_TYPE_UNIFORM_BUFFER)
 
 func create_texture(dimensions : Vector2i, format : RenderingDevice.DataFormat, usage:=0x18B, num_layers:=0, view:=RDTextureView.new(), data : PackedByteArray=[]) -> Descriptor:
 	assert(num_layers >= 0)
@@ -118,8 +105,7 @@ func create_pipeline(block_dimensions : Array, descriptor_sets : Array, shader :
 		else:
 			device.compute_list_dispatch(compute_list, block_dimensions[0], block_dimensions[1], block_dimensions[2])
 
-## Returns a [PackedFloat32Array] from the provided data, whose size is rounded up to the nearest
-## multiple of 16
+## Returns push-constant bytes with the exact size required by the shader.
 static func create_push_constant(data : Array) -> PackedByteArray:
 	var packed_size := len(data)*4
 	assert(packed_size <= 128, 'Push constant size must be at most 128 bytes!')
