@@ -5,9 +5,7 @@
 [ext_resource type="Script" uid="uid://bw2332cbm64tv" path="res://addons/sky_system/sky_profile.gd" id="3_nr2wj"]
 [ext_resource type="PackedScene" uid="uid://c4amd8o0cttut" path="res://systems/camera/player_camera_rig.tscn" id="4_camera_rig"]
 [ext_resource type="Shader" uid="uid://cjhn8nkfr4mn0" path="res://addons/ocean_system/shaders/spatial/water.gdshader" id="4_dg77c"]
-[ext_resource type="AudioStream" uid="uid://cvvn0vke5comw" path="res://demo/media/ocean_loop.wav" id="6_jpklm"]
 [ext_resource type="PackedScene" uid="uid://lsh7kr3nyl2t" path="res://addons/ocean_system/ocean_system.tscn" id="7_s0x5e"]
-[ext_resource type="AudioStream" uid="uid://ck6vmandgjhy0" path="res://demo/media/wind_loop.wav" id="8_6r5si"]
 [ext_resource type="PackedScene" uid="uid://bm4bg7uoyr0xy" path="res://systems/debug/ocean_debug_panel.tscn" id="9_gb4mm"]
 [ext_resource type="Script" uid="uid://btyuqnmfuyrr6" path="res://addons/wind_system/wind_system.gd" id="10_tfjfv"]
 [ext_resource type="PackedScene" uid="uid://ckdc57htjsaad" path="res://addons/sky_system/sky_system.tscn" id="11_sky"]
@@ -111,13 +109,13 @@ shader_parameter/sun_scatter_slope_strength = 0.65
 shader_parameter/sun_scatter_distance_strength = 0.25
 shader_parameter/crest_glow_enabled = true
 shader_parameter/crest_glow_color = Color(0.08, 0.58, 0.46, 1)
-shader_parameter/crest_glow_strength = 2.2
+shader_parameter/crest_glow_strength = 1.25
 shader_parameter/crest_glow_emission_strength = 0.75
 shader_parameter/crest_height_start = 0.18
 shader_parameter/crest_height_end = 0.85
 shader_parameter/crest_slope_start = 0.18
 shader_parameter/crest_slope_end = 0.85
-shader_parameter/crest_back_view_power = 0.1
+shader_parameter/crest_back_view_power = 0.5
 shader_parameter/crest_back_normal_power = 1.0
 shader_parameter/crest_low_sun_start = 0.02
 shader_parameter/crest_low_sun_end = 0.38
@@ -155,7 +153,7 @@ shader_parameter/displacements = SubResource("Texture2DArrayRD_6g5ly")
 shader_parameter/normals = SubResource("Texture2DArrayRD_ucu34")
 shader_parameter/previous_displacements = SubResource("Texture2DArrayRD_f8mb2")
 shader_parameter/previous_normals = SubResource("Texture2DArrayRD_ykfgg")
-shader_parameter/wave_blend_alpha = 0.6915295636630473
+shader_parameter/wave_blend_alpha = 0.6530699607373669
 
 [sub_resource type="Resource" id="Resource_adqv5"]
 script = ExtResource("2_pw5n6")
@@ -223,9 +221,9 @@ extra_cull_margin = 1000.0
 gi_mode = 0
 skeleton = NodePath("")
 sky_source_path = NodePath("../SkySystem")
-crest_glow_strength = 2.2
+crest_glow_strength = 1.25
 crest_glow_emission_strength = 0.75
-crest_back_view_power = 0.1
+crest_back_view_power = 0.5
 crest_back_normal_power = 1.0
 foam_intensity = 0.5
 use_external_wind = true
@@ -233,15 +231,6 @@ wind_source_path = NodePath("../WindSystem")
 parameters = Array[ExtResource("2_pw5n6")]([SubResource("Resource_adqv5"), SubResource("Resource_luhq0"), SubResource("Resource_83u3u")])
 map_size = 512
 generated_base_cell_size = 1.0
-
-[node name="OceanAudioPlayer" type="AudioStreamPlayer" parent="." unique_id=1224032298]
-stream = ExtResource("6_jpklm")
-autoplay = true
-
-[node name="WindAudioPlayer" type="AudioStreamPlayer" parent="." unique_id=1606028856]
-stream = ExtResource("8_6r5si")
-volume_db = -18.333334
-autoplay = true
 
 [node name="OceanDebugPanel" parent="." unique_id=900526538 instance=ExtResource("9_gb4mm")]
 visible = false

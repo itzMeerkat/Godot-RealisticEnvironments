@@ -34,8 +34,8 @@ func _process(_delta : float) -> void:
 
 func _physics_process(_delta: float) -> void:
 	var wind_speed:float = wind_system.get_wind_speed()
-	$OceanAudioPlayer.volume_db = lerpf(-30.0, 15.0, minf(wind_speed / 15.0, 1.0))
-	$WindAudioPlayer.volume_db = lerpf(5.0, -30.0, minf(wind_speed / 15.0, 1.0))
+	#$OceanAudioPlayer.volume_db = lerpf(-30.0, 15.0, minf(wind_speed / 15.0, 1.0))
+	#$WindAudioPlayer.volume_db = lerpf(5.0, -30.0, minf(wind_speed / 15.0, 1.0))
 
 func _input(event: InputEvent) -> void:
 	if event.is_action_pressed(&'toggle_debug_ui'):
