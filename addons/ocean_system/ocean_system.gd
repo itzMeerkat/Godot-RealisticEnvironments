@@ -5,6 +5,7 @@ extends MeshInstance3D
 ## managing wave generation pipelines.
 
 const WATER_MAT := preload('res://addons/ocean_system/mat_water.tres')
+const EDITOR_WATER_PREVIEW_MESH := preload('res://addons/ocean_system/editor_water_preview_mesh.tres')
 const OCEAN_REFLECTION_RENDERER := preload('res://addons/ocean_system/ocean_reflection_renderer.gd')
 const MAX_CASCADES := 8
 const MAX_HULL_CUTOUTS := 16
@@ -910,7 +911,9 @@ func _clear_wave_generator() -> void:
 
 func _update_water_mesh() -> void:
 	if Engine.is_editor_hint():
-		mesh = null
+		mesh = EDITOR_WATER_PREVIEW_MESH
+		extra_cull_margin = maxf(256.0, EDITOR_WATER_PREVIEW_MESH.size.length() * 0.5)
+		_update_far_lod_shader_parameters()
 		return
 
 	mesh = _create_generated_clipmap_mesh()
