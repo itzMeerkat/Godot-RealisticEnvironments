@@ -64,7 +64,7 @@ var samples := ocean.sample_water_surface_batch(points, self)
 
 `vertical_min_offset` 和 `vertical_max_offset` 控制 cutout 的垂直生效范围；`height_feather` 控制上下边界的垂直渐变距离，用来避免船体部分离水时仍把下方水面挖空。`feather` 控制顶视角轮廓边缘的水平软边。`WaterCutoutTrapezoid` 默认在编辑器中绘制线框，运行时默认不显示；如需运行时显示可开启 `debug_draw_in_game`。
 
-遮水系统与 `BuoyancyCellVolume` 解耦；浮力 cell 只负责物理和质量。
+遮水系统与 `BuoyancyProbeVolume` 解耦；浮力 probe 只负责物理和质量。
 
 ## 独立性说明
 

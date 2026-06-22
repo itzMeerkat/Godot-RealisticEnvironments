@@ -11,8 +11,13 @@ extends Node3D
 @export_range(0.05, 20.0, 0.01, "or_greater") var bow_streak_length := 1.15
 @export_range(0.0, 2.0, 0.01) var outward_splay := 0.42
 @export_range(0.0, 1.0, 0.001) var bow_foam_amount := 0.38
+@export var use_bow_contact_probes := true
+@export var bow_probe_tag := "bow"
+@export_range(0, 16, 1) var max_bow_probe_foam_sources := 4
+@export_range(-1.0, 1.0, 0.001) var min_bow_probe_depth := -0.05
 
 var rigid_body : RigidBody3D
+var buoyant_body : BuoyantBody
 
 
 func _enter_tree() -> void:
@@ -27,6 +32,7 @@ func _exit_tree() -> void:
 
 func _ready() -> void:
 	rigid_body = get_parent() as RigidBody3D
+	buoyant_body = _find_buoyant_body()
 
 
 func get_manual_foam_sources() -> Array[Dictionary]:
@@ -51,11 +57,35 @@ func get_manual_foam_sources() -> Array[Dictionary]:
 	var right := rigid_body.global_transform.basis.x
 	right.y = 0.0
 	right = right.normalized() if right.length_squared() > 0.0001 else Vector3.RIGHT
+	if use_bow_contact_probes and _add_probe_bow_streaks(sources, -forward, right, strength) > 0:
+		return sources
 	var bow_center := global_transform * bow_offset
 	var amount := bow_foam_amount * strength
 	_add_bow_streak(sources, bow_center, -forward, right, 1.0, amount)
 	_add_bow_streak(sources, bow_center, -forward, right, -1.0, amount)
 	return sources
+
+
+func _add_probe_bow_streaks(sources: Array[Dictionary], backward: Vector3, right: Vector3, strength: float) -> int:
+	if buoyant_body == null:
+		buoyant_body = _find_buoyant_body()
+	if buoyant_body == null:
+		return 0
+	var states := buoyant_body.get_probe_states(bow_probe_tag)
+	var added := 0
+	for state in states:
+		if added >= max_bow_probe_foam_sources:
+			break
+		var depth := float(state.get("depth", 0.0))
+		if not bool(state.get("is_wet", false)) and depth < min_bow_probe_depth:
+			continue
+		var start : Vector3 = state.get("water_position", state.get("world_position", global_position))
+		var side_sign := 1.0 if right.dot(start - rigid_body.global_position) >= 0.0 else -1.0
+		var depth_strength := clampf((depth - min_bow_probe_depth) / maxf(0.35 - min_bow_probe_depth, 0.001), 0.0, 1.0)
+		var amount := bow_foam_amount * strength * maxf(depth_strength, 0.25)
+		_add_probe_bow_streak(sources, start, backward, right, side_sign, amount)
+		added += 1
+	return added
 
 
 func _add_bow_streak(sources: Array[Dictionary], bow_center: Vector3, backward: Vector3, right: Vector3, side_sign: float, amount: float) -> void:
@@ -69,3 +99,26 @@ func _add_bow_streak(sources: Array[Dictionary], bow_center: Vector3, backward: 
 		"direction": direction,
 		"length": bow_streak_length,
 	})
+
+
+func _add_probe_bow_streak(sources: Array[Dictionary], start: Vector3, backward: Vector3, right: Vector3, side_sign: float, amount: float) -> void:
+	var direction := (backward + right * side_sign * outward_splay).normalized()
+	var center := start + direction * bow_streak_length * 0.45
+	sources.push_back({
+		"position": center,
+		"radius": bow_radius,
+		"amount": amount,
+		"direction": direction,
+		"length": bow_streak_length,
+	})
+
+
+func _find_buoyant_body() -> BuoyantBody:
+	var parent_node := get_parent()
+	if parent_node == null:
+		return null
+	for child in parent_node.get_children():
+		var candidate := child as BuoyantBody
+		if candidate != null:
+			return candidate
+	return null

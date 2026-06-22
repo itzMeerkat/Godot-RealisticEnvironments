@@ -134,11 +134,11 @@ func _apply_player_controlled_state() -> void:
 		return
 
 	for child in _find_descendants():
-		var cell_volume := child as Node
-		if cell_volume == null or not cell_volume.has_method(&"get_buoyancy_sample_points"):
+		var probe_volume := child as Node
+		if probe_volume == null or not probe_volume.has_method(&"get_buoyancy_sample_points"):
 			continue
 		if sync_child_buoyancy_debug_with_player_control:
-			cell_volume.set(&"debug_draw", player_controlled)
+			probe_volume.set(&"debug_draw", player_controlled)
 
 	for child in _find_descendants():
 		if not child.is_in_group(&"water_cutout_provider"):

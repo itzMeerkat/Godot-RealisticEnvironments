@@ -96,6 +96,8 @@ Run the `demo/main.tscn`. You will see everything.
 
 "Stylized Low Poly Rowboat with Paddles" (https://sketchfab.com/3d-models/stylized-low-poly-rowboat-with-paddles-f2c35c716f32474e96cce3625073e6b8) by Muyaya Concept (https://sketchfab.com/muyayaconcept) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
 "Red Marine Navigation Buoy (Game Ready)" (https://skfb.ly/pINBD) by Muyaya Concept is licensed under Creative Commons Attribution (http://creativecommons.org/licenses/by/4.0/).
+"Caravel Ship" (https://skfb.ly/6VL7W) by Ginny Sutton is licensed under Creative Commons Attribution (http://creativecommons.org/licenses/by/4.0/).
+
 ## License
 
 MIT license.

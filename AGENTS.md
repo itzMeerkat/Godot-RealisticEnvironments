@@ -18,7 +18,7 @@
 
 ## Water Queries And Buoyancy
 - Use `OceanSystem.sample_water_surface_batch(points, owner)` for gameplay and buoyancy; it uses the GPU point-query path.
-- `BuoyantBody` auto-finds an `OceanSystem` via explicit `ocean_path` or the `ocean_system` group and expects child `BuoyancyCellVolume` nodes for sample points.
+- `BuoyantBody` auto-finds an `OceanSystem` via explicit `ocean_path` or the `ocean_system` group and expects child `BuoyancyProbeVolume` nodes for sample points.
 
 ## Scene And Asset Editing
 - Keep `res://` paths and Godot resource UIDs intact when editing `.tscn`, `.tres`, or `.import` files manually.
