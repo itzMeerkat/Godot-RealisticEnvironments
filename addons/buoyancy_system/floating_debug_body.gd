@@ -10,6 +10,11 @@ extends RigidBody3D
 		player_controlled = value
 		_apply_player_controlled_state()
 
+@export_group("Angular Damping")
+@export var local_angular_damping_enabled := false
+## Per-mass torque damping in local axes: X = pitch, Y = yaw, Z = roll.
+@export var local_angular_damping := Vector3.ZERO
+
 @export_group("Debug History")
 @export var debug_draw_position_history := false :
 	set(value):
@@ -50,9 +55,26 @@ func _ready() -> void:
 
 
 func _physics_process(_delta: float) -> void:
-	if Engine.is_editor_hint() or not player_controlled or not debug_draw_position_history:
+	if Engine.is_editor_hint():
 		return
-	_record_history_point()
+	_apply_local_angular_damping()
+	if player_controlled and debug_draw_position_history:
+		_record_history_point()
+
+
+func _apply_local_angular_damping() -> void:
+	if not local_angular_damping_enabled:
+		return
+	if local_angular_damping.length_squared() <= 0.0 or angular_velocity.length_squared() <= 0.0:
+		return
+	var basis := global_transform.basis.orthonormalized()
+	var local_angular_velocity := basis.inverse() * angular_velocity
+	var local_torque := Vector3(
+		-local_angular_velocity.x * maxf(local_angular_damping.x, 0.0),
+		-local_angular_velocity.y * maxf(local_angular_damping.y, 0.0),
+		-local_angular_velocity.z * maxf(local_angular_damping.z, 0.0)
+	) * mass
+	apply_torque(basis * local_torque)
 
 
 func clear_position_history() -> void:

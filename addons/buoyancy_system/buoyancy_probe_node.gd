@@ -26,11 +26,6 @@ const EDITOR_PROBE_RADIUS := 0.16
 		buoyancy_height = maxf(value, 0.001)
 		_emit_probe_changed()
 
-@export_range(0.0, 100.0, 0.01, "or_greater") var vertical_damping_multiplier := 1.0 :
-	set(value):
-		vertical_damping_multiplier = maxf(value, 0.0)
-		_emit_probe_changed()
-
 @export_range(0.0, 100.0, 0.01, "or_greater") var longitudinal_water_drag_multiplier := 1.0 :
 	set(value):
 		longitudinal_water_drag_multiplier = maxf(value, 0.0)

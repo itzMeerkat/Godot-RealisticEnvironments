@@ -92,7 +92,6 @@ shape = SubResource("CapsuleShape3D_lq5a0")
 [node name="BuoyBody" type="Node3D" parent="RigidBody3D" unique_id=659075801]
 script = ExtResource("2_7hk8w")
 rigid_body_path = NodePath("../Sketchfab_Scene/Sketchfab_model/buoy_lowpoly_fbx_fbx/RootNode")
-vertical_damping = 8.0
 
 [node name="Node3D" type="Node3D" parent="RigidBody3D" unique_id=1006859282]
 script = ExtResource("3_ow6qj")

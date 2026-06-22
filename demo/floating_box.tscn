@@ -48,7 +48,7 @@ no_depth_test = true
 shading_mode = 0
 albedo_color = Color(0.1, 0.8, 1, 0.32)
 
-[sub_resource type="SphereMesh" id="SphereMesh_4kjtq"]
+[sub_resource type="SphereMesh" id="SphereMesh_ducaw"]
 radius = 0.16
 height = 0.32
 
@@ -59,7 +59,7 @@ no_depth_test = true
 shading_mode = 0
 albedo_color = Color(0.1, 0.8, 1, 0.32)
 
-[sub_resource type="SphereMesh" id="SphereMesh_82fpr"]
+[sub_resource type="SphereMesh" id="SphereMesh_f5n33"]
 radius = 0.16
 height = 0.32
 
@@ -70,7 +70,7 @@ no_depth_test = true
 shading_mode = 0
 albedo_color = Color(0.1, 0.8, 1, 0.32)
 
-[sub_resource type="SphereMesh" id="SphereMesh_r7vxl"]
+[sub_resource type="SphereMesh" id="SphereMesh_odp0u"]
 radius = 0.16
 height = 0.32
 
@@ -81,7 +81,7 @@ no_depth_test = true
 shading_mode = 0
 albedo_color = Color(0.1, 0.8, 1, 0.32)
 
-[sub_resource type="SphereMesh" id="SphereMesh_pgcpf"]
+[sub_resource type="SphereMesh" id="SphereMesh_fo7e3"]
 radius = 0.16
 height = 0.32
 
@@ -92,7 +92,7 @@ no_depth_test = true
 shading_mode = 0
 albedo_color = Color(0.1, 0.8, 1, 0.32)
 
-[sub_resource type="SphereMesh" id="SphereMesh_ndef8"]
+[sub_resource type="SphereMesh" id="SphereMesh_rt2ym"]
 radius = 0.16
 height = 0.32
 
@@ -103,7 +103,7 @@ no_depth_test = true
 shading_mode = 0
 albedo_color = Color(0.1, 0.8, 1, 0.32)
 
-[sub_resource type="SphereMesh" id="SphereMesh_sfe5m"]
+[sub_resource type="SphereMesh" id="SphereMesh_3sm6b"]
 radius = 0.16
 height = 0.32
 
@@ -114,7 +114,7 @@ no_depth_test = true
 shading_mode = 0
 albedo_color = Color(0.1, 0.8, 1, 0.32)
 
-[sub_resource type="SphereMesh" id="SphereMesh_lihre"]
+[sub_resource type="SphereMesh" id="SphereMesh_6lar6"]
 radius = 0.16
 height = 0.32
 
@@ -125,7 +125,7 @@ no_depth_test = true
 shading_mode = 0
 albedo_color = Color(0.1, 0.8, 1, 0.32)
 
-[sub_resource type="SphereMesh" id="SphereMesh_klghn"]
+[sub_resource type="SphereMesh" id="SphereMesh_f3md0"]
 radius = 0.16
 height = 0.32
 
@@ -133,8 +133,9 @@ height = 0.32
 mass = 15000.0
 center_of_mass_mode = 1
 center_of_mass = Vector3(0, 0, 0.19645399)
-angular_damp = 15.0
 script = ExtResource("2_float_debug")
+local_angular_damping_enabled = true
+local_angular_damping = Vector3(0, 0, 24)
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=25228791]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.015907168, 1.240979, 1.2109936)
@@ -143,7 +144,9 @@ shape = SubResource("BoxShape3D_float_demo")
 [node name="BuoyantBody" type="Node" parent="." unique_id=1420237142]
 script = ExtResource("4_buoyant")
 rigid_body_path = NodePath("../CollisionShape3D")
-vertical_damping = 30.0
+heave_damping = 1.0
+longitudinal_water_drag = 0.25
+lateral_water_drag = 1.5
 
 [node name="BoatWaterInteractor" type="Node3D" parent="." unique_id=1023630386]
 script = ExtResource("9_interactor")
@@ -181,7 +184,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.13373, 0.2841015)
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 5.553251, 7.6384916)
 
 [node name="Sketchfab_Scene" parent="." unique_id=1518944437 instance=ExtResource("12_dr3n4")]
-transform = Transform3D(-0.1, 0, -1.509958e-08, 0, 0.1, 0, 1.509958e-08, 0, -0.1, -0.72055817, -1.2595885, 0)
+transform = Transform3D(-0.1, 0, -1.509958e-08, 0, 0.1, 0, 1.509958e-08, 0, -0.1, -0.72055817, -0.68872666, 0)
 
 [node name="Hull_lo_Hull_0" parent="Sketchfab_Scene/Sketchfab_model/4279c9e2ed2e464895c5348c2b75ab18_fbx/Object_2/RootNode/Hull/Hull_lo/Object_48" parent_id_path=PackedInt32Array(1518944437, 382727467) index="0" unique_id=1543998925]
 transform = Transform3D(1, 7.1054274e-15, 2.7397678e-12, -2.842171e-14, 0.99999994, 2.9588664e-05, -2.7397678e-12, -2.9588666e-05, 0.99999994, 0, 0, 0)
@@ -194,8 +197,8 @@ script = ExtResource("7_35oko")
 source_paths = Array[NodePath]([NodePath("../Sketchfab_Scene/Sketchfab_model/4279c9e2ed2e464895c5348c2b75ab18_fbx/Object_2/RootNode/Hull/Hull_lo")])
 physical_probe_count = 8
 fx_probe_count = 6
-generated_max_submerged_volume_cubic_meters = 4.0
-generated_buoyancy_height = 2.0
+generated_max_submerged_volume_cubic_meters = 2.0
+generated_buoyancy_height = 3.0
 auto_generate_if_empty = false
 
 [node name="DebugDraw" type="MeshInstance3D" parent="Node3D" unique_id=1700356031]
@@ -206,86 +209,86 @@ surface_material_override/0 = SubResource("StandardMaterial3D_dr3n4")
 surface_material_override/1 = SubResource("StandardMaterial3D_htw60")
 surface_material_override/2 = SubResource("StandardMaterial3D_xu65i")
 
-[node name="GeneratedProbes" type="Node3D" parent="Node3D" unique_id=1069040970]
+[node name="GeneratedProbes" type="Node3D" parent="Node3D" unique_id=997617434]
 
-[node name="Probe_000" type="MeshInstance3D" parent="Node3D/GeneratedProbes" unique_id=999371340]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.390751, 0, -4.94057)
+[node name="Probe_000" type="MeshInstance3D" parent="Node3D/GeneratedProbes" unique_id=1302943093]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.1961262, 0, -4.812997)
 material_override = SubResource("StandardMaterial3D_82fpr")
 cast_shadow = 0
 extra_cull_margin = 10000.0
-mesh = SubResource("SphereMesh_4kjtq")
+mesh = SubResource("SphereMesh_ducaw")
 script = ExtResource("8_kmnh5")
-max_submerged_volume_cubic_meters = 4.0
-buoyancy_height = 2.0
+max_submerged_volume_cubic_meters = 2.0
+buoyancy_height = 3.0
 
-[node name="Probe_001" type="MeshInstance3D" parent="Node3D/GeneratedProbes" unique_id=1566995156]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.390751, 0, -4.94057)
+[node name="Probe_001" type="MeshInstance3D" parent="Node3D/GeneratedProbes" unique_id=1127199591]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.1961262, 0, -4.812997)
 material_override = SubResource("StandardMaterial3D_f5n33")
 cast_shadow = 0
 extra_cull_margin = 10000.0
-mesh = SubResource("SphereMesh_82fpr")
+mesh = SubResource("SphereMesh_f5n33")
 script = ExtResource("8_kmnh5")
-max_submerged_volume_cubic_meters = 4.0
-buoyancy_height = 2.0
+max_submerged_volume_cubic_meters = 2.0
+buoyancy_height = 3.0
 
-[node name="Probe_002" type="MeshInstance3D" parent="Node3D/GeneratedProbes" unique_id=388783296]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3.320229, 0, -1.4342203)
+[node name="Probe_002" type="MeshInstance3D" parent="Node3D/GeneratedProbes" unique_id=602296450]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.9818585, 0, -1.4074117)
 material_override = SubResource("StandardMaterial3D_r7vxl")
 cast_shadow = 0
 extra_cull_margin = 10000.0
-mesh = SubResource("SphereMesh_r7vxl")
+mesh = SubResource("SphereMesh_odp0u")
 script = ExtResource("8_kmnh5")
-max_submerged_volume_cubic_meters = 4.0
-buoyancy_height = 2.0
+max_submerged_volume_cubic_meters = 2.0
+buoyancy_height = 3.0
 
-[node name="Probe_003" type="MeshInstance3D" parent="Node3D/GeneratedProbes" unique_id=1383545259]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 3.320229, 0, -1.4342203)
+[node name="Probe_003" type="MeshInstance3D" parent="Node3D/GeneratedProbes" unique_id=781061453]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.9818585, 0, -1.4074117)
 material_override = SubResource("StandardMaterial3D_odp0u")
 cast_shadow = 0
 extra_cull_margin = 10000.0
-mesh = SubResource("SphereMesh_pgcpf")
+mesh = SubResource("SphereMesh_fo7e3")
 script = ExtResource("8_kmnh5")
-max_submerged_volume_cubic_meters = 4.0
-buoyancy_height = 2.0
+max_submerged_volume_cubic_meters = 2.0
+buoyancy_height = 3.0
 
-[node name="Probe_004" type="MeshInstance3D" parent="Node3D/GeneratedProbes" unique_id=2140274022]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3.5029445, 0, 2.0721292)
+[node name="Probe_004" type="MeshInstance3D" parent="Node3D/GeneratedProbes" unique_id=1312372805]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3.1337757, 0, 1.9981738)
 material_override = SubResource("StandardMaterial3D_pgcpf")
 cast_shadow = 0
 extra_cull_margin = 10000.0
-mesh = SubResource("SphereMesh_ndef8")
+mesh = SubResource("SphereMesh_rt2ym")
 script = ExtResource("8_kmnh5")
-max_submerged_volume_cubic_meters = 4.0
-buoyancy_height = 2.0
+max_submerged_volume_cubic_meters = 2.0
+buoyancy_height = 3.0
 
-[node name="Probe_005" type="MeshInstance3D" parent="Node3D/GeneratedProbes" unique_id=106505244]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 3.5029445, 0, 2.0721292)
+[node name="Probe_005" type="MeshInstance3D" parent="Node3D/GeneratedProbes" unique_id=2118961103]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 3.1337757, 0, 1.9981738)
 material_override = SubResource("StandardMaterial3D_fo7e3")
 cast_shadow = 0
 extra_cull_margin = 10000.0
-mesh = SubResource("SphereMesh_sfe5m")
+mesh = SubResource("SphereMesh_3sm6b")
 script = ExtResource("8_kmnh5")
-max_submerged_volume_cubic_meters = 4.0
-buoyancy_height = 2.0
+max_submerged_volume_cubic_meters = 2.0
+buoyancy_height = 3.0
 
-[node name="Probe_006" type="MeshInstance3D" parent="Node3D/GeneratedProbes" unique_id=678965322]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.746842, 0, 5.578479)
+[node name="Probe_006" type="MeshInstance3D" parent="Node3D/GeneratedProbes" unique_id=732513721]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.4406154, 0, 5.403759)
 material_override = SubResource("StandardMaterial3D_ndef8")
 cast_shadow = 0
 extra_cull_margin = 10000.0
-mesh = SubResource("SphereMesh_lihre")
+mesh = SubResource("SphereMesh_6lar6")
 script = ExtResource("8_kmnh5")
-max_submerged_volume_cubic_meters = 4.0
-buoyancy_height = 2.0
+max_submerged_volume_cubic_meters = 2.0
+buoyancy_height = 3.0
 
-[node name="Probe_007" type="MeshInstance3D" parent="Node3D/GeneratedProbes" unique_id=197858260]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.746842, 0, 5.578479)
+[node name="Probe_007" type="MeshInstance3D" parent="Node3D/GeneratedProbes" unique_id=1481493843]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.4406154, 0, 5.403759)
 material_override = SubResource("StandardMaterial3D_rt2ym")
 cast_shadow = 0
 extra_cull_margin = 10000.0
-mesh = SubResource("SphereMesh_klghn")
+mesh = SubResource("SphereMesh_f3md0")
 script = ExtResource("8_kmnh5")
-max_submerged_volume_cubic_meters = 4.0
-buoyancy_height = 2.0
+max_submerged_volume_cubic_meters = 2.0
+buoyancy_height = 3.0
 
 [editable path="Sketchfab_Scene"]

@@ -42,7 +42,7 @@ Important generation parameters:
 - `longitudinal_margin_fraction`: avoids placing physical probes exactly at bow/stern tips.
 - `generated_fx_display_radius`: editor display radius used by generated FX/contact probes.
 
-Each physical probe can be edited manually after generation. Move the node to change the sample point. Edit `max_submerged_volume_cubic_meters`, `buoyancy_height`, and damping/drag multipliers to tune behavior. Object weight comes only from the parent `RigidBody3D.mass` and `RigidBody3D.center_of_mass` settings.
+Each physical probe can be edited manually after generation. Move the node to change the sample point. Edit `max_submerged_volume_cubic_meters`, `buoyancy_height`, and drag multipliers to tune behavior. Object weight comes only from the parent `RigidBody3D.mass` and `RigidBody3D.center_of_mass` settings.
 
 ## Runtime Behavior
 
@@ -55,10 +55,13 @@ Physical force uses:
 - `max_submerged_volume_cubic_meters` is the probe's displaced volume when fully submerged.
 - submersion is `clamp(immersion_depth / buoyancy_height, 0, 1)`
 - displaced volume is `max_submerged_volume_cubic_meters * submersion`
-- water normal as buoyancy direction
-- relative vertical velocity for vertical damping
-- body forward/right axes for longitudinal and lateral water drag
+- `Vector3.UP` as the buoyancy direction; wave height differences between probes create pitch and roll torque.
+- central `heave_damping` to suppress whole-body vertical velocity without adding probe torque.
+- body forward/right axes for per-probe longitudinal and lateral hull water drag.
+- hull water drag uses each probe's body velocity only; ocean surface velocity is reserved for contact state and future current systems.
 - `max_probe_acceleration` as a per-probe force safety cap
+
+For demo boats using `FloatingDebugBody`, enable `local_angular_damping_enabled` and tune `local_angular_damping` when pitch, yaw, and roll need different rotational damping. The vector uses local axes: X = pitch, Y = yaw, Z = roll.
 
 ## Contact Events
 

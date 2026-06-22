@@ -64,7 +64,6 @@ const PHYSICAL_DEBUG_CROSS_SIZE := 0.16
 		generate_all_probes_from_source()
 
 @export_group("Probe Defaults")
-@export_range(0.0, 100.0, 0.01, "or_greater") var default_vertical_damping_multiplier := 1.0
 @export_range(0.0, 100.0, 0.01, "or_greater") var default_longitudinal_water_drag_multiplier := 1.0
 @export_range(0.0, 100.0, 0.01, "or_greater") var default_lateral_water_drag_multiplier := 1.0
 
@@ -231,7 +230,6 @@ func _generate_physical_probes(root: Node, context: Dictionary) -> int:
 		probe.position = Vector3(float(spec["x"]), waterline_y, float(spec["z"]))
 		probe.set(&"max_submerged_volume_cubic_meters", generated_max_submerged_volume_cubic_meters)
 		probe.set(&"buoyancy_height", generated_buoyancy_height)
-		probe.set(&"vertical_damping_multiplier", default_vertical_damping_multiplier)
 		probe.set(&"longitudinal_water_drag_multiplier", default_longitudinal_water_drag_multiplier)
 		probe.set(&"lateral_water_drag_multiplier", default_lateral_water_drag_multiplier)
 		root.add_child(probe)
@@ -283,7 +281,6 @@ func get_buoyancy_sample_points() -> Array[Dictionary]:
 			"local_position": probe.position,
 			"max_submerged_volume_cubic_meters": float(probe.call(&"get_max_submerged_volume")),
 			"buoyancy_height": float(probe.call(&"get_buoyancy_height")),
-			"vertical_damping_multiplier": float(probe.get(&"vertical_damping_multiplier")),
 			"longitudinal_water_drag_multiplier": float(probe.get(&"longitudinal_water_drag_multiplier")),
 			"lateral_water_drag_multiplier": float(probe.get(&"lateral_water_drag_multiplier")),
 			"source": self,

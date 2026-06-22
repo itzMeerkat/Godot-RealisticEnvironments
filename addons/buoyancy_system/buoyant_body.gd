@@ -13,7 +13,7 @@ signal probe_exited_water(probe: Node, state: Dictionary)
 @export var probe_volume_paths : Array[NodePath] = []
 @export_range(0.0, 10.0, 0.01, "or_greater") var buoyancy_strength := 1.0
 @export_range(1.0, 2000.0, 1.0, "or_greater") var water_density := 1025.0
-@export_range(0.0, 100.0, 0.01, "or_greater") var vertical_damping := 1.4
+@export_range(0.0, 20.0, 0.01, "or_greater") var heave_damping := 2.0
 @export_range(0.0, 100.0, 0.01, "or_greater") var longitudinal_water_drag := 0.45
 @export_range(0.0, 100.0, 0.01, "or_greater") var lateral_water_drag := 0.45
 @export_range(0.0, 100.0, 0.1, "or_greater") var max_probe_acceleration := 35.0
@@ -65,6 +65,7 @@ func _physics_process(_delta : float) -> void:
 	var total_volume := _get_total_max_submerged_volume(force_sample_points)
 	var gravity := float(ProjectSettings.get_setting("physics/3d/default_gravity", 9.8))
 	var total_external_force := Vector3.ZERO
+	var heave_submersion := 0.0
 	for i in query_entries.size():
 		var entry := query_entries[i]
 		var sample_point : Dictionary = entry["sample_point"]
@@ -72,6 +73,7 @@ func _physics_process(_delta : float) -> void:
 		if str(entry["type"]) == "force":
 			var force_result := _apply_sample_forces(sample_point, water_sample, total_volume, gravity)
 			total_external_force += Vector3(force_result.get("applied_force", Vector3.ZERO))
+			heave_submersion += float(force_result.get("displaced_volume", 0.0)) / total_volume
 			_update_sample_source_state(sample_point, water_sample, force_result, false)
 		else:
 			var contact_result := {
@@ -80,6 +82,7 @@ func _physics_process(_delta : float) -> void:
 				"submersion": 0.0,
 			}
 			_update_sample_source_state(sample_point, water_sample, contact_result, true)
+	total_external_force += _apply_heave_damping(clampf(heave_submersion, 0.0, 1.0))
 	_update_body_debug(total_external_force, gravity)
 
 
@@ -201,6 +204,14 @@ func _get_probe_max_submerged_volume(sample_point : Dictionary) -> float:
 	return maxf(float(sample_point.get("max_submerged_volume_cubic_meters", 0.0)), 0.0)
 
 
+func _apply_heave_damping(submersion: float) -> Vector3:
+	if submersion <= 0.0 or heave_damping <= 0.0:
+		return Vector3.ZERO
+	var heave_force := Vector3.UP * (-rigid_body.linear_velocity.y * heave_damping * rigid_body.mass * submersion)
+	rigid_body.apply_central_force(heave_force)
+	return heave_force
+
+
 func _apply_sample_forces(sample_point : Dictionary, sample : WaterSurfaceSample, total_volume : float, gravity : float) -> Dictionary:
 	var sample_position : Vector3 = sample_point["world_position"]
 	var buoyancy_height := maxf(float(sample_point.get("buoyancy_height", 1.0)), 0.001)
@@ -211,26 +222,17 @@ func _apply_sample_forces(sample_point : Dictionary, sample : WaterSurfaceSample
 		"force": Vector3.ZERO,
 		"applied_force": Vector3.ZERO,
 		"buoyancy_force": Vector3.ZERO,
+		"displaced_volume": 0.0,
 		"submersion": submersion,
 	}
-	if sample.normal.length_squared() <= 0.0001:
-		return empty_result
-
 	var offset := sample_position - rigid_body.global_position
 	var point_velocity := rigid_body.linear_velocity + rigid_body.angular_velocity.cross(offset)
 	var max_submerged_volume := _get_probe_max_submerged_volume(sample_point)
 	var volume_ratio := max_submerged_volume / total_volume
-	var water_velocity := sample.surface_velocity
-	var buoyancy_direction := sample.normal.normalized()
 	var displaced_volume := max_submerged_volume * submersion
-	var buoyancy_force := buoyancy_direction * water_density * gravity * buoyancy_strength * displaced_volume
-	var vertical_speed := point_velocity.dot(Vector3.UP) - water_velocity.dot(Vector3.UP)
-	var vertical_damping_multiplier := float(sample_point.get("vertical_damping_multiplier", 1.0))
-	var vertical_damping_force := -Vector3.UP * vertical_speed * vertical_damping * vertical_damping_multiplier * rigid_body.mass * volume_ratio * submersion
+	var buoyancy_force := Vector3.UP * water_density * gravity * buoyancy_strength * displaced_volume
 
 	var horizontal_point_velocity := Vector3(point_velocity.x, 0.0, point_velocity.z)
-	var horizontal_surface_velocity := Vector3(sample.surface_velocity.x, 0.0, sample.surface_velocity.z)
-	var relative_horizontal_velocity := horizontal_surface_velocity - horizontal_point_velocity
 	var forward := -rigid_body.global_transform.basis.z
 	forward.y = 0.0
 	forward = forward.normalized() if forward.length_squared() > 0.0001 else Vector3.FORWARD
@@ -239,10 +241,12 @@ func _apply_sample_forces(sample_point : Dictionary, sample : WaterSurfaceSample
 	right = right.normalized() if right.length_squared() > 0.0001 else Vector3.RIGHT
 	var longitudinal_multiplier := float(sample_point.get("longitudinal_water_drag_multiplier", 1.0))
 	var lateral_multiplier := float(sample_point.get("lateral_water_drag_multiplier", 1.0))
-	var longitudinal_drag_force := forward * relative_horizontal_velocity.dot(forward) * longitudinal_water_drag * longitudinal_multiplier * rigid_body.mass * volume_ratio * submersion
-	var lateral_drag_force := right * relative_horizontal_velocity.dot(right) * lateral_water_drag * lateral_multiplier * rigid_body.mass * volume_ratio * submersion
+	var longitudinal_speed := horizontal_point_velocity.dot(forward)
+	var lateral_speed := horizontal_point_velocity.dot(right)
+	var longitudinal_drag_force := -forward * longitudinal_speed * longitudinal_water_drag * longitudinal_multiplier * rigid_body.mass * volume_ratio * submersion
+	var lateral_drag_force := -right * lateral_speed * lateral_water_drag * lateral_multiplier * rigid_body.mass * volume_ratio * submersion
 
-	var total_force := buoyancy_force + vertical_damping_force + longitudinal_drag_force + lateral_drag_force
+	var total_force := buoyancy_force + longitudinal_drag_force + lateral_drag_force
 	if max_probe_acceleration > 0.0:
 		var max_force := rigid_body.mass * volume_ratio * max_probe_acceleration
 		if max_force > 0.0 and total_force.length_squared() > max_force * max_force:
@@ -255,6 +259,7 @@ func _apply_sample_forces(sample_point : Dictionary, sample : WaterSurfaceSample
 		"force": total_force,
 		"applied_force": applied_force,
 		"buoyancy_force": buoyancy_force,
+		"displaced_volume": displaced_volume,
 		"submersion": submersion,
 	}
 
