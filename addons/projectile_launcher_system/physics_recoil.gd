@@ -4,6 +4,7 @@ extends Node
 
 @export var rigid_body_path: NodePath
 @export var impulse_point_path: NodePath
+@export var use_shot_muzzle_as_impulse_point := true
 @export var use_projectile_momentum := true
 @export_range(0.0, 10000.0, 0.001, "or_greater") var impulse_multiplier := 1.0
 @export_range(0.0, 1000000.0, 0.001, "or_greater") var fallback_impulse := 100.0
@@ -36,9 +37,8 @@ func apply_recoil(fire_direction: Vector3, shot_data := {}) -> void:
 			impulse_magnitude = projectile_mass * initial_speed
 
 	var impulse := -direction * impulse_magnitude * impulse_multiplier * maxf(strength, 0.0)
-	_resolve_impulse_point()
-	if impulse_point != null:
-		var point_offset := impulse_point.global_position - rigid_body.global_position
+	var point_offset := _get_impulse_point_offset(shot_data)
+	if point_offset != null:
 		rigid_body.apply_impulse(impulse, point_offset)
 	else:
 		rigid_body.apply_central_impulse(impulse)
@@ -57,6 +57,17 @@ func _resolve_impulse_point() -> void:
 		impulse_point = get_node_or_null(impulse_point_path) as Node3D
 	else:
 		impulse_point = null
+
+
+func _get_impulse_point_offset(shot_data: Variant) -> Variant:
+	if use_shot_muzzle_as_impulse_point and shot_data is Dictionary and shot_data.has("muzzle_transform"):
+		var muzzle_transform: Transform3D = shot_data["muzzle_transform"]
+		return muzzle_transform.origin - rigid_body.global_position
+
+	_resolve_impulse_point()
+	if impulse_point != null:
+		return impulse_point.global_position - rigid_body.global_position
+	return null
 
 
 func _find_parent_rigid_body() -> RigidBody3D:

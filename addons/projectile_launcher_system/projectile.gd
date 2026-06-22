@@ -4,11 +4,22 @@ extends RigidBody3D
 
 @export_range(0.0, 100.0, 0.001, "or_greater") var drag_coefficient := 0.0
 @export_range(0.0, 120.0, 0.01, "or_greater") var lifetime := 10.0
+@export var destroy_below_water := true
+@export var waterline_y := 0.0
+@export_group("Water Impact")
+@export var water_impact_effect_scene: PackedScene
+@export_range(0.0, 10.0, 0.01, "or_greater") var water_impact_effect_lifetime := 1.25
 
 var _age := 0.0
+var _is_destroying := false
 
 
 func _physics_process(delta: float) -> void:
+	if _is_destroying:
+		return
+	if destroy_below_water and global_position.y <= waterline_y:
+		_destroy_with_water_impact()
+		return
 	if lifetime > 0.0:
 		_age += delta
 		if _age >= lifetime:
@@ -38,3 +49,37 @@ func _apply_drag() -> void:
 	if speed_squared <= 0.0001:
 		return
 	apply_central_force(-velocity.normalized() * speed_squared * drag_coefficient)
+
+
+func _destroy_with_water_impact() -> void:
+	_is_destroying = true
+	_spawn_water_impact_effect()
+	queue_free()
+
+
+func _spawn_water_impact_effect() -> void:
+	if water_impact_effect_scene == null:
+		return
+	var effect := water_impact_effect_scene.instantiate()
+	var parent := _get_effect_parent()
+	parent.add_child(effect)
+
+	var impact_position := global_position
+	impact_position.y = waterline_y
+	var effect_3d := effect as Node3D
+	if effect_3d != null:
+		effect_3d.global_position = impact_position
+	if effect.has_method(&"play"):
+		effect.call(&"play")
+	elif effect is GPUParticles3D:
+		(effect as GPUParticles3D).emitting = true
+		if water_impact_effect_lifetime > 0.0 and is_inside_tree():
+			get_tree().create_timer(water_impact_effect_lifetime).timeout.connect(effect.queue_free)
+	elif water_impact_effect_lifetime > 0.0 and is_inside_tree():
+		get_tree().create_timer(water_impact_effect_lifetime).timeout.connect(effect.queue_free)
+
+
+func _get_effect_parent() -> Node:
+	if is_inside_tree() and get_tree().current_scene != null:
+		return get_tree().current_scene
+	return get_parent() if get_parent() != null else self

@@ -1,6 +1,7 @@
-[gd_scene load_steps=5 format=3]
+[gd_scene load_steps=6 format=3]
 
 [ext_resource type="Script" path="res://addons/projectile_launcher_system/projectile.gd" id="1_projectile"]
+[ext_resource type="PackedScene" path="res://addons/projectile_launcher_system/default_water_impact.tscn" id="2_water_impact"]
 
 [sub_resource type="SphereShape3D" id="SphereShape3D_projectile"]
 radius = 0.15
@@ -20,6 +21,7 @@ collision_mask = 4
 mass = 1.0
 continuous_cd = true
 script = ExtResource("1_projectile")
+water_impact_effect_scene = ExtResource("2_water_impact")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="."]
 shape = SubResource("SphereShape3D_projectile")
