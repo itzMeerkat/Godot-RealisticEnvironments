@@ -5,43 +5,49 @@
 [ext_resource type="Script" uid="uid://ianh08wohto0" path="res://addons/buoyancy_system/buoyancy_probe_volume.gd" id="7_35oko"]
 [ext_resource type="Script" uid="uid://obesevate4xe" path="res://addons/buoyancy_system/buoyancy_probe_node.gd" id="8_kmnh5"]
 [ext_resource type="Script" uid="uid://batvq42pf87f8" path="res://systems/boat/boat_water_interactor.gd" id="9_interactor"]
+[ext_resource type="PackedScene" path="res://addons/projectile_launcher_system/projectile_launcher.tscn" id="10_4kjtq"]
 [ext_resource type="Script" uid="uid://cnn1xqo6ypdf2" path="res://systems/boat/simple_boat_controller.gd" id="10_controller"]
+[ext_resource type="PackedScene" path="res://addons/projectile_launcher_system/default_projectile.tscn" id="11_ducaw"]
 [ext_resource type="Script" uid="uid://u6lgimj01c85" path="res://systems/boat/boat_wake_trail.gd" id="11_wake_trail"]
 [ext_resource type="PackedScene" uid="uid://cml2y7l7qamr1" path="res://demo/assets/pirate_ship/caravel_ship.glb" id="12_dr3n4"]
+[ext_resource type="PackedScene" path="res://addons/projectile_launcher_system/default_muzzle_flash.tscn" id="12_htw60"]
 [ext_resource type="Script" uid="uid://vsrptxg5brdg" path="res://systems/boat/boat_animation_autoplay.gd" id="13_sail_autoplay"]
+[ext_resource type="Script" uid="uid://dp8nov4qj3vxr" path="res://systems/boat/boat_projectile_fire_controller.gd" id="14_fire_controller"]
+[ext_resource type="Script" uid="uid://xhaeukrdytqu" path="res://addons/projectile_launcher_system/cannon_slide_recoil.gd" id="15_cannon_recoil"]
+[ext_resource type="Script" uid="uid://bktoohcajlutg" path="res://addons/projectile_launcher_system/physics_recoil.gd" id="16_physics_recoil"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_float_demo"]
 size = Vector3(7.452182, 3.281958, 19.737438)
 
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_0qq2w"]
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_82fpr"]
 transparency = 1
 no_depth_test = true
 shading_mode = 0
 albedo_color = Color(0.2, 1, 0.45, 1)
 
-[sub_resource type="ImmediateMesh" id="ImmediateMesh_4kjtq"]
+[sub_resource type="ImmediateMesh" id="ImmediateMesh_f5n33"]
 
-[sub_resource type="ImmediateMesh" id="ImmediateMesh_ducaw"]
+[sub_resource type="ImmediateMesh" id="ImmediateMesh_r7vxl"]
 
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_dr3n4"]
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_odp0u"]
 transparency = 1
 no_depth_test = true
 shading_mode = 0
 albedo_color = Color(0.2, 0.9, 1, 0.9)
 
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_htw60"]
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_pgcpf"]
 transparency = 1
 no_depth_test = true
 shading_mode = 0
 albedo_color = Color(1, 0.15, 0.95, 0.95)
 
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_xu65i"]
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_fo7e3"]
 transparency = 1
 no_depth_test = true
 shading_mode = 0
 albedo_color = Color(0.1, 0.8, 1, 0.9)
 
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_82fpr"]
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_ndef8"]
 transparency = 1
 cull_mode = 2
 no_depth_test = true
@@ -52,7 +58,7 @@ albedo_color = Color(0.1, 0.8, 1, 0.32)
 radius = 0.16
 height = 0.32
 
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_f5n33"]
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_rt2ym"]
 transparency = 1
 cull_mode = 2
 no_depth_test = true
@@ -63,7 +69,7 @@ albedo_color = Color(0.1, 0.8, 1, 0.32)
 radius = 0.16
 height = 0.32
 
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_r7vxl"]
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_sfe5m"]
 transparency = 1
 cull_mode = 2
 no_depth_test = true
@@ -74,7 +80,7 @@ albedo_color = Color(0.1, 0.8, 1, 0.32)
 radius = 0.16
 height = 0.32
 
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_odp0u"]
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_3sm6b"]
 transparency = 1
 cull_mode = 2
 no_depth_test = true
@@ -85,7 +91,7 @@ albedo_color = Color(0.1, 0.8, 1, 0.32)
 radius = 0.16
 height = 0.32
 
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_pgcpf"]
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_lihre"]
 transparency = 1
 cull_mode = 2
 no_depth_test = true
@@ -96,7 +102,7 @@ albedo_color = Color(0.1, 0.8, 1, 0.32)
 radius = 0.16
 height = 0.32
 
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_fo7e3"]
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_6lar6"]
 transparency = 1
 cull_mode = 2
 no_depth_test = true
@@ -107,7 +113,7 @@ albedo_color = Color(0.1, 0.8, 1, 0.32)
 radius = 0.16
 height = 0.32
 
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_ndef8"]
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_klghn"]
 transparency = 1
 cull_mode = 2
 no_depth_test = true
@@ -118,7 +124,7 @@ albedo_color = Color(0.1, 0.8, 1, 0.32)
 radius = 0.16
 height = 0.32
 
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_rt2ym"]
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_f3md0"]
 transparency = 1
 cull_mode = 2
 no_depth_test = true
@@ -170,10 +176,10 @@ max_foam_amount = 0.525
 [node name="PositionHistory" type="MeshInstance3D" parent="." unique_id=1495800927]
 top_level = true
 visible = false
-material_override = SubResource("StandardMaterial3D_0qq2w")
+material_override = SubResource("StandardMaterial3D_82fpr")
 cast_shadow = 0
 extra_cull_margin = 10000.0
-mesh = SubResource("ImmediateMesh_4kjtq")
+mesh = SubResource("ImmediateMesh_f5n33")
 
 [node name="CameraTargets" type="Node3D" parent="." unique_id=299673246]
 
@@ -188,6 +194,25 @@ transform = Transform3D(-0.1, 0, -1.509958e-08, 0, 0.1, 0, 1.509958e-08, 0, -0.1
 
 [node name="Hull_lo_Hull_0" parent="Sketchfab_Scene/Sketchfab_model/4279c9e2ed2e464895c5348c2b75ab18_fbx/Object_2/RootNode/Hull/Hull_lo/Object_48" parent_id_path=PackedInt32Array(1518944437, 382727467) index="0" unique_id=1543998925]
 transform = Transform3D(1, 7.1054274e-15, 2.7397678e-12, -2.842171e-14, 0.99999994, 2.9588664e-05, -2.7397678e-12, -2.9588666e-05, 0.99999994, 0, 0, 0)
+
+[node name="ProjectileLauncher" parent="Sketchfab_Scene/Sketchfab_model/4279c9e2ed2e464895c5348c2b75ab18_fbx/Object_2/RootNode/DeckStuff/Cannon007" parent_id_path=PackedInt32Array(1518944437, 1785010712) index="1" unique_id=1806387656 instance=ExtResource("10_4kjtq")]
+transform = Transform3D(-23.465319, -6.136751, 1.1914514, -6.2490907, 22.902658, -5.1105385, 0.11497664, -3.5939062, -16.246527, -0.07082462, -0.10615921, 12.356995)
+projectile_scene = ExtResource("11_ducaw")
+projectile_mass = 20.0
+initial_speed = 50.0
+drag_coefficient = 1.0
+projectile_lifetime = 8.0
+muzzle_flash_scene = ExtResource("12_htw60")
+recoil_receiver_paths = Array[NodePath]([NodePath("../CannonSlideRecoil"), NodePath("../../../../../../../../PhysicsRecoil")])
+
+[node name="CannonSlideRecoil" type="Node" parent="Sketchfab_Scene/Sketchfab_model/4279c9e2ed2e464895c5348c2b75ab18_fbx/Object_2/RootNode/DeckStuff/Cannon007" parent_id_path=PackedInt32Array(1518944437, 1785010712) index="2" unique_id=2101903401]
+script = ExtResource("15_cannon_recoil")
+target_path = NodePath("..")
+recoil_axis = Vector3(0, 0, -1)
+kick_velocity_per_strength = 2.2
+max_recoil_distance = 5.0
+spring_strength = 1.0
+damping = 1.0
 
 [node name="SailAnimationAutoplay" type="Node" parent="." unique_id=1148301158]
 script = ExtResource("13_sail_autoplay")
@@ -204,16 +229,16 @@ auto_generate_if_empty = false
 [node name="DebugDraw" type="MeshInstance3D" parent="Node3D" unique_id=1700356031]
 cast_shadow = 0
 extra_cull_margin = 10000.0
-mesh = SubResource("ImmediateMesh_ducaw")
-surface_material_override/0 = SubResource("StandardMaterial3D_dr3n4")
-surface_material_override/1 = SubResource("StandardMaterial3D_htw60")
-surface_material_override/2 = SubResource("StandardMaterial3D_xu65i")
+mesh = SubResource("ImmediateMesh_r7vxl")
+surface_material_override/0 = SubResource("StandardMaterial3D_odp0u")
+surface_material_override/1 = SubResource("StandardMaterial3D_pgcpf")
+surface_material_override/2 = SubResource("StandardMaterial3D_fo7e3")
 
 [node name="GeneratedProbes" type="Node3D" parent="Node3D" unique_id=997617434]
 
 [node name="Probe_000" type="MeshInstance3D" parent="Node3D/GeneratedProbes" unique_id=1302943093]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.1961262, 0, -4.812997)
-material_override = SubResource("StandardMaterial3D_82fpr")
+material_override = SubResource("StandardMaterial3D_ndef8")
 cast_shadow = 0
 extra_cull_margin = 10000.0
 mesh = SubResource("SphereMesh_ducaw")
@@ -223,7 +248,7 @@ buoyancy_height = 3.0
 
 [node name="Probe_001" type="MeshInstance3D" parent="Node3D/GeneratedProbes" unique_id=1127199591]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.1961262, 0, -4.812997)
-material_override = SubResource("StandardMaterial3D_f5n33")
+material_override = SubResource("StandardMaterial3D_rt2ym")
 cast_shadow = 0
 extra_cull_margin = 10000.0
 mesh = SubResource("SphereMesh_f5n33")
@@ -233,7 +258,7 @@ buoyancy_height = 3.0
 
 [node name="Probe_002" type="MeshInstance3D" parent="Node3D/GeneratedProbes" unique_id=602296450]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.9818585, 0, -1.4074117)
-material_override = SubResource("StandardMaterial3D_r7vxl")
+material_override = SubResource("StandardMaterial3D_sfe5m")
 cast_shadow = 0
 extra_cull_margin = 10000.0
 mesh = SubResource("SphereMesh_odp0u")
@@ -243,7 +268,7 @@ buoyancy_height = 3.0
 
 [node name="Probe_003" type="MeshInstance3D" parent="Node3D/GeneratedProbes" unique_id=781061453]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.9818585, 0, -1.4074117)
-material_override = SubResource("StandardMaterial3D_odp0u")
+material_override = SubResource("StandardMaterial3D_3sm6b")
 cast_shadow = 0
 extra_cull_margin = 10000.0
 mesh = SubResource("SphereMesh_fo7e3")
@@ -253,7 +278,7 @@ buoyancy_height = 3.0
 
 [node name="Probe_004" type="MeshInstance3D" parent="Node3D/GeneratedProbes" unique_id=1312372805]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3.1337757, 0, 1.9981738)
-material_override = SubResource("StandardMaterial3D_pgcpf")
+material_override = SubResource("StandardMaterial3D_lihre")
 cast_shadow = 0
 extra_cull_margin = 10000.0
 mesh = SubResource("SphereMesh_rt2ym")
@@ -263,7 +288,7 @@ buoyancy_height = 3.0
 
 [node name="Probe_005" type="MeshInstance3D" parent="Node3D/GeneratedProbes" unique_id=2118961103]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 3.1337757, 0, 1.9981738)
-material_override = SubResource("StandardMaterial3D_fo7e3")
+material_override = SubResource("StandardMaterial3D_6lar6")
 cast_shadow = 0
 extra_cull_margin = 10000.0
 mesh = SubResource("SphereMesh_3sm6b")
@@ -273,7 +298,7 @@ buoyancy_height = 3.0
 
 [node name="Probe_006" type="MeshInstance3D" parent="Node3D/GeneratedProbes" unique_id=732513721]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.4406154, 0, 5.403759)
-material_override = SubResource("StandardMaterial3D_ndef8")
+material_override = SubResource("StandardMaterial3D_klghn")
 cast_shadow = 0
 extra_cull_margin = 10000.0
 mesh = SubResource("SphereMesh_6lar6")
@@ -283,12 +308,21 @@ buoyancy_height = 3.0
 
 [node name="Probe_007" type="MeshInstance3D" parent="Node3D/GeneratedProbes" unique_id=1481493843]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.4406154, 0, 5.403759)
-material_override = SubResource("StandardMaterial3D_rt2ym")
+material_override = SubResource("StandardMaterial3D_f3md0")
 cast_shadow = 0
 extra_cull_margin = 10000.0
 mesh = SubResource("SphereMesh_f3md0")
 script = ExtResource("8_kmnh5")
 max_submerged_volume_cubic_meters = 2.0
 buoyancy_height = 3.0
+
+[node name="PhysicsRecoil" type="Node" parent="." unique_id=994886623]
+script = ExtResource("16_physics_recoil")
+rigid_body_path = NodePath("..")
+impulse_point_path = NodePath("../Sketchfab_Scene/Sketchfab_model/4279c9e2ed2e464895c5348c2b75ab18_fbx/Object_2/RootNode/DeckStuff/Cannon007/ProjectileLauncher")
+
+[node name="ProjectileFireController" type="Node" parent="." unique_id=1944187279]
+script = ExtResource("14_fire_controller")
+launcher_path = NodePath("../Sketchfab_Scene/Sketchfab_model/4279c9e2ed2e464895c5348c2b75ab18_fbx/Object_2/RootNode/DeckStuff/Cannon007/ProjectileLauncher")
 
 [editable path="Sketchfab_Scene"]
