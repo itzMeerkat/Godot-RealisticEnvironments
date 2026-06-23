@@ -4,6 +4,8 @@
 
 [node name="DefaultWaterImpact" type="Node3D" unique_id=1751358027]
 script = ExtResource("1_water_impact")
-splash_amount = 300
+splash_amount = 500
+splash_lifetime = 2.0
 splash_velocity_max = 10.5
-splash_spread = 15.0
+splash_spread = 10.0
+splash_scale_max = 0.12

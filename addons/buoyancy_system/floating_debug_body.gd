@@ -15,6 +15,13 @@ extends RigidBody3D
 ## Per-mass torque damping in local axes: X = pitch, Y = yaw, Z = roll.
 @export var local_angular_damping := Vector3.ZERO
 
+@export_group("Righting Torque")
+@export var roll_righting_torque_enabled := false
+## Per-mass torque spring that rotates the body's local up axis back toward world up around its roll axis.
+@export_range(0.0, 1000.0, 0.01, "or_greater") var roll_righting_torque_per_kg := 0.0
+@export_range(0.0, 10000000.0, 1.0, "or_greater") var max_roll_righting_torque := 0.0
+@export_range(0.0, 30.0, 0.1, "degrees") var roll_righting_dead_zone_degrees := 0.0
+
 @export_group("Debug History")
 @export var debug_draw_position_history := false :
 	set(value):
@@ -57,6 +64,7 @@ func _ready() -> void:
 func _physics_process(_delta: float) -> void:
 	if Engine.is_editor_hint():
 		return
+	_apply_roll_righting_torque()
 	_apply_local_angular_damping()
 	if player_controlled and debug_draw_position_history:
 		_record_history_point()
@@ -75,6 +83,34 @@ func _apply_local_angular_damping() -> void:
 		-local_angular_velocity.z * maxf(local_angular_damping.z, 0.0)
 	) * mass
 	apply_torque(basis * local_torque)
+
+
+func _apply_roll_righting_torque() -> void:
+	if not roll_righting_torque_enabled:
+		return
+	if roll_righting_torque_per_kg <= 0.0:
+		return
+	var basis := global_transform.basis.orthonormalized()
+	var roll_axis := basis.z.normalized()
+	var body_up := basis.y.normalized()
+	if roll_axis.length_squared() <= 0.0001 or body_up.length_squared() <= 0.0001:
+		return
+
+	var target_up := Vector3.UP - roll_axis * Vector3.UP.dot(roll_axis)
+	if target_up.length_squared() <= 0.0001:
+		return
+	target_up = target_up.normalized()
+
+	var roll_error := body_up.signed_angle_to(target_up, roll_axis)
+	var dead_zone := deg_to_rad(roll_righting_dead_zone_degrees)
+	if absf(roll_error) <= dead_zone:
+		return
+	roll_error -= signf(roll_error) * dead_zone
+
+	var torque := roll_axis * roll_error * roll_righting_torque_per_kg * mass
+	if max_roll_righting_torque > 0.0 and torque.length_squared() > max_roll_righting_torque * max_roll_righting_torque:
+		torque = torque.normalized() * max_roll_righting_torque
+	apply_torque(torque)
 
 
 func clear_position_history() -> void:

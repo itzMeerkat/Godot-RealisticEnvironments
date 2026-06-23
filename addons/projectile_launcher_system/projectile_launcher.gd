@@ -146,6 +146,7 @@ func _spawn_projectile(muzzle_transform: Transform3D, fire_direction: Vector3, i
 	var projectile := scene.instantiate()
 	var parent := _resolve_parent(projectile_parent_path)
 	parent.add_child(projectile)
+	_tag_projectile_source(projectile)
 	_configure_projectile_collision(projectile)
 
 	var projectile_3d := projectile as Node3D
@@ -168,6 +169,25 @@ func _spawn_projectile(muzzle_transform: Transform3D, fire_direction: Vector3, i
 		body.linear_velocity += inherited_velocity
 
 	return projectile
+
+
+func _tag_projectile_source(projectile: Node) -> void:
+	if projectile == null:
+		return
+	var source_body := _find_parent_rigid_body()
+	_tag_projectile_source_recursive(projectile, source_body)
+
+
+func _tag_projectile_source_recursive(node: Node, source_body: RigidBody3D) -> void:
+	node.add_to_group(&"projectile")
+	node.set_meta(&"source_launcher_instance_id", get_instance_id())
+	if source_body != null:
+		node.set_meta(&"source_rigid_body_instance_id", source_body.get_instance_id())
+		node.set_meta(&"source_rigid_body_path", source_body.get_path())
+	for child in node.get_children():
+		var child_node := child as Node
+		if child_node != null:
+			_tag_projectile_source_recursive(child_node, source_body)
 
 
 func _configure_projectile_collision(node: Node) -> void:
