@@ -384,6 +384,18 @@ const EXTERNAL_WIND_SPECTRUM_REFRESH_INTERVAL := 0.5
 	set(value):
 		reflection_cull_mask = value
 		_update_planar_reflection_settings()
+## Clips reflected pixels below the water plane using the reflection viewport's
+## depth buffer. This keeps submerged/sinking objects out of planar reflections.
+@export var reflection_clip_below_water := true :
+	set(value):
+		reflection_clip_below_water = value
+		_update_planar_reflection_settings()
+## Extra distance below the water plane allowed before reflection pixels are
+## clipped. Small positive values reduce flicker at waterline intersections.
+@export_range(0.0, 1.0, 0.005) var reflection_clip_bias := 0.03 :
+	set(value):
+		reflection_clip_bias = value
+		_update_planar_reflection_settings()
 
 @export_group('External Wind')
 ## When enabled, cascades read wind speed and direction from wind_source_path.
@@ -1087,6 +1099,8 @@ func _update_planar_reflection_settings() -> void:
 		_reflection_renderer.fresnel_power = reflection_fresnel_power
 		_reflection_renderer.water_layer = reflection_water_layer
 		_reflection_renderer.reflection_cull_mask = reflection_cull_mask
+		_reflection_renderer.clip_below_water = reflection_clip_below_water
+		_reflection_renderer.clip_bias = reflection_clip_bias
 		_reflection_renderer.setup(self, water_level)
 		return
 	_set_water_shader_parameter(&'planar_reflection_enabled', enable_planar_reflections)

@@ -18,6 +18,8 @@
 - `sky_source_path`：可指向 `SkySystem` 或任何提供 `get_sun_direction()`、`get_sun_color()`、
   `get_sky_top_color()`、`get_sky_horizon_color()`、`get_sun_visibility()` 的节点，用于远海程序化天空反射和浪尖逆光 glow。
 - `sky_reflection_*`、`sun_glitter_*`、`crest_glow_*`：控制远海天空反射、太阳闪光带和低太阳逆光浪尖散射。
+- `enable_planar_reflections`、`reflection_*`：控制动态几何的平面反射。默认开启
+  `reflection_clip_below_water`，会用反射视口的 depth buffer 裁掉水面以下像素，避免沉没物体继续出现在水面反射中；如水线边缘闪烁，可略微调大 `reflection_clip_bias`。
 - 清水区域默认使用很低的 diffuse/specular，程序化天空、平面反射、太阳 glitter、背向太阳的
   `sun_scatter_*` 和浪尖 glow 会作为 radiance 叠加，避免把反射混入 `ALBEDO` 后产生塑料感。
 

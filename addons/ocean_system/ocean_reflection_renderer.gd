@@ -2,6 +2,7 @@ class_name OceanReflectionRenderer
 extends Node
 
 const DEFAULT_WATER_LAYER := 20
+const PLANAR_REFLECTION_CLIP_EFFECT := preload("res://addons/ocean_system/planar_reflection_clip_effect.gd")
 
 ## Enables the offscreen mirrored camera pass. When disabled, the viewport stops
 ## rendering and the water material receives zero planar reflection strength.
@@ -11,6 +12,7 @@ const DEFAULT_WATER_LAYER := 20
 		set_process(enabled)
 		if _viewport != null:
 			_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS if enabled else SubViewport.UPDATE_DISABLED
+		_update_clip_effect()
 		_update_water_material()
 
 ## Maximum side length of the planar reflection texture in pixels. Larger values
@@ -54,6 +56,21 @@ const DEFAULT_WATER_LAYER := 20
 	set(value):
 		reflection_cull_mask = value
 		_update_water_material()
+
+## Clears reflected pixels whose depth reconstructs below the water plane. This
+## prevents submerged/sinking geometry from appearing in the planar reflection.
+@export var clip_below_water := true :
+	set(value):
+		clip_below_water = value
+		_update_clip_effect()
+
+## Extra distance below the water plane that remains visible in the reflection.
+## A small bias avoids edge flicker when geometry intersects the surface.
+@export_range(0.0, 1.0, 0.005) var clip_bias := 0.03 :
+	set(value):
+		clip_bias = value
+		_update_clip_effect()
+
 ## Render layer assigned to the water mesh for exclusion from the reflection
 ## camera. Keep this layer reserved for water if planar reflections are enabled.
 @export_range(1, 20, 1) var water_layer := DEFAULT_WATER_LAYER :
@@ -69,6 +86,8 @@ var water_level := 0.0
 var _viewport : SubViewport
 var _camera : Camera3D
 var _reflection_environment : Environment
+var _reflection_compositor : Compositor
+var _clip_effect : CompositorEffect
 
 func _ready() -> void:
 	process_priority = 110
@@ -94,10 +113,12 @@ func setup(target_water: MeshInstance3D, target_water_level: float) -> void:
 	water_level = target_water_level
 	if water != null:
 		water.layers = _layer_bit(water_layer)
+	_update_clip_effect()
 	_update_water_material()
 
 func set_water_level(value: float) -> void:
 	water_level = value
+	_update_clip_effect()
 	_update_water_material()
 
 func get_reflection_texture() -> Texture2D:
@@ -122,6 +143,7 @@ func _create_reflection_viewport() -> void:
 	_camera.name = "PlanarReflectionCamera"
 	_camera.current = true
 	_camera.environment = _reflection_environment
+	_camera.compositor = _create_reflection_compositor()
 	_viewport.add_child(_camera)
 
 	_update_viewport_size()
@@ -206,6 +228,22 @@ func _create_reflection_environment() -> void:
 	_reflection_environment.background_energy_multiplier = 0.0
 	_reflection_environment.ambient_light_energy = 0.0
 	_reflection_environment.reflected_light_source = Environment.REFLECTION_SOURCE_DISABLED
+
+func _create_reflection_compositor() -> Compositor:
+	if _reflection_compositor != null:
+		return _reflection_compositor
+	_reflection_compositor = Compositor.new()
+	_clip_effect = PLANAR_REFLECTION_CLIP_EFFECT.new()
+	_reflection_compositor.compositor_effects = [_clip_effect]
+	_update_clip_effect()
+	return _reflection_compositor
+
+func _update_clip_effect() -> void:
+	if _clip_effect == null:
+		return
+	_clip_effect.enabled = enabled and clip_below_water
+	_clip_effect.water_level = water_level
+	_clip_effect.clip_bias = clip_bias
 
 func _layer_bit(layer: int) -> int:
 	return 1 << clampi(layer - 1, 0, 19)
