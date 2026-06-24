@@ -1,6 +1,6 @@
 class_name BoatWaterInteractor
 extends Node3D
-## Adds immediate bow-side foam sources in world space.
+## Adds immediate bow-side foam sources in world space for a floating boat.
 
 @export var enabled := true
 @export_range(0.0, 100.0, 0.01, "or_greater") var min_speed := 0.35

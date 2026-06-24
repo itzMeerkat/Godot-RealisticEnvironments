@@ -1,6 +1,6 @@
 class_name BoatWakeTrail
 extends Node3D
-## World-space stern foam trail that is blended by the ocean shader.
+## World-space stern foam trail for floating boats, blended by the ocean shader.
 
 @export var enabled := true
 @export var stern_offset := Vector3(0.0, 0.0, 1.15)

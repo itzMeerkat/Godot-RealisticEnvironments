@@ -4,7 +4,7 @@
 - This is a Godot 4 project, not a package-manager repo; `project.godot` is the root manifest and declares Godot feature `4.7` with `Forward Plus`.
 - The configured main scene is `res://demo/main.tscn`; run/open that scene to exercise the full demo.
 - No CI, task runner, lockfile, lint, formatter, or test config is present; focused verification is via Godot 4.7/editor runs of the affected scene, usually `demo/main.tscn`.
-- Reusable systems live under `addons/`: `ocean_system`, `sky_system`, `wind_system`, `buoyancy_system`, `projectile_launcher_system`, and `hitbox_damage_system`. Read that addon's local `AGENTS.md` plus `HOW_TO_USE.md`/`CODEBASE.md` before changing behavior.
+- Reusable systems live under `addons/`: `ocean_system`, `sky_system`, `wind_system`, `buoyancy_system`, `projectile_launcher_system`, `hitbox_damage_system`, and `floating_boat_template`. Read that addon's local `AGENTS.md` plus `HOW_TO_USE.md`/`CODEBASE.md` before changing behavior.
 - `systems/` contains demo/support systems such as camera and debug UI; `demo/main.gd` wires `SkySystem`, `Water` (`OceanSystem`), `WindSystem`, `OceanDebugPanel`, and `PlayerCameraRig` together.
 - Each addon has `plugin.cfg`, but the `*_plugin.gd` files are only for Godot plugin registration; runtime behavior is in the scene/script pairs such as `addons/ocean_system/ocean_system.tscn` plus `ocean_system.gd`.
 

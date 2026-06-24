@@ -1,14 +1,14 @@
 # AGENTS.md
 
 ## Scope
-- `systems/boat` contains demo boat support code and examples, not reusable addon runtime APIs.
-- New reusable systems should live under `addons/` instead of this directory.
+- `systems/boat` is retained only as a pointer for historical demo boat code location.
+- New reusable floating boat work belongs to `addons/floating_boat_template`.
 
 ## Current Role
-- `simple_boat_controller.gd`, `boat_water_interactor.gd`, `boat_wake_trail.gd`, and `boat_animation_autoplay.gd` support `demo/floating_box.tscn`.
-- Projectile launching now belongs to `addons/projectile_launcher_system`.
-- Hitbox health now belongs to `addons/hitbox_damage_system`.
-- Sinking monitoring now belongs to `addons/buoyancy_system`.
+- Boat controls, water interaction, wake trail, and model animation autoplay now belong to `addons/floating_boat_template`.
+- Projectile launching belongs to `addons/projectile_launcher_system`.
+- Hitbox health belongs to `addons/hitbox_damage_system`.
+- Sinking monitoring belongs to `addons/buoyancy_system`.
 
 ## Editing Notes
 - Keep demo-only node paths out of reusable addons.

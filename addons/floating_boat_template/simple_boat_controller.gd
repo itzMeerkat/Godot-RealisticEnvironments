@@ -1,6 +1,6 @@
 class_name SimpleBoatController
 extends Node
-## Lightweight player input for the demo boat. It applies forces to the parent RigidBody3D.
+## Lightweight player input for a floating boat. It applies forces to the parent RigidBody3D.
 
 @export var enabled := true
 @export var move_forward_action: StringName = &"camera_move_forward"

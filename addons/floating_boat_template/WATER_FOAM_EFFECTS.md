@@ -15,9 +15,9 @@ For a boat `RigidBody3D`, add these child nodes:
 
 ```text
 BoatRigidBody3D
-  BoatWaterInteractor      script: systems/boat/boat_water_interactor.gd
-  BoatWakeTrail            script: systems/boat/boat_wake_trail.gd
-  SimpleBoatController     script: systems/boat/simple_boat_controller.gd, optional
+  BoatWaterInteractor      script: addons/floating_boat_template/boat_water_interactor.gd
+  BoatWakeTrail            script: addons/floating_boat_template/boat_wake_trail.gd
+  SimpleBoatController     script: addons/floating_boat_template/simple_boat_controller.gd, optional
 ```
 
 The boat scene used by the demo is `demo/floating_box.tscn`.
@@ -89,8 +89,8 @@ Important parameters:
 
 ## Related Files
 
-- `systems/boat/boat_water_interactor.gd`
-- `systems/boat/boat_wake_trail.gd`
-- `systems/boat/simple_boat_controller.gd`
+- `addons/floating_boat_template/boat_water_interactor.gd`
+- `addons/floating_boat_template/boat_wake_trail.gd`
+- `addons/floating_boat_template/simple_boat_controller.gd`
 - `addons/ocean_system/ocean_system.gd`
 - `addons/ocean_system/shaders/spatial/water.gdshader`

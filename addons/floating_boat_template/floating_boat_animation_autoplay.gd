@@ -1,3 +1,4 @@
+class_name FloatingBoatAnimationAutoplay
 extends Node
 
 @export var animation_player_path := NodePath("../Sketchfab_Scene/AnimationPlayer")
