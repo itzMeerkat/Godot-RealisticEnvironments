@@ -1,6 +1,6 @@
 [gd_scene format=3 uid="uid://cs4tsoxha78ww"]
 
-[ext_resource type="Script" uid="uid://ckrrpi3fcqvw1" path="res://systems/boat/projectile_hit_smoke_effect.gd" id="1_smoke"]
+[ext_resource type="Script" uid="uid://ckrrpi3fcqvw1" path="res://addons/hitbox_damage_system/projectile_hit_smoke_effect.gd" id="1_smoke"]
 
 [node name="DefaultProjectileHitSmoke" type="Node3D" unique_id=1313728915]
 script = ExtResource("1_smoke")

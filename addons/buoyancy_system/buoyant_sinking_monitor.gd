@@ -1,4 +1,4 @@
-class_name BoatSinkingMonitor
+class_name BuoyantSinkingMonitor
 extends Node
 ## Watches a floating rigid body and starts sinking when roll or draft limits are exceeded.
 
@@ -17,6 +17,9 @@ signal sinking_delete_timeout()
 @export var sinking_probe_paths: Array[NodePath] = []
 @export_range(-10.0, 10.0, 0.01) var sink_probe_depth_threshold := 0.5
 
+@export_group("Damage Integration")
+@export var sink_on_destroyed_groups: Array[StringName] = [&"hull"]
+
 @export_group("Sink Behavior")
 @export_range(0.0, 1.0, 0.01) var sink_buoyancy_multiplier := 0.3
 @export_range(0.0, 60.0, 0.01, "or_greater") var delete_delay := 5.0
@@ -25,6 +28,14 @@ var rigid_body: RigidBody3D
 var buoyant_body: BuoyantBody
 var _initial_buoyancy_strength := 1.0
 var _is_sinking := false
+
+
+func _enter_tree() -> void:
+	add_to_group(&"buoyant_sinking_monitor")
+
+
+func _exit_tree() -> void:
+	remove_from_group(&"buoyant_sinking_monitor")
 
 
 func _ready() -> void:
@@ -69,6 +80,11 @@ func start_sinking(reason: StringName = &"manual", data: Dictionary = {}) -> voi
 
 func is_sinking() -> bool:
 	return _is_sinking
+
+
+func _on_hitbox_group_destroyed(hitbox_group: StringName, hit_data: Dictionary) -> void:
+	if _should_sink_on_group_destroyed(hitbox_group):
+		start_sinking(&"hitbox_group_destroyed", {"hitbox_group": hitbox_group, "hit_data": hit_data})
 
 
 func _resolve_nodes() -> void:
@@ -163,6 +179,13 @@ func _find_probe_state(states: Array[Dictionary], probe: Node) -> Dictionary:
 		if state.get("probe") == probe:
 			return state
 	return {}
+
+
+func _should_sink_on_group_destroyed(hitbox_group: StringName) -> bool:
+	for group in sink_on_destroyed_groups:
+		if group == hitbox_group:
+			return true
+	return false
 
 
 func _on_delete_timeout() -> void:

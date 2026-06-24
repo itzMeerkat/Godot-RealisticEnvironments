@@ -1,6 +1,6 @@
-class_name BoatProjectileHitSmokeEffect
+class_name ProjectileHitSmokeEffect
 extends Node3D
-## One-shot smoke puff for projectile impacts on boat hitboxes.
+## One-shot smoke puff for projectile impacts on hitboxes.
 
 @export_range(1, 512, 1) var smoke_amount := 72
 @export_range(0.01, 10.0, 0.01, "or_greater") var smoke_lifetime := 1.15

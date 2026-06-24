@@ -24,6 +24,25 @@ func _input(event: InputEvent) -> void:
 launcher.fire(global_transform.basis.x)
 ```
 
+## 输入开火控制器
+
+如果不想手写 `_input()`，可以添加 `ProjectileFireInputController`：
+
+```text
+VehicleOrWeaponRoot
+  ProjectileLauncher
+  ProjectileFireInputController
+```
+
+主要参数：
+
+- `fire_action`：触发开火的 InputMap action，默认 `fire_projectile`。
+- `launcher_paths`：要同时开火的 Launcher 列表。
+- `launcher_path`：单个 Launcher 的便捷路径；`launcher_paths` 非空时优先使用列表。
+- `aim_controller_path`：可选 `ProjectileAimController`，用于读取每个 Launcher 的弹道解算方向。
+- `cooldown`：开火冷却时间。
+- `require_controlled_owner`：开启时会向父节点链查找 `controlled_property`，默认 `player_controlled`。如果找不到该属性，则允许开火。
+
 ## Launcher 参数
 
 - `muzzle_path`：可选枪口 `Node3D`。未设置时使用 Launcher 自身位置和方向。

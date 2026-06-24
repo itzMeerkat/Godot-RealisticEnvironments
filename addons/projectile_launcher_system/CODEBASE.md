@@ -31,6 +31,8 @@
 
 `projectile_aim_controller.gd` 是瞄准控制器。它根据当前相机视野中心和 `y = aim_plane_y` 平面的交点生成世界空间 aim point，绘制 marker，并让多个 Launcher 或炮模型 yaw 目标水平转向该点。
 
+`projectile_fire_input_controller.gd` 是输入桥接器。它监听 `fire_action`，解析一个或多个 `ProjectileLauncher`，可选读取 `ProjectileAimController.get_launch_direction_for_launcher()`，并在冷却结束后调用 `fire()`。
+
 ## 预制场景
 
 `default_projectile.tscn` 是默认球体弹丸：

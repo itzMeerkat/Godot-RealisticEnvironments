@@ -1,6 +1,6 @@
-class_name BoatHitboxManager
+class_name HitboxHealthManager
 extends Node
-## Central hitbox damage and signal router for projectile impacts on a boat.
+## Central hitbox damage, health, and signal router for projectile impacts.
 
 signal hitbox_hit(hitbox_group: StringName, hitbox: Node, projectile: Node, hit_data: Dictionary)
 signal group_health_changed(hitbox_group: StringName, health: float, max_health: float, hit_data: Dictionary)
@@ -19,25 +19,15 @@ signal group_destroyed(hitbox_group: StringName, hit_data: Dictionary)
 @export_range(0.0, 1000.0, 0.001, "or_greater") var minimum_hit_damage := 1.0
 @export_range(0.0, 1000000.0, 0.1, "or_greater") var default_group_max_health := 100.0
 @export var group_max_health := {
-	"hull": 120.0,
-	"mast": 60.0,
+	"default": 100.0,
 }
-@export var group_damage_multipliers := {
-	"hull": 1.0,
-	"mast": 0.65,
-}
+@export var group_damage_multipliers := {}
 @export var destroy_projectile_on_hit := true
 
 @export_group("Hit Effect")
 @export var hit_effect_scene: PackedScene
 @export var hit_effect_parent_path: NodePath
 @export_range(0.0, 10.0, 0.01, "or_greater") var hit_effect_fallback_lifetime := 1.6
-
-@export_group("Sinking")
-@export var sinking_monitor_path: NodePath
-@export var sink_on_destroyed_groups: Array[StringName] = [&"hull"]
-
-const PROJECTILE_HITBOX_SCRIPT := preload("res://systems/boat/projectile_hitbox.gd")
 
 var _hitboxes: Array[Node] = []
 var _group_health := {}
@@ -46,11 +36,11 @@ var _owner_rigid_body: RigidBody3D
 
 
 func _enter_tree() -> void:
-	add_to_group(&"boat_hitbox_manager")
+	add_to_group(&"hitbox_health_manager")
 
 
 func _exit_tree() -> void:
-	remove_from_group(&"boat_hitbox_manager")
+	remove_from_group(&"hitbox_health_manager")
 
 
 func _ready() -> void:
@@ -118,6 +108,10 @@ func reset_health() -> void:
 	_initialize_group_health()
 
 
+func is_group_destroyed(hitbox_group: StringName) -> bool:
+	return bool(_destroyed_groups.get(hitbox_group, false))
+
+
 func _initialize_group_health() -> void:
 	for key in group_max_health.keys():
 		var group := StringName(str(key))
@@ -140,8 +134,6 @@ func _apply_damage(hitbox_group: StringName, damage: float, hit_data: Dictionary
 	if health <= 0.0:
 		_destroyed_groups[hitbox_group] = true
 		group_destroyed.emit(hitbox_group, hit_data)
-		if _should_sink_on_group_destroyed(hitbox_group):
-			_start_sinking_from_hitbox(hitbox_group, hit_data)
 
 
 func _calculate_damage(hitbox_group: StringName, hitbox: Node, hit_data: Dictionary) -> float:
@@ -175,19 +167,6 @@ func _get_group_float(values: Dictionary, hitbox_group: StringName, default_valu
 	if values.has(string_key):
 		return float(values[string_key])
 	return default_value
-
-
-func _should_sink_on_group_destroyed(hitbox_group: StringName) -> bool:
-	for group in sink_on_destroyed_groups:
-		if group == hitbox_group:
-			return true
-	return false
-
-
-func _start_sinking_from_hitbox(hitbox_group: StringName, hit_data: Dictionary) -> void:
-	var monitor := _get_sinking_monitor()
-	if monitor != null and monitor.has_method(&"start_sinking"):
-		monitor.call(&"start_sinking", &"hitbox_group_destroyed", {"hitbox_group": hitbox_group, "hit_data": hit_data})
 
 
 func _spawn_hit_effect(hit_data: Dictionary) -> void:
@@ -233,17 +212,6 @@ func _queue_effect_free(effect: Node) -> void:
 		get_tree().create_timer(hit_effect_fallback_lifetime).timeout.connect(effect.queue_free)
 
 
-func _get_sinking_monitor() -> Node:
-	if not sinking_monitor_path.is_empty():
-		var configured_monitor := get_node_or_null(sinking_monitor_path)
-		if configured_monitor != null:
-			return configured_monitor
-	var parent := get_parent()
-	if parent != null:
-		return _find_sinking_monitor_descendant(parent)
-	return null
-
-
 func _get_owner_rigid_body() -> RigidBody3D:
 	if _owner_rigid_body != null and is_instance_valid(_owner_rigid_body):
 		return _owner_rigid_body
@@ -260,19 +228,6 @@ func _get_owner_rigid_body() -> RigidBody3D:
 	return null
 
 
-func _find_sinking_monitor_descendant(root: Node) -> Node:
-	if root.has_method(&"start_sinking") and root.has_method(&"is_sinking"):
-		return root
-	for child in root.get_children():
-		var child_node := child as Node
-		if child_node == null:
-			continue
-		var monitor := _find_sinking_monitor_descendant(child_node)
-		if monitor != null:
-			return monitor
-	return null
-
-
 func _get_hitbox_root() -> Node:
 	if not hitbox_root_path.is_empty():
 		var root := get_node_or_null(hitbox_root_path)
@@ -282,7 +237,7 @@ func _get_hitbox_root() -> Node:
 
 
 func _collect_hitboxes(root: Node) -> void:
-	if root.get_script() == PROJECTILE_HITBOX_SCRIPT:
+	if root is ProjectileHitbox:
 		if not _hitboxes.has(root):
 			_hitboxes.push_back(root)
 			root.call(&"set_manager", self)

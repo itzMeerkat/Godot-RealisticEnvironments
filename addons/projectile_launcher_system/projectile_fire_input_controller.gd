@@ -1,9 +1,10 @@
-class_name BoatProjectileFireController
+class_name ProjectileFireInputController
 extends Node
-## Demo input bridge that fires a ProjectileLauncher on the player-controlled boat.
+## Input bridge that fires one or more ProjectileLauncher nodes.
 
 @export var enabled := true
-@export var only_player_controlled := true
+@export var require_controlled_owner := true
+@export var controlled_property: StringName = &"player_controlled"
 @export var fire_action: StringName = &"fire_projectile"
 @export var launcher_paths: Array[NodePath] = []
 @export var launcher_path := NodePath("../ProjectileLauncher")
@@ -13,6 +14,14 @@ extends Node
 var launchers: Array[ProjectileLauncher] = []
 var aim_controller: Node
 var _cooldown_remaining := 0.0
+
+
+func _enter_tree() -> void:
+	add_to_group(&"projectile_fire_input_controller")
+
+
+func _exit_tree() -> void:
+	remove_from_group(&"projectile_fire_input_controller")
 
 
 func _ready() -> void:
@@ -32,7 +41,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if not event.is_action_pressed(fire_action):
 		return
-	if only_player_controlled and not _is_player_controlled_parent():
+	if require_controlled_owner and not _is_controlled_owner():
 		return
 
 	_resolve_launchers()
@@ -71,10 +80,12 @@ func _get_fire_direction(launcher: ProjectileLauncher) -> Vector3:
 	return Vector3.ZERO
 
 
-func _is_player_controlled_parent() -> bool:
+func _is_controlled_owner() -> bool:
+	if controlled_property == &"":
+		return true
 	var node := get_parent()
 	while node != null:
-		var value = node.get(&"player_controlled")
+		var value = node.get(controlled_property)
 		if value != null:
 			return bool(value)
 		node = node.get_parent()

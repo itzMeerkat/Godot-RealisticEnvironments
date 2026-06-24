@@ -1,11 +1,11 @@
 class_name ProjectileHitbox
 extends Area3D
-## Area3D hitbox that reports projectile impacts to a BoatHitboxManager.
+## Area3D hitbox that reports projectile impacts to a compatible hitbox manager.
 
 signal projectile_hit(projectile: Node, hit_data: Dictionary)
 
 @export var enabled := true
-@export var hitbox_group: StringName = &"hull"
+@export var hitbox_group: StringName = &"default"
 @export_range(0.0, 100.0, 0.01, "or_greater") var damage_multiplier := 1.0
 @export var manager_path: NodePath
 @export var configure_collision_layers := true
@@ -49,7 +49,7 @@ func _on_body_entered(body: Node3D) -> void:
 
 
 func _is_projectile(body: Node) -> bool:
-	return body is Projectile or body.is_in_group(&"projectile") or body.has_method(&"launch")
+	return body.is_in_group(&"projectile") or body.has_method(&"launch")
 
 
 func _can_register_hit(projectile: Node) -> bool:

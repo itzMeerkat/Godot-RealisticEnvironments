@@ -1,13 +1,13 @@
-class_name BoatHealthDebugUI
+class_name HitboxHealthDebugUI
 extends CanvasLayer
-## Lightweight debug UI that mirrors BoatHitboxManager group health.
+## Lightweight debug UI that mirrors HitboxHealthManager group health.
 
 @export var enabled := true :
 	set(value):
 		enabled = value
 		_update_visibility()
 @export var hitbox_manager_path: NodePath
-@export var title := "Boat Health"
+@export var title := "Hitbox Health"
 @export var display_groups: Array[StringName] = []
 @export var screen_position := Vector2(24.0, 88.0)
 @export var panel_size := Vector2(260.0, 0.0)
@@ -49,7 +49,7 @@ func _build_ui() -> void:
 	if _panel != null:
 		return
 	_panel = PanelContainer.new()
-	_panel.name = "BoatHealthPanel"
+	_panel.name = "HitboxHealthPanel"
 	_panel.offset_left = screen_position.x
 	_panel.offset_top = screen_position.y
 	_panel.offset_right = screen_position.x + panel_size.x
@@ -128,7 +128,7 @@ func _get_display_groups() -> Array[StringName]:
 			for key in health_config.keys():
 				groups.push_back(StringName(str(key)))
 	if groups.is_empty():
-		groups = [&"hull", &"mast"]
+		groups = [&"default"]
 	return groups
 
 
@@ -158,7 +158,7 @@ func _find_manager_nearby() -> Node:
 		var manager := _find_manager_descendant(parent)
 		if manager != null:
 			return manager
-	return get_tree().get_first_node_in_group(&"boat_hitbox_manager") if is_inside_tree() else null
+	return get_tree().get_first_node_in_group(&"hitbox_health_manager") if is_inside_tree() else null
 
 
 func _find_manager_descendant(root: Node) -> Node:

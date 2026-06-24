@@ -12,15 +12,15 @@
 [ext_resource type="PackedScene" uid="uid://cml2y7l7qamr1" path="res://demo/assets/pirate_ship/caravel_ship.glb" id="12_dr3n4"]
 [ext_resource type="PackedScene" path="res://addons/projectile_launcher_system/default_muzzle_flash.tscn" id="12_htw60"]
 [ext_resource type="Script" uid="uid://vsrptxg5brdg" path="res://systems/boat/boat_animation_autoplay.gd" id="13_sail_autoplay"]
-[ext_resource type="Script" uid="uid://dp8nov4qj3vxr" path="res://systems/boat/boat_projectile_fire_controller.gd" id="14_fire_controller"]
+[ext_resource type="Script" uid="uid://dp8nov4qj3vxr" path="res://addons/projectile_launcher_system/projectile_fire_input_controller.gd" id="14_fire_controller"]
 [ext_resource type="Script" uid="uid://xhaeukrdytqu" path="res://addons/projectile_launcher_system/cannon_slide_recoil.gd" id="15_cannon_recoil"]
 [ext_resource type="Script" uid="uid://bktoohcajlutg" path="res://addons/projectile_launcher_system/physics_recoil.gd" id="16_physics_recoil"]
 [ext_resource type="Script" uid="uid://bm0kcmnihljlv" path="res://addons/projectile_launcher_system/projectile_aim_controller.gd" id="17_aim_controller"]
-[ext_resource type="Script" uid="uid://bbjbt0xvgiunf" path="res://systems/boat/boat_sinking_monitor.gd" id="18_sinking_monitor"]
-[ext_resource type="Script" uid="uid://ci8d431qqx5lx" path="res://systems/boat/boat_hitbox_manager.gd" id="19_hitbox_manager"]
-[ext_resource type="Script" uid="uid://by55imxv5cm3" path="res://systems/boat/projectile_hitbox.gd" id="19_pgcpf"]
-[ext_resource type="PackedScene" uid="uid://cs4tsoxha78ww" path="res://systems/boat/default_projectile_hit_smoke.tscn" id="20_smoke"]
-[ext_resource type="Script" uid="uid://cyex1yty0rfvh" path="res://systems/boat/boat_health_debug_ui.gd" id="21_health_ui"]
+[ext_resource type="Script" uid="uid://bbjbt0xvgiunf" path="res://addons/buoyancy_system/buoyant_sinking_monitor.gd" id="18_sinking_monitor"]
+[ext_resource type="Script" uid="uid://ci8d431qqx5lx" path="res://addons/hitbox_damage_system/hitbox_health_manager.gd" id="19_hitbox_manager"]
+[ext_resource type="Script" uid="uid://by55imxv5cm3" path="res://addons/hitbox_damage_system/projectile_hitbox.gd" id="19_pgcpf"]
+[ext_resource type="PackedScene" uid="uid://cs4tsoxha78ww" path="res://addons/hitbox_damage_system/default_projectile_hit_smoke.tscn" id="20_smoke"]
+[ext_resource type="Script" uid="uid://cyex1yty0rfvh" path="res://addons/hitbox_damage_system/hitbox_health_debug_ui.gd" id="21_health_ui"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_float_demo"]
 size = Vector3(7.452182, 3.281958, 19.737438)
@@ -154,20 +154,22 @@ heave_damping = 1.0
 longitudinal_water_drag = 0.25
 lateral_water_drag = 1.5
 
-[node name="BoatSinkingMonitor" type="Node" parent="." unique_id=243879231]
+[node name="BuoyantSinkingMonitor" type="Node" parent="." unique_id=243879231]
 script = ExtResource("18_sinking_monitor")
 buoyant_body_path = NodePath("../BuoyantBody")
 sinking_probe_paths = Array[NodePath]([NodePath("../Node3D/GeneratedProbes/Probe_000"), NodePath("../Node3D/GeneratedProbes/Probe_001"), NodePath("../Node3D/GeneratedProbes/Probe_002"), NodePath("../Node3D/GeneratedProbes/Probe_003"), NodePath("../Node3D/GeneratedProbes/Probe_004"), NodePath("../Node3D/GeneratedProbes/Probe_005"), NodePath("../Node3D/GeneratedProbes/Probe_006"), NodePath("../Node3D/GeneratedProbes/Probe_007")])
 sink_probe_depth_threshold = 1.2
 
-[node name="BoatHitboxManager" type="Node" parent="." unique_id=1402117592]
+[node name="HitboxHealthManager" type="Node" parent="." unique_id=1402117592]
 script = ExtResource("19_hitbox_manager")
+group_max_health = {"hull": 120.0, "mast": 60.0}
+group_damage_multipliers = {"hull": 1.0, "mast": 0.65}
 hit_effect_scene = ExtResource("20_smoke")
-sinking_monitor_path = NodePath("../BoatSinkingMonitor")
 
-[node name="BoatHealthDebugUI" type="CanvasLayer" parent="." unique_id=1225444111]
+[node name="HitboxHealthDebugUI" type="CanvasLayer" parent="." unique_id=1225444111]
 script = ExtResource("21_health_ui")
-hitbox_manager_path = NodePath("../BoatHitboxManager")
+hitbox_manager_path = NodePath("../HitboxHealthManager")
+title = "Boat Health"
 
 [node name="ProjectileHitboxes" type="Node3D" parent="." unique_id=454930104]
 
@@ -400,7 +402,7 @@ script = ExtResource("16_physics_recoil")
 rigid_body_path = NodePath("..")
 impulse_point_path = NodePath("../Sketchfab_Scene/Sketchfab_model/4279c9e2ed2e464895c5348c2b75ab18_fbx/Object_2/RootNode/DeckStuff/Cannon007/ProjectileLauncher")
 
-[node name="ProjectileFireController" type="Node" parent="." unique_id=1944187279]
+[node name="ProjectileFireInputController" type="Node" parent="." unique_id=1944187279]
 script = ExtResource("14_fire_controller")
 launcher_paths = Array[NodePath]([NodePath("../Sketchfab_Scene/Sketchfab_model/4279c9e2ed2e464895c5348c2b75ab18_fbx/Object_2/RootNode/DeckStuff/Cannon006/ProjectileLauncher"), NodePath("../Sketchfab_Scene/Sketchfab_model/4279c9e2ed2e464895c5348c2b75ab18_fbx/Object_2/RootNode/DeckStuff/Cannon007/ProjectileLauncher"), NodePath("../Sketchfab_Scene/Sketchfab_model/4279c9e2ed2e464895c5348c2b75ab18_fbx/Object_2/RootNode/DeckStuff/Cannon/ProjectileLauncher"), NodePath("../Sketchfab_Scene/Sketchfab_model/4279c9e2ed2e464895c5348c2b75ab18_fbx/Object_2/RootNode/DeckStuff/Cannon005/ProjectileLauncher")])
 launcher_path = NodePath("../Sketchfab_Scene/Sketchfab_model/4279c9e2ed2e464895c5348c2b75ab18_fbx/Object_2/RootNode/DeckStuff/Cannon007/ProjectileLauncher")
@@ -413,19 +415,22 @@ yaw_target_paths = Array[NodePath]([NodePath("../Sketchfab_Scene/Sketchfab_model
 yaw_reference_path = NodePath("..")
 marker_height = 5.0
 
-[node name="Area3D" type="Area3D" parent="." unique_id=646763951]
+[node name="HullHitbox" type="Area3D" parent="." unique_id=646763951]
 script = ExtResource("19_pgcpf")
+hitbox_group = &"hull"
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="Area3D" unique_id=2139158192]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="HullHitbox" unique_id=2139158192]
 transform = Transform3D(-0.2036705, 1.8858906e-08, 1.3682328e-15, 0, -5.4594165e-09, 0.20730057, 3.075339e-08, 0.12489689, 9.061396e-09, 0.017130991, -0.6887269, 0.6235453)
 shape = SubResource("ConcavePolygonShape3D_odp0u")
 
-[node name="CollisionShape3D2" type="CollisionShape3D" parent="Area3D" unique_id=1183125709]
+[node name="CollisionShape3D2" type="CollisionShape3D" parent="HullHitbox" unique_id=1183125709]
 transform = Transform3D(-0.2036705, 1.8858907e-08, -6.950333e-24, 0, 2.7732683e-17, 0.20730059, 3.075339e-08, 0.1248969, -4.6029977e-17, 0.017131014, -0.68872666, 0.6235454)
 shape = SubResource("ConcavePolygonShape3D_pgcpf")
 
-[node name="CollisionShape3D3" type="CollisionShape3D" parent="Area3D" unique_id=2075132510]
+[node name="CollisionShape3D3" type="CollisionShape3D" parent="HullHitbox" unique_id=2075132510]
 transform = Transform3D(-0.2036705, 1.8858907e-08, -6.950333e-24, 0, 2.7732683e-17, 0.20730059, 3.075339e-08, 0.1248969, -4.6029977e-17, 0.017131014, -1.497833, 0.6235454)
 shape = SubResource("ConcavePolygonShape3D_fo7e3")
+
+[connection signal="group_destroyed" from="HitboxHealthManager" to="BuoyantSinkingMonitor" method="_on_hitbox_group_destroyed"]
 
 [editable path="Sketchfab_Scene"]

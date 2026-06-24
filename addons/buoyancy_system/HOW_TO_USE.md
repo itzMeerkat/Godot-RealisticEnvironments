@@ -82,6 +82,18 @@ Hysteresis is controlled by:
 
 Entry/exit signals are edge-triggered only. Do not emit per-probe continuous state every frame; callers that need continuous data should read `get_probe_states(tag)` or `get_wet_probe_states(tag)`.
 
+## Sinking Monitor
+
+`BuoyantSinkingMonitor` watches a floating rigid body and starts sinking when roll or selected draft probes exceed configured limits. It reduces `BuoyantBody.buoyancy_strength` by `sink_buoyancy_multiplier`, emits `sinking_started`, then optionally deletes the configured root after `delete_delay`.
+
+For damage integration, connect an external health system to `_on_hitbox_group_destroyed()`:
+
+```text
+HitboxHealthManager.group_destroyed -> BuoyantSinkingMonitor._on_hitbox_group_destroyed
+```
+
+`sink_on_destroyed_groups` controls which destroyed hitbox groups trigger sinking. This keeps buoyancy independent from projectile and hitbox implementations.
+
 ## Foam And Effects
 
 The buoyancy system does not render foam or particles directly. It exposes water-contact state.
