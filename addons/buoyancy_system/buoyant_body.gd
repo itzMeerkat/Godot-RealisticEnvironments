@@ -7,16 +7,27 @@ extends Node
 signal probe_entered_water(probe: Node, state: Dictionary)
 signal probe_exited_water(probe: Node, state: Dictionary)
 
+## Optional rigid body target. Leave empty to use the parent or nearest ancestor RigidBody3D.
 @export var rigid_body_path : NodePath
+## Optional OceanSystem target. Leave empty to use the first node in the ocean_system group.
 @export var ocean_path : NodePath
+## Automatically includes child BuoyancyProbeVolume nodes in addition to explicit paths.
 @export var auto_collect_child_volumes := true
+## Explicit probe volumes used by this buoyant body.
 @export var probe_volume_paths : Array[NodePath] = []
+## Global multiplier for all buoyancy force output.
 @export_range(0.0, 10.0, 0.01, "or_greater") var buoyancy_strength := 1.0
+## Fluid density in kg/m^3. Seawater is usually around 1025.
 @export_range(1.0, 2000.0, 1.0, "or_greater") var water_density := 1025.0
+## Central vertical damping that suppresses bobbing without adding probe torque.
 @export_range(0.0, 20.0, 0.01, "or_greater") var heave_damping := 2.0
+## Body-forward/back water drag applied at each physical probe.
 @export_range(0.0, 100.0, 0.01, "or_greater") var longitudinal_water_drag := 0.45
+## Body-sideways water drag applied at each physical probe.
 @export_range(0.0, 100.0, 0.01, "or_greater") var lateral_water_drag := 0.45
+## Safety cap for acceleration contributed by any single probe.
 @export_range(0.0, 100.0, 0.1, "or_greater") var max_probe_acceleration := 35.0
+## Enables applying forces. Disable to keep query/contact state without affecting physics.
 @export var apply_forces := true
 
 var rigid_body : RigidBody3D

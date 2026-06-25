@@ -7,7 +7,7 @@
 3. Add `BuoyantBody` as a child of the rigid body.
 4. Add `BuoyancyProbeVolume` under the rigid body.
 5. Assign one or more low-poly hull/proxy mesh roots to `source_paths`.
-6. Keep the design waterline at local `waterline_y = 0.0`, then toggle `generate_physical_probes_now`, `generate_fx_probes_now`, or `generate_all_probes_now` in the Inspector.
+6. Keep the design waterline at local `design_waterline_y = 0.0`, then toggle `editor_generate_physical_probes`, `editor_generate_fx_probes`, or `editor_generate_all_probes` in the Inspector.
 
 The generator creates editable children under `GeneratedProbes`:
 
@@ -20,7 +20,7 @@ Generation is editor-only. Runtime uses saved probe nodes and will not create mi
 
 The first version assumes a local horizontal design waterline:
 
-- Local `Y = waterline_y` is the static waterline plane.
+- Local `Y = design_waterline_y` is the static waterline plane.
 - Local `X = symmetry_plane_x` is the hull symmetry plane. With the default `symmetry_plane_x = 0.0`, probes mirror across the local YZ plane.
 - Local `Z` is the longitudinal axis.
 - `bow_is_negative_z = true` means the bow is toward local `-Z`.
@@ -29,7 +29,7 @@ Use a low-poly closed or mostly closed hull/proxy mesh. Decorative meshes, raili
 
 ## Probe Generation
 
-`BuoyancyProbeVolume` intersects the source mesh triangles against `Y = waterline_y`, projects the intersection segments to XZ, then builds a 2D convex hull from those waterline points for probe placement. This avoids fragile pairing on complex or fragmented intersection curves. When `debug_draw` is enabled in the editor, `show_waterline_intersection` highlights the raw intersection curve and `show_waterline_convex_hull` highlights the generated convex hull.
+`BuoyancyProbeVolume` intersects the source mesh triangles against `Y = design_waterline_y`, projects the intersection segments to XZ, then builds a 2D convex hull from those waterline points for probe placement. This avoids fragile pairing on complex or fragmented intersection curves. When `debug_enabled` is enabled in the editor, the raw intersection curve and generated convex hull are shown with hardcoded debug styling.
 
 Physical probes are placed on the scanned left/right boundary of the waterline convex hull. When `mirror_across_yz_plane` is enabled, left/right probes are mirrored around `X = symmetry_plane_x`; the generator intentionally favors symmetry over exact containment, so a small amount of overshoot outside the original intersection is acceptable. The `physical_probe_count` is the target count; odd counts add one centerline probe.
 
@@ -37,10 +37,11 @@ FX probes are generated separately from physical probes and sampled on the water
 
 Important generation parameters:
 
-- `generated_buoyancy_height`: vertical water column height represented by each generated physical probe.
-- `generated_max_submerged_volume_cubic_meters`: maximum displaced volume assigned to each generated physical probe.
+- `generated_probe_buoyancy_height`: vertical water column height represented by each generated physical probe.
+- `generated_probe_volume_cubic_meters`: maximum displaced volume assigned to each generated physical probe.
 - `longitudinal_margin_fraction`: avoids placing physical probes exactly at bow/stern tips.
-- `generated_fx_display_radius`: editor display radius used by generated FX/contact probes.
+- `generated_fx_probe_display_radius`: editor display radius used by generated FX/contact probes.
+- `editor_auto_generate_if_empty`: editor-only convenience for creating probes when none are saved.
 
 Each physical probe can be edited manually after generation. Move the node to change the sample point. Edit `max_submerged_volume_cubic_meters`, `buoyancy_height`, and drag multipliers to tune behavior. Object weight comes only from the parent `RigidBody3D.mass` and `RigidBody3D.center_of_mass` settings.
 
@@ -62,6 +63,8 @@ Physical force uses:
 - `max_probe_acceleration` as a per-probe force safety cap
 
 For demo boats using `FloatingDebugBody`, enable `local_angular_damping_enabled` and tune `local_angular_damping` when pitch, yaw, and roll need different rotational damping. The vector uses local axes: X = pitch, Y = yaw, Z = roll.
+
+Debug display is intentionally compact: components that draw helpers expose only `debug_enabled`; line colors, force scale, history length, and other display details are fixed in code.
 
 ## Contact Events
 

@@ -2,11 +2,17 @@ class_name PhysicsRecoil
 extends Node
 ## Applies an opposite impulse to a RigidBody3D whenever a launcher fires.
 
+## RigidBody3D that receives the recoil impulse. Leave empty to find an ancestor.
 @export var rigid_body_path: NodePath
+## Optional fallback point where recoil is applied when no shot muzzle data is available.
 @export var impulse_point_path: NodePath
+## Uses the firing launcher's muzzle position as the impulse point when available.
 @export var use_shot_muzzle_as_impulse_point := true
+## Uses projectile_mass * initial_speed from shot_data as the base impulse.
 @export var use_projectile_momentum := true
+## Multiplier applied to the computed or fallback impulse magnitude.
 @export_range(0.0, 10000.0, 0.001, "or_greater") var impulse_multiplier := 1.0
+## Base impulse used when use_projectile_momentum is disabled or shot data is missing.
 @export_range(0.0, 1000000.0, 0.001, "or_greater") var fallback_impulse := 100.0
 
 var rigid_body: RigidBody3D

@@ -4,13 +4,21 @@ extends Area3D
 
 signal projectile_hit(projectile: Node, hit_data: Dictionary)
 
+## Enables projectile detection for this hitbox.
 @export var enabled := true
+## Health group affected by hits on this hitbox.
 @export var hitbox_group: StringName = &"default"
+## Per-hitbox multiplier applied to calculated or explicit hit damage.
 @export_range(0.0, 100.0, 0.01, "or_greater") var damage_multiplier := 1.0
+## Optional HitboxHealthManager path. Leave empty to find the nearest compatible manager.
 @export var manager_path: NodePath
+## Applies hitbox_collision_layer and projectile_collision_mask in _ready().
 @export var configure_collision_layers := true
+## Physics layer assigned to this Area3D when configure_collision_layers is enabled.
 @export_flags_3d_physics var hitbox_collision_layer: int = 4
+## Physics mask used to detect projectile bodies when configure_collision_layers is enabled.
 @export_flags_3d_physics var projectile_collision_mask: int = 2
+## Minimum seconds before the same projectile can register another hit on this hitbox.
 @export_range(0.0, 5.0, 0.001, "or_greater") var same_projectile_hit_interval := 0.08
 
 var _manager: Node

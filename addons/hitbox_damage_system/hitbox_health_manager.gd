@@ -6,27 +6,41 @@ signal hitbox_hit(hitbox_group: StringName, hitbox: Node, projectile: Node, hit_
 signal group_health_changed(hitbox_group: StringName, health: float, max_health: float, hit_data: Dictionary)
 signal group_destroyed(hitbox_group: StringName, hit_data: Dictionary)
 
+## Enables damage routing, health changes, hit effects, and projectile cleanup.
 @export var enabled := true
+## Optional owner rigid body used for own-projectile filtering. Leave empty to find an ancestor.
 @export var owner_rigid_body_path: NodePath
+## Optional root scanned for ProjectileHitbox children. Leave empty to scan nearby children.
 @export var hitbox_root_path: NodePath
+## Automatically finds child ProjectileHitbox nodes under hitbox_root_path.
 @export var auto_collect_child_hitboxes := true
 
 @export_group("Projectile Filtering")
+## Ignores projectiles whose source metadata points back to owner_rigid_body_path.
 @export var ignore_own_projectiles := true
 
 @export_group("Damage")
+## Converts projectile momentum magnitude into damage when hit data has no explicit damage.
 @export_range(0.0, 1000.0, 0.001, "or_greater") var damage_per_momentum := 0.03
+## Minimum damage applied by momentum-based hits.
 @export_range(0.0, 1000.0, 0.001, "or_greater") var minimum_hit_damage := 1.0
+## Max health used for hitbox groups not listed in group_max_health.
 @export_range(0.0, 1000000.0, 0.1, "or_greater") var default_group_max_health := 100.0
+## Per-hitbox-group max health map, for example {"hull": 300.0, "mast": 60.0}.
 @export var group_max_health := {
 	"default": 100.0,
 }
+## Per-hitbox-group damage multiplier map applied before hitbox damage_multiplier.
 @export var group_damage_multipliers := {}
+## Frees the projectile after a registered hit.
 @export var destroy_projectile_on_hit := true
 
 @export_group("Hit Effect")
+## Optional effect scene spawned at the impact position.
 @export var hit_effect_scene: PackedScene
+## Optional parent for spawned hit effects. Leave empty to use the current scene root.
 @export var hit_effect_parent_path: NodePath
+## Fallback seconds before spawned hit effects are freed if they do not self-delete.
 @export_range(0.0, 10.0, 0.01, "or_greater") var hit_effect_fallback_lifetime := 1.6
 
 var _hitboxes: Array[Node] = []

@@ -67,9 +67,9 @@ The wave update path now supports lower simulation update rates while preserving
 ### Procedural clipmap mesh
 The water mesh no longer relies on pre-authored mesh assets. `OceanSystem` always generates a clipmap-style grid procedurally from exported parameters:
 
- * `generated_inner_extent`
- * `generated_base_cell_size`
- * `generated_ring_count`
+ * `mesh_inner_extent`
+ * `mesh_base_cell_size`
+ * `mesh_ring_count`
 
 The generated mesh is a circular ring layout centered around the ocean node. Far LOD extends the same mesh with coarse outer rings, so the water shader no longer carries the old grid-morph branch or extra morph metadata.
 

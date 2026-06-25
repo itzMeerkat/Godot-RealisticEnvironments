@@ -50,3 +50,7 @@ hitbox_health_manager.group_destroyed.connect(_on_group_destroyed)
 ```
 
 例如 `BuoyantSinkingMonitor` 可以连接到 `group_destroyed`，在 `hull` 被摧毁时开始沉没。
+
+## Debug UI
+
+`HitboxHealthDebugUI` 是可选组件。它只导出 `debug_enabled` 和 `hitbox_manager_path`；标题、位置、尺寸、刷新频率和显示分组策略都固定在代码中，避免调试显示细节占用 Inspector。

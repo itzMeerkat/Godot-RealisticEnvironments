@@ -94,7 +94,7 @@ collision_mask = projectile_collision_mask
 
 ## Debug Arrow
 
-`ProjectileLauncher` 是 `@tool` 脚本。启用 `debug_draw_fire_direction` 后，它会创建一个内部 `MeshInstance3D`，名称为 `DebugFireDirectionArrow`，并使用 `ImmediateMesh` 绘制世界空间线段箭头。
+`ProjectileLauncher` 是 `@tool` 脚本。启用 `debug_enabled` 后，它会创建一个内部 `MeshInstance3D`，名称为 `DebugFireDirectionArrow`，并使用 `ImmediateMesh` 绘制世界空间线段箭头。箭头显示样式固定在代码常量中。
 
 该节点通过 `add_child(..., INTERNAL_MODE_BACK)` 创建，不作为场景内容保存。箭头每帧根据当前 `muzzle_path` 或 Launcher 自身 transform 更新。
 

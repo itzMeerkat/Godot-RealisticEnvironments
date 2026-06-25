@@ -42,6 +42,8 @@ FloatingBoat
 - 添加或指向模型里的 `ProjectileLauncher`/muzzle 节点，并配置 `ProjectileFireInputController` 与 `ProjectileAimController` 的 launcher paths。
 - 移动 `CameraTargets/ThirdPersonFocus` 和 `CameraTargets/FirstPersonSeat`。
 
+调试显示相关组件统一只暴露 `debug_enabled`。例如 `BuoyancyProbeVolume`、`ProjectileLauncher` 和 `HitboxHealthDebugUI` 的线框、箭头、UI 尺寸和颜色都固定在各自脚本中。
+
 ## 模型替换
 
 不要把模板脚本写死到某个 GLB 内部路径。推荐让 demo 或用户场景保存具体路径：

@@ -151,7 +151,7 @@ func _add_ocean_controls(parent : VBoxContainer) -> void:
 	_map_size_option.item_selected.connect(func(index : int) -> void:
 		if _is_syncing or not water:
 			return
-		water.map_size = _map_size_option.get_item_id(index)
+		water.simulation_map_size = _map_size_option.get_item_id(index)
 	)
 
 	var update_spin := _add_float_row(
@@ -267,31 +267,6 @@ func _add_sky_reflection_controls(parent : VBoxContainer) -> void:
 	title.text = "Sky Reflection"
 	title.add_theme_font_size_override("font_size", 15)
 	parent.add_child(title)
-
-	var debug_view := _add_option_row(parent, "Water Debug View", "Visualizes the procedural sky reflection and crest glow masks.")
-	debug_view.name = "WaterDebugView"
-	var debug_items := [
-		"Normal",
-		"Sky Reflection",
-		"Sky Color",
-		"Sun Glitter",
-		"Crest Height",
-		"Crest Slope",
-		"Crest Backlight",
-		"Crest Final",
-		"Reflection Dir Y",
-		"Reflection Roughness",
-		"Sun Scatter",
-		"Sun Scatter NoL",
-		"View Sun Phase",
-		"Micro Slope Energy",
-	]
-	for i in debug_items.size():
-		debug_view.add_item(debug_items[i], i)
-	debug_view.item_selected.connect(func(index : int) -> void:
-		if not _is_syncing and water:
-			water.water_debug_view = debug_view.get_item_id(index)
-	)
 
 	var sky_enabled := _add_check_row(parent, "Sky Reflection", "Adds procedural sky and horizon reflection for open ocean.")
 	sky_enabled.name = "SkyReflectionEnabled"
@@ -422,10 +397,10 @@ func _add_buoyancy_controls(parent : VBoxContainer) -> void:
 	if player_body:
 		var position_history := _add_check_row(parent, "Position History", "Shows the player body's world-space movement trail.")
 		position_history.name = "PlayerPositionHistory"
-		position_history.button_pressed = player_body.debug_draw_position_history
+		position_history.button_pressed = player_body.debug_enabled
 		position_history.toggled.connect(func(enabled : bool) -> void:
 			if not _is_syncing and player_body:
-				player_body.debug_draw_position_history = enabled
+				player_body.debug_enabled = enabled
 		)
 
 	_add_bound_param(parent, "Buoyancy Strength", "Global multiplier for all buoyancy volume forces.", buoyant_body.buoyancy_strength, 0.0, 10.0, 0.01, func(value : float) -> void: buoyant_body.buoyancy_strength = value, true)
@@ -673,7 +648,7 @@ func _populate_values() -> void:
 	_is_syncing = true
 
 	for i in _map_size_option.get_item_count():
-		if _map_size_option.get_item_id(i) == water.map_size:
+		if _map_size_option.get_item_id(i) == water.simulation_map_size:
 			_map_size_option.select(i)
 			break
 
@@ -691,7 +666,6 @@ func _populate_values() -> void:
 	_set_named_spin("FoamIntensity", water.foam_intensity)
 	_set_named_spin("FoamThreshold", water.foam_threshold)
 	_set_named_spin("FoamSoftness", water.foam_softness)
-	_set_named_option("WaterDebugView", water.water_debug_view)
 	_set_named_check("SkyReflectionEnabled", water.sky_reflection_enabled)
 	_set_named_spin("SkyReflectionStrength", water.sky_reflection_strength)
 	_set_named_spin("SkyHorizonBoost", water.sky_horizon_boost)
@@ -735,7 +709,7 @@ func _populate_values() -> void:
 		_set_named_spin("SkyMoonEnergy", sky_system.moon_energy_multiplier)
 		_set_named_spin("SkyStarBrightness", sky_system.star_brightness)
 	if player_body:
-		_set_named_check("PlayerPositionHistory", player_body.debug_draw_position_history)
+		_set_named_check("PlayerPositionHistory", player_body.debug_enabled)
 	_is_syncing = false
 
 

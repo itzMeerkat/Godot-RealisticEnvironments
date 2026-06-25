@@ -5,23 +5,33 @@ extends Node
 signal sinking_started(reason: StringName, data: Dictionary)
 signal sinking_delete_timeout()
 
+## Enables roll, draft, and damage-triggered sinking checks.
 @export var enabled := true
+## Optional rigid body target. Leave empty to use the parent or nearest ancestor.
 @export var rigid_body_path: NodePath
+## Optional buoyant body target. Leave empty to find one near the rigid body.
 @export var buoyant_body_path: NodePath
+## Optional node deleted after delete_delay once sinking starts. Leave empty to delete the rigid body or parent.
 @export var delete_root_path: NodePath
 
 @export_group("Roll Limit")
+## Starts sinking when absolute roll reaches this angle. Set 0 to disable roll sinking.
 @export_range(0.0, 180.0, 0.1, "degrees") var max_roll_degrees := 70.0
 
 @export_group("Draft Limit")
+## Probe nodes that must all exceed sink_probe_depth_threshold before draft sinking starts.
 @export var sinking_probe_paths: Array[NodePath] = []
+## Water depth threshold required for each selected sinking probe.
 @export_range(-10.0, 10.0, 0.01) var sink_probe_depth_threshold := 0.5
 
 @export_group("Damage Integration")
+## Hitbox groups that trigger sinking when an external health system reports destruction.
 @export var sink_on_destroyed_groups: Array[StringName] = [&"hull"]
 
 @export_group("Sink Behavior")
+## Multiplier applied to the initial BuoyantBody.buoyancy_strength once sinking starts.
 @export_range(0.0, 1.0, 0.01) var sink_buoyancy_multiplier := 0.3
+## Seconds after sinking starts before delete_root_path is freed. Set 0 for immediate delete.
 @export_range(0.0, 60.0, 0.01, "or_greater") var delete_delay := 5.0
 
 var rigid_body: RigidBody3D

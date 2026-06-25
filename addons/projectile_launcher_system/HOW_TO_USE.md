@@ -38,7 +38,6 @@ VehicleOrWeaponRoot
 
 - `fire_action`：触发开火的 InputMap action，默认 `fire_projectile`。
 - `launcher_paths`：要同时开火的 Launcher 列表。
-- `launcher_path`：单个 Launcher 的便捷路径；`launcher_paths` 非空时优先使用列表。
 - `aim_controller_path`：可选 `ProjectileAimController`，用于读取每个 Launcher 的弹道解算方向。
 - `cooldown`：开火冷却时间。
 - `require_controlled_owner`：开启时会向父节点链查找 `controlled_property`，默认 `player_controlled`。如果找不到该属性，则允许开火。
@@ -62,10 +61,7 @@ VehicleOrWeaponRoot
 - `muzzle_flash_lifetime`：Launcher 对枪口焰实例的兜底销毁时间。
 - `recoil_strength`：传给 recoil driver 的后坐力强度。
 - `recoil_receiver_paths`：接收后坐力事件的节点路径列表。
-- `debug_draw_fire_direction`：显示一根指向当前开炮方向的调试箭头。
-- `debug_arrow_length`：调试箭头长度。
-- `debug_arrow_color`：调试箭头颜色。
-- `debug_arrow_on_top`：调试箭头是否无视深度显示在最前。
+- `debug_enabled`：显示一根指向当前开炮方向的调试箭头。箭头长度、颜色和穿透显示等样式固定在代码中。
 
 ## 自定义弹丸
 
@@ -100,17 +96,11 @@ func launch(direction: Vector3, speed: float, projectile_mass: float, projectile
 
 ## 开炮方向调试
 
-启用 `debug_draw_fire_direction` 后，Launcher 会在编辑器和运行时显示一个调试箭头。箭头起点是 `muzzle_path` 指向节点的位置；如果没有配置 `muzzle_path`，起点就是 Launcher 自身位置。
+启用 `debug_enabled` 后，Launcher 会在编辑器和运行时显示一个调试箭头。箭头起点是 `muzzle_path` 指向节点的位置；如果没有配置 `muzzle_path`，起点就是 Launcher 自身位置。
 
 箭头方向始终使用当前配置的默认开炮方向，也就是枪口或 Launcher 的 `-Z` 方向。它不显示每次开火的随机散布结果。
 
-可以用这些参数调整显示：
-
-- `debug_arrow_length`：箭头长度。
-- `debug_arrow_head_length`：箭头头部长度。
-- `debug_arrow_head_angle_degrees`：箭头头部张角。
-- `debug_arrow_color`：颜色。
-- `debug_arrow_on_top`：是否穿透显示。
+箭头的长度、头部张角、颜色和是否穿透显示都固定在代码常量中，避免 Inspector 中暴露过多调试显示细节。
 
 ## 瞄准控制器
 

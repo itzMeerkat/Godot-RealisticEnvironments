@@ -2,18 +2,31 @@ class_name BoatWaterInteractor
 extends Node3D
 ## Adds immediate bow-side foam sources in world space for a floating boat.
 
+## Enables bow foam source generation.
 @export var enabled := true
+## Minimum horizontal boat speed before bow foam appears.
 @export_range(0.0, 100.0, 0.01, "or_greater") var min_speed := 0.35
+## Speed that maps to full bow foam strength.
 @export_range(0.01, 100.0, 0.01, "or_greater") var max_speed := 8.0
+## Local bow center used when no bow contact probes are available.
 @export var bow_offset := Vector3(0.0, 0.0, -1.15)
+## Side offset from bow center for fixed left/right foam streaks.
 @export_range(0.0, 20.0, 0.01, "or_greater") var side_offset := 0.38
+## Radius of each bow foam source.
 @export_range(0.05, 20.0, 0.01, "or_greater") var bow_radius := 0.18
+## Length of each directional bow foam streak.
 @export_range(0.05, 20.0, 0.01, "or_greater") var bow_streak_length := 1.15
+## Sideways component added to foam direction for outward spreading.
 @export_range(0.0, 2.0, 0.01) var outward_splay := 0.42
+## Maximum foam amount contributed by bow sources.
 @export_range(0.0, 1.0, 0.001) var bow_foam_amount := 0.38
+## Uses BuoyancyFxProbeNode contact state before falling back to fixed bow offsets.
 @export var use_bow_contact_probes := true
+## Contact probe tag treated as bow foam sources.
 @export var bow_probe_tag := "bow"
+## Maximum number of bow contact probes converted to foam sources each frame.
 @export_range(0, 16, 1) var max_bow_probe_foam_sources := 4
+## Minimum probe depth accepted for bow foam, allowing slightly dry probes near the waterline.
 @export_range(-1.0, 1.0, 0.001) var min_bow_probe_depth := -0.05
 
 var rigid_body : RigidBody3D

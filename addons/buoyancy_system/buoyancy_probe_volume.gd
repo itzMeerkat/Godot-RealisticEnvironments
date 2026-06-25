@@ -22,85 +22,92 @@ const GRAVITY_COLOR := Color(1.0, 0.2, 0.05, 1.0)
 const NET_FORCE_COLOR := Color(1.0, 0.9, 0.15, 1.0)
 const CENTER_OF_MASS_COLOR := Color(1.0, 1.0, 1.0, 1.0)
 const PHYSICAL_DEBUG_CROSS_SIZE := 0.16
+const DEBUG_FORCE_SCALE := 0.015
+const DEBUG_BODY_FORCE_SCALE := 0.004
+const DEBUG_CENTER_OF_MASS_SIZE := 0.35
+const DEBUG_SHOW_WATERLINE_INTERSECTION := true
+const DEBUG_SHOW_WATERLINE_CONVEX_HULL := true
 
+## Enables this probe volume for buoyancy sampling and contact events.
 @export var enabled := true
 
 @export_group("Waterline Generation")
+## Mesh roots used by the editor generator to find the design waterline outline.
 @export var source_paths : Array[NodePath] = []
-@export var waterline_y := 0.0 :
+## Local-space height of the static design waterline used by probe generation.
+@export var design_waterline_y := 0.0 :
 	set(value):
-		waterline_y = value
+		design_waterline_y = value
 		_queue_debug_rebuild()
+## Local X coordinate used as the mirror plane when symmetric generation is enabled.
 @export var symmetry_plane_x := 0.0
+## Mirrors physical probes across the local YZ plane for stable left/right balance.
 @export var mirror_across_yz_plane := true
+## Interprets the bow as local -Z when tagging generated FX/contact probes.
 @export var bow_is_negative_z := true
+## Target number of generated physical buoyancy probes.
 @export_range(1, 256, 1) var physical_probe_count := 12
+## Target number of generated FX/contact probes around the waterline edge.
 @export_range(0, 256, 1) var fx_probe_count := 24
-@export_range(0.001, 100000.0, 0.001, "or_greater") var generated_max_submerged_volume_cubic_meters := 1.0
-@export_range(0.01, 100.0, 0.01, "or_greater") var generated_buoyancy_height := 1.2
+## Default fully-submerged volume assigned to each generated physical probe.
+@export_range(0.001, 100000.0, 0.001, "or_greater") var generated_probe_volume_cubic_meters := 1.0
+## Default vertical water column height assigned to each generated physical probe.
+@export_range(0.01, 100.0, 0.01, "or_greater") var generated_probe_buoyancy_height := 1.2
+## Fraction of hull length skipped near bow and stern when placing physical probes.
 @export_range(0.0, 0.45, 0.01) var longitudinal_margin_fraction := 0.08
-@export_range(0.01, 5.0, 0.01, "or_greater") var generated_fx_display_radius := 0.12
-@export var auto_generate_if_empty := true
-@export var generate_physical_probes_now := false :
+## Editor-only display radius assigned to generated FX/contact probes.
+@export_range(0.01, 5.0, 0.01, "or_greater") var generated_fx_probe_display_radius := 0.12
+## Automatically generates probes in the editor when this volume has no saved probes.
+@export var editor_auto_generate_if_empty := true
+## Editor action: toggle on to regenerate physical probes from source_paths.
+@export var editor_generate_physical_probes := false :
 	set(value):
 		if not value:
-			generate_physical_probes_now = false
+			editor_generate_physical_probes = false
 			return
-		generate_physical_probes_now = false
+		editor_generate_physical_probes = false
 		generate_physical_probes_from_source()
-@export var generate_fx_probes_now := false :
+## Editor action: toggle on to regenerate FX/contact probes from source_paths.
+@export var editor_generate_fx_probes := false :
 	set(value):
 		if not value:
-			generate_fx_probes_now = false
+			editor_generate_fx_probes = false
 			return
-		generate_fx_probes_now = false
+		editor_generate_fx_probes = false
 		generate_fx_probes_from_source()
-@export var generate_all_probes_now := false :
+## Editor action: toggle on to regenerate both physical and FX/contact probes.
+@export var editor_generate_all_probes := false :
 	set(value):
 		if not value:
-			generate_all_probes_now = false
+			editor_generate_all_probes = false
 			return
-		generate_all_probes_now = false
+		editor_generate_all_probes = false
 		generate_all_probes_from_source()
 
 @export_group("Probe Defaults")
-@export_range(0.0, 100.0, 0.01, "or_greater") var default_longitudinal_water_drag_multiplier := 1.0
-@export_range(0.0, 100.0, 0.01, "or_greater") var default_lateral_water_drag_multiplier := 1.0
+## Default forward/back water drag multiplier assigned to generated physical probes.
+@export_range(0.0, 100.0, 0.01, "or_greater") var generated_probe_longitudinal_drag_multiplier := 1.0
+## Default side-to-side water drag multiplier assigned to generated physical probes.
+@export_range(0.0, 100.0, 0.01, "or_greater") var generated_probe_lateral_drag_multiplier := 1.0
 
 @export_group("Contact Events")
+## Depth above the sampled water surface required to emit an entered-water event.
 @export_range(-10.0, 10.0, 0.001) var enter_depth_threshold := 0.03
+## Depth below the sampled water surface required to emit an exited-water event.
 @export_range(-10.0, 10.0, 0.001) var exit_depth_threshold := -0.03
+## Minimum seconds between repeated enter/exit events for the same probe.
 @export_range(0.0, 10.0, 0.001, "or_greater") var min_event_interval := 0.08
 
 @export_group("Debug Draw")
-@export var debug_draw := true :
+## Shows generated probes, water contact lines, waterline helpers, and force vectors.
+@export var debug_enabled := true :
 	set(value):
-		debug_draw = value
-		if not debug_draw:
+		debug_enabled = value
+		if not debug_enabled:
 			_probe_states.clear()
 		elif is_inside_tree():
 			_ensure_debug_nodes()
 		_update_debug_visibility()
-		_queue_debug_rebuild()
-@export_range(0.001, 10.0, 0.001, "or_greater") var debug_force_scale := 0.015 :
-	set(value):
-		debug_force_scale = maxf(value, 0.001)
-		_queue_debug_rebuild()
-@export_range(0.001, 10.0, 0.001, "or_greater") var debug_body_force_scale := 0.004 :
-	set(value):
-		debug_body_force_scale = maxf(value, 0.001)
-		_queue_debug_rebuild()
-@export_range(0.01, 10.0, 0.01, "or_greater") var debug_center_of_mass_size := 0.35 :
-	set(value):
-		debug_center_of_mass_size = maxf(value, 0.01)
-		_queue_debug_rebuild()
-@export var show_waterline_intersection := true :
-	set(value):
-		show_waterline_intersection = value
-		_queue_debug_rebuild()
-@export var show_waterline_convex_hull := true :
-	set(value):
-		show_waterline_convex_hull = value
 		_queue_debug_rebuild()
 
 var _physical_cache : Array[Node3D] = []
@@ -141,12 +148,12 @@ func _notification(what: int) -> void:
 
 func _ready() -> void:
 	if _get_physical_probes().is_empty() and _get_fx_probes().is_empty():
-		if auto_generate_if_empty and Engine.is_editor_hint():
+		if editor_auto_generate_if_empty and Engine.is_editor_hint():
 			generate_physical_probes_from_source()
 		elif not Engine.is_editor_hint():
 			_warn_missing_runtime_probes_once()
 	_connect_probe_signals()
-	if debug_draw:
+	if debug_enabled:
 		_ensure_debug_nodes()
 	else:
 		_debug_mesh_instance = get_node_or_null(DEBUG_NODE_NAME) as MeshInstance3D
@@ -207,7 +214,7 @@ func _get_generation_context() -> Dictionary:
 	if bounds.size.length_squared() <= EPSILON:
 		bounds = _get_source_bounds_in_local_space(source_mesh_instances)
 	if bounds.size.length_squared() <= EPSILON:
-		bounds = AABB(Vector3(-1.5, waterline_y, -3.0), Vector3(3.0, 0.01, 6.0))
+		bounds = AABB(Vector3(-1.5, design_waterline_y, -3.0), Vector3(3.0, 0.01, 6.0))
 	var hull_points := _build_waterline_hull_points(segments, bounds)
 	return {
 		"segments": segments,
@@ -227,11 +234,11 @@ func _generate_physical_probes(root: Node, context: Dictionary) -> int:
 	for spec in physical_specs:
 		var probe : Node3D = PHYSICAL_PROBE_SCRIPT.new()
 		probe.name = "Probe_%03d" % physical_count
-		probe.position = Vector3(float(spec["x"]), waterline_y, float(spec["z"]))
-		probe.set(&"max_submerged_volume_cubic_meters", generated_max_submerged_volume_cubic_meters)
-		probe.set(&"buoyancy_height", generated_buoyancy_height)
-		probe.set(&"longitudinal_water_drag_multiplier", default_longitudinal_water_drag_multiplier)
-		probe.set(&"lateral_water_drag_multiplier", default_lateral_water_drag_multiplier)
+		probe.position = Vector3(float(spec["x"]), design_waterline_y, float(spec["z"]))
+		probe.set(&"max_submerged_volume_cubic_meters", generated_probe_volume_cubic_meters)
+		probe.set(&"buoyancy_height", generated_probe_buoyancy_height)
+		probe.set(&"longitudinal_water_drag_multiplier", generated_probe_longitudinal_drag_multiplier)
+		probe.set(&"lateral_water_drag_multiplier", generated_probe_lateral_drag_multiplier)
 		root.add_child(probe)
 		probe.owner = generated_owner
 		physical_count += 1
@@ -247,9 +254,8 @@ func _generate_fx_probes(root: Node, context: Dictionary) -> int:
 	for spec in fx_specs:
 		var probe : Node3D = FX_PROBE_SCRIPT.new()
 		probe.name = "FxProbe_%03d_%s" % [fx_count, str(spec.get("tag", "side")).capitalize()]
-		probe.position = Vector3(float(spec["x"]), waterline_y, float(spec["z"]))
-		probe.set(&"display_radius", generated_fx_display_radius)
-		probe.set(&"trigger_radius", maxf(generated_fx_display_radius * 2.0, 0.05))
+		probe.position = Vector3(float(spec["x"]), design_waterline_y, float(spec["z"]))
+		probe.set(&"display_radius", generated_fx_probe_display_radius)
 		probe.set(&"tag", str(spec.get("tag", "side")))
 		probe.set(&"enter_depth_threshold", enter_depth_threshold)
 		probe.set(&"exit_depth_threshold", exit_depth_threshold)
@@ -397,7 +403,7 @@ func get_total_max_submerged_volume() -> float:
 
 
 func set_debug_body_state(center_of_mass_world: Vector3, gravity_force: Vector3, external_force: Vector3, has_state: bool) -> void:
-	if not debug_draw:
+	if not debug_enabled:
 		return
 	_debug_body_state = {
 		"center_of_mass_world": center_of_mass_world,
@@ -453,8 +459,8 @@ func _add_triangle_waterline_segment(segments: Array[Dictionary], mesh_instance:
 
 
 func _add_edge_intersections(points: Array[Vector3], a: Vector3, b: Vector3) -> void:
-	var da := a.y - waterline_y
-	var db := b.y - waterline_y
+	var da := a.y - design_waterline_y
+	var db := b.y - design_waterline_y
 	if absf(da) <= EPSILON and absf(db) <= EPSILON:
 		points.push_back(a)
 		points.push_back(b)
@@ -743,7 +749,7 @@ func _get_segments_bounds(segments: Array[Dictionary]) -> AABB:
 	for segment in segments:
 		var a : Vector2 = segment["a"]
 		var b : Vector2 = segment["b"]
-		for point in [Vector3(a.x, waterline_y, a.y), Vector3(b.x, waterline_y, b.y)]:
+		for point in [Vector3(a.x, design_waterline_y, a.y), Vector3(b.x, design_waterline_y, b.y)]:
 			if not has_bounds:
 				bounds = AABB(point, Vector3.ZERO)
 				has_bounds = true
@@ -914,7 +920,7 @@ func _update_debug_visibility() -> void:
 	if _debug_mesh_instance == null and is_inside_tree():
 		_debug_mesh_instance = get_node_or_null(DEBUG_NODE_NAME) as MeshInstance3D
 	if _debug_mesh_instance != null:
-		_debug_mesh_instance.visible = debug_draw
+		_debug_mesh_instance.visible = debug_enabled
 
 
 func _update_debug_materials() -> void:
@@ -948,7 +954,7 @@ func _create_debug_material(color: Color) -> StandardMaterial3D:
 func _rebuild_debug_mesh() -> void:
 	if not is_inside_tree():
 		return
-	if not debug_draw:
+	if not debug_enabled:
 		if _debug_mesh_instance != null:
 			_debug_mesh.clear_surfaces()
 		return
@@ -956,11 +962,11 @@ func _rebuild_debug_mesh() -> void:
 	_update_debug_materials()
 	_debug_mesh.clear_surfaces()
 
-	if Engine.is_editor_hint() and show_waterline_intersection:
+	if Engine.is_editor_hint() and DEBUG_SHOW_WATERLINE_INTERSECTION:
 		_begin_debug_lines()
 		_add_debug_waterline_intersection()
 		_commit_debug_lines(_waterline_material)
-	if Engine.is_editor_hint() and show_waterline_convex_hull:
+	if Engine.is_editor_hint() and DEBUG_SHOW_WATERLINE_CONVEX_HULL:
 		_begin_debug_lines()
 		_add_debug_waterline_convex_hull()
 		_commit_debug_lines(_waterline_hull_material)
@@ -1040,8 +1046,8 @@ func _add_debug_waterline_intersection() -> void:
 	for segment in _build_waterline_segments(_get_source_mesh_instances()):
 		var a : Vector2 = segment["a"]
 		var b : Vector2 = segment["b"]
-		_add_debug_vertex(Vector3(a.x, waterline_y, a.y))
-		_add_debug_vertex(Vector3(b.x, waterline_y, b.y))
+		_add_debug_vertex(Vector3(a.x, design_waterline_y, a.y))
+		_add_debug_vertex(Vector3(b.x, design_waterline_y, b.y))
 
 
 func _add_debug_waterline_convex_hull() -> void:
@@ -1051,11 +1057,11 @@ func _add_debug_waterline_convex_hull() -> void:
 	if bounds.size.length_squared() <= EPSILON:
 		bounds = _get_source_bounds_in_local_space(source_mesh_instances)
 	if bounds.size.length_squared() <= EPSILON:
-		bounds = AABB(Vector3(-1.5, waterline_y, -3.0), Vector3(3.0, 0.01, 6.0))
+		bounds = AABB(Vector3(-1.5, design_waterline_y, -3.0), Vector3(3.0, 0.01, 6.0))
 	var hull_points := _build_waterline_hull_points(segments, bounds)
 	if hull_points.size() < 2:
 		return
-	var hull_y := waterline_y + 0.03
+	var hull_y := design_waterline_y + 0.03
 	for i in hull_points.size():
 		var a : Vector2 = hull_points[i]
 		var b : Vector2 = hull_points[(i + 1) % hull_points.size()]
@@ -1083,7 +1089,7 @@ func _add_debug_force_lines() -> void:
 		if force.length_squared() <= 0.0001:
 			continue
 		var sample_position : Vector3 = state.get("world_position", Vector3.ZERO)
-		_add_debug_arrow(sample_position, force, debug_force_scale)
+		_add_debug_arrow(sample_position, force, DEBUG_FORCE_SCALE)
 
 
 func _has_debug_body_state() -> bool:
@@ -1092,19 +1098,19 @@ func _has_debug_body_state() -> bool:
 
 func _add_debug_center_of_mass() -> void:
 	var center_world : Vector3 = _debug_body_state["center_of_mass_world"]
-	_add_debug_cross(to_local(center_world), debug_center_of_mass_size)
+	_add_debug_cross(to_local(center_world), DEBUG_CENTER_OF_MASS_SIZE)
 
 
 func _add_debug_body_gravity() -> void:
 	var center_world : Vector3 = _debug_body_state["center_of_mass_world"]
 	var gravity_force : Vector3 = _debug_body_state["gravity_force"]
-	_add_debug_arrow(center_world, gravity_force, debug_body_force_scale)
+	_add_debug_arrow(center_world, gravity_force, DEBUG_BODY_FORCE_SCALE)
 
 
 func _add_debug_body_net_force() -> void:
 	var center_world : Vector3 = _debug_body_state["center_of_mass_world"]
 	var external_force : Vector3 = _debug_body_state["external_force"]
-	_add_debug_arrow(center_world, external_force, debug_body_force_scale)
+	_add_debug_arrow(center_world, external_force, DEBUG_BODY_FORCE_SCALE)
 
 
 func _add_debug_arrow(start_world: Vector3, force: Vector3, scale: float) -> void:

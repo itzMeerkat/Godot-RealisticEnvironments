@@ -42,7 +42,7 @@ hit_effect_scene = ExtResource("7_hit_smoke")
 
 [node name="HitboxHealthDebugUI" type="CanvasLayer" parent="."]
 script = ExtResource("6_health_ui")
-enabled = false
+debug_enabled = false
 hitbox_manager_path = NodePath("../HitboxHealthManager")
 
 [node name="ProjectileHitboxes" type="Node3D" parent="."]
@@ -66,8 +66,8 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2, -1)
 
 [node name="BuoyancyProbeVolume" type="Node3D" parent="."]
 script = ExtResource("3_probe_volume")
-auto_generate_if_empty = false
-debug_draw = false
+editor_auto_generate_if_empty = false
+debug_enabled = false
 
 [node name="GeneratedProbes" type="Node3D" parent="BuoyancyProbeVolume"]
 

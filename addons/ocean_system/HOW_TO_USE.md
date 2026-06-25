@@ -11,8 +11,8 @@
 - `parameters`：波浪 cascade 列表。每个 `WaveCascadeParameters` 控制一个波浪尺度。
 - `tile_length` 使用米，`wind_speed` 使用 m/s，`fetch_length` 使用 km，`water_depth_meters`
   使用米。保持这些值对应现实尺寸时，船体、浮力和波浪查询会处在同一尺度下。
-- `map_size`：每层 displacement/normal 贴图分辨率。越高越细，GPU 成本越高。
-- `ocean_radius`、`generated_inner_extent`、`generated_base_cell_size`、`generated_ring_count`：控制近处海面网格密度和范围。
+- `simulation_map_size`：每层 displacement/normal 贴图分辨率。越高越细，GPU 成本越高。
+- `ocean_radius`、`mesh_inner_extent`、`mesh_base_cell_size`、`mesh_ring_count`：控制近处海面网格密度和范围。
 - `enable_far_lod`、`far_lod_radius`、`far_lod_blend_distance`、`far_foam_coverage`、`far_foam_threshold_boost`：控制远海网格、远处细节淡出和远处泡沫的连续过渡。
 - `water_color`、`foam_color`、`clear_roughness`、`normal_strength`、`foam_intensity`：控制材质外观。
 - `sky_source_path`：可指向 `SkySystem` 或任何提供 `get_sun_direction()`、`get_sun_color()`、
@@ -62,9 +62,9 @@ var samples := ocean.sample_water_surface_batch(points, self)
 
 ## 船体遮水
 
-`WaterCutoutHullLOD` 用于视觉上隐藏船体内部的水面。将它作为船体子节点，设置 `source_model_path` 指向船体模型，然后 toggle `generate_cutouts_now` 生成可编辑的 `WaterCutoutTrapezoid` 子节点。每个梯形都可以在编辑器中单独选中、移动、旋转，并调整 `half_length`、`start_half_width`、`end_half_width`、垂直范围和边缘参数。
+`WaterCutoutHullLOD` 用于视觉上隐藏船体内部的水面。将它作为船体子节点，设置 `source_model_path` 指向船体模型，然后 toggle `editor_generate_cutouts` 生成可编辑的 `WaterCutoutTrapezoid` 子节点。每个梯形都可以在编辑器中单独选中、移动、旋转，并调整 `half_length`、`start_half_width`、`end_half_width`、垂直范围和边缘参数。
 
-`vertical_min_offset` 和 `vertical_max_offset` 控制 cutout 的垂直生效范围；`height_feather` 控制上下边界的垂直渐变距离，用来避免船体部分离水时仍把下方水面挖空。`feather` 控制顶视角轮廓边缘的水平软边。`WaterCutoutTrapezoid` 默认在编辑器中绘制线框，运行时默认不显示；如需运行时显示可开启 `debug_draw_in_game`。
+`vertical_min_offset` 和 `vertical_max_offset` 控制 cutout 的垂直生效范围；`height_feather` 控制上下边界的垂直渐变距离，用来避免船体部分离水时仍把下方水面挖空。`feather` 控制顶视角轮廓边缘的水平软边。`WaterCutoutTrapezoid` 只保留 `debug_enabled` 作为整体调试显示开关，线框样式和运行时显示策略固定在代码中。
 
 遮水系统与 `BuoyancyProbeVolume` 解耦；浮力 probe 只负责物理和质量。
 

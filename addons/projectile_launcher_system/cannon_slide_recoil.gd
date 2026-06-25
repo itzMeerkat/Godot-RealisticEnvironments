@@ -2,11 +2,17 @@ class_name CannonSlideRecoil
 extends Node
 ## Visual spring-damper recoil for a cannon barrel or carriage sliding on a local axis.
 
+## Node3D that visually slides during recoil. Leave empty to move this node's parent.
 @export var target_path: NodePath
+## Local-space direction on target used as the backward recoil axis.
 @export var recoil_axis := Vector3.BACK
+## Velocity added to the spring per unit recoil_strength.
 @export_range(0.0, 100.0, 0.001, "or_greater") var kick_velocity_per_strength := 1.0
+## Maximum slide distance along recoil_axis.
 @export_range(0.0, 100.0, 0.001, "or_greater") var max_recoil_distance := 0.8
+## Spring force pulling the target back to rest_position.
 @export_range(0.0, 1000.0, 0.01, "or_greater") var spring_strength := 80.0
+## Damping applied to the spring velocity.
 @export_range(0.0, 1000.0, 0.01, "or_greater") var damping := 14.0
 
 var target: Node3D

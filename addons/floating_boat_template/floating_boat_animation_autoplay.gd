@@ -1,7 +1,9 @@
 class_name FloatingBoatAnimationAutoplay
 extends Node
 
+## AnimationPlayer that owns the looping boat animation.
 @export var animation_player_path := NodePath("../Sketchfab_Scene/AnimationPlayer")
+## Animation name to set looping and play on _ready().
 @export var animation_name := "Sail"
 
 

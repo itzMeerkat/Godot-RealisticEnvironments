@@ -9,33 +9,33 @@ signal probe_changed
 const FX_PROBE_COLOR := Color(1.0, 0.62, 0.14, 0.38)
 const DISABLED_FX_PROBE_COLOR := Color(0.25, 0.25, 0.25, 0.12)
 
+## Enables this contact probe for water entry/exit state updates.
 @export var enabled := true :
 	set(value):
 		enabled = value
 		_update_editor_visuals()
 		_emit_probe_changed()
 
+## Gameplay/effects label used by consumers such as bow foam or splash filters.
 @export var tag := "side" :
 	set(value):
 		tag = value
 		_emit_probe_changed()
 
+## Editor-only sphere radius for selecting and visualizing this contact point.
 @export_range(0.01, 10.0, 0.01, "or_greater") var display_radius := 0.12 :
 	set(value):
 		display_radius = maxf(value, 0.01)
 		_update_editor_visuals()
 		_emit_probe_changed()
 
-@export_range(0.01, 20.0, 0.01, "or_greater") var trigger_radius := 0.25 :
-	set(value):
-		trigger_radius = maxf(value, 0.01)
-		_emit_probe_changed()
-
+## Depth above the sampled water surface required to emit an entered-water event.
 @export_range(-10.0, 10.0, 0.001) var enter_depth_threshold := 0.03 :
 	set(value):
 		enter_depth_threshold = value
 		_emit_probe_changed()
 
+## Depth below the sampled water surface required to emit an exited-water event.
 @export_range(-10.0, 10.0, 0.001) var exit_depth_threshold := -0.03 :
 	set(value):
 		exit_depth_threshold = value

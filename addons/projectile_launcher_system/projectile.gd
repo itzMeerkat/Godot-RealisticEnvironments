@@ -2,12 +2,18 @@ class_name Projectile
 extends RigidBody3D
 ## Basic rigid-body projectile with configurable launch speed, mass, drag, and lifetime.
 
+## Quadratic air drag coefficient applied as a central force each physics tick.
 @export_range(0.0, 100.0, 0.001, "or_greater") var drag_coefficient := 0.0
+## Seconds before the projectile frees itself. Set 0 to disable timed cleanup.
 @export_range(0.0, 120.0, 0.01, "or_greater") var lifetime := 10.0
+## Destroys this projectile when it reaches waterline_y and spawns water impact FX.
 @export var destroy_below_water := true
+## World Y height treated as the still-water impact plane for projectile cleanup.
 @export var waterline_y := 0.0
 @export_group("Water Impact")
+## Optional effect scene spawned when destroy_below_water removes this projectile.
 @export var water_impact_effect_scene: PackedScene
+## Fallback seconds before a spawned water impact effect is freed if it does not self-delete.
 @export_range(0.0, 10.0, 0.01, "or_greater") var water_impact_effect_lifetime := 1.25
 
 var _age := 0.0

@@ -2,16 +2,18 @@ class_name HitboxHealthDebugUI
 extends CanvasLayer
 ## Lightweight debug UI that mirrors HitboxHealthManager group health.
 
-@export var enabled := true :
+const DEBUG_TITLE := "Hitbox Health"
+const DEBUG_SCREEN_POSITION := Vector2(24.0, 88.0)
+const DEBUG_PANEL_SIZE := Vector2(260.0, 0.0)
+const DEBUG_REFRESH_INTERVAL := 0.15
+
+## Shows the hitbox health debug panel.
+@export var debug_enabled := true :
 	set(value):
-		enabled = value
+		debug_enabled = value
 		_update_visibility()
+## Optional manager path. Leave empty to find the nearest compatible manager.
 @export var hitbox_manager_path: NodePath
-@export var title := "Hitbox Health"
-@export var display_groups: Array[StringName] = []
-@export var screen_position := Vector2(24.0, 88.0)
-@export var panel_size := Vector2(260.0, 0.0)
-@export_range(0.05, 5.0, 0.01, "or_greater") var refresh_interval := 0.15
 
 var _manager: Node
 var _panel: PanelContainer
@@ -32,12 +34,12 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
-	if not enabled:
+	if not debug_enabled:
 		return
 	_refresh_timer -= delta
 	if _refresh_timer > 0.0:
 		return
-	_refresh_timer = refresh_interval
+	_refresh_timer = DEBUG_REFRESH_INTERVAL
 	if _manager == null or not is_instance_valid(_manager):
 		_resolve_manager()
 		_connect_manager_signals()
@@ -50,10 +52,10 @@ func _build_ui() -> void:
 		return
 	_panel = PanelContainer.new()
 	_panel.name = "HitboxHealthPanel"
-	_panel.offset_left = screen_position.x
-	_panel.offset_top = screen_position.y
-	_panel.offset_right = screen_position.x + panel_size.x
-	_panel.offset_bottom = screen_position.y + maxf(panel_size.y, 1.0)
+	_panel.offset_left = DEBUG_SCREEN_POSITION.x
+	_panel.offset_top = DEBUG_SCREEN_POSITION.y
+	_panel.offset_right = DEBUG_SCREEN_POSITION.x + DEBUG_PANEL_SIZE.x
+	_panel.offset_bottom = DEBUG_SCREEN_POSITION.y + maxf(DEBUG_PANEL_SIZE.y, 1.0)
 	_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_panel)
 
@@ -63,7 +65,7 @@ func _build_ui() -> void:
 	_panel.add_child(_content)
 
 	_title_label = Label.new()
-	_title_label.text = title
+	_title_label.text = DEBUG_TITLE
 	_content.add_child(_title_label)
 
 
@@ -119,8 +121,6 @@ func _refresh_values() -> void:
 
 
 func _get_display_groups() -> Array[StringName]:
-	if not display_groups.is_empty():
-		return display_groups
 	var groups: Array[StringName] = []
 	if _manager != null:
 		var health_config = _manager.get(&"group_max_health")
@@ -195,4 +195,4 @@ func _on_group_destroyed(_group: StringName, _hit_data: Dictionary) -> void:
 
 func _update_visibility() -> void:
 	if _panel != null:
-		_panel.visible = enabled
+		_panel.visible = debug_enabled

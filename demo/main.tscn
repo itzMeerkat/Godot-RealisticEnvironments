@@ -120,7 +120,6 @@ shader_parameter/crest_back_view_power = 0.5
 shader_parameter/crest_back_normal_power = 1.0
 shader_parameter/crest_low_sun_start = 0.02
 shader_parameter/crest_low_sun_end = 0.38
-shader_parameter/water_debug_view = 0
 shader_parameter/planar_reflection_enabled = true
 shader_parameter/planar_reflection_view_projection = Projection(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1)
 shader_parameter/planar_reflection_strength = 0.42
@@ -231,8 +230,8 @@ foam_intensity = 0.5
 use_external_wind = true
 wind_source_path = NodePath("../WindSystem")
 parameters = Array[ExtResource("2_pw5n6")]([SubResource("Resource_adqv5"), SubResource("Resource_luhq0"), SubResource("Resource_83u3u")])
-map_size = 512
-generated_base_cell_size = 1.0
+simulation_map_size = 512
+mesh_base_cell_size = 1.0
 
 [node name="OceanDebugPanel" parent="." unique_id=900526538 instance=ExtResource("9_gb4mm")]
 visible = false

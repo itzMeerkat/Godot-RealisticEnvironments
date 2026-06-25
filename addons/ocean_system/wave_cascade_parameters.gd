@@ -7,6 +7,7 @@ signal scale_changed
 
 const SPECTRUM_SLOT_COUNT := 2
 
+@export_group("Scale")
 ## Repeating world-space size of this wave layer in meters. Larger tiles create
 ## broad swell and long waves; smaller tiles add local chop and surface detail.
 @export var tile_length := Vector2(50, 50) :
@@ -20,6 +21,7 @@ const SPECTRUM_SLOT_COUNT := 2
 @export_range(0, 2) var normal_scale := 1.0 :
 	set(value): normal_scale = value; scale_changed.emit()
 
+@export_group("Wind")
 ## Local wind speed in meters per second when OceanSystem.use_external_wind is
 ## disabled. Higher values generate taller, steeper, more energetic waves.
 @export var wind_speed := 20.0 :
@@ -48,6 +50,7 @@ const SPECTRUM_SLOT_COUNT := 2
 ## Seconds used to blend from the active spectrum to the pending spectrum after
 ## a direction refresh. Longer blends hide changes but delay full wind response.
 @export_range(0.01, 60.0, 0.01, "or_greater") var spectrum_direction_blend_duration := 4.0
+@export_group("Spectrum")
 ## Effective fetch length in kilometers. Higher values represent wind blowing
 ## across water for longer distance, producing more developed organized waves.
 @export var fetch_length := 550.0 :
@@ -69,6 +72,7 @@ const SPECTRUM_SLOT_COUNT := 2
 @export_range(0, 1) var detail := 1.0 :
 	set(value): detail = value; mark_all_spectra_dirty()
 
+@export_group("Foam")
 ## Steepness threshold used by the compute pass before foam can accumulate.
 ## Lower values create whitecaps sooner; higher values reserve foam for breakers.
 @export_range(0, 2) var whitecap := 0.5 :

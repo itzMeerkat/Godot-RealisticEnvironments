@@ -2,17 +2,29 @@ class_name SimpleBoatController
 extends Node
 ## Lightweight player input for a floating boat. It applies forces to the parent RigidBody3D.
 
+## Enables player input and force application.
 @export var enabled := true
+## InputMap action used for forward throttle.
 @export var move_forward_action: StringName = &"camera_move_forward"
+## InputMap action used for reverse throttle.
 @export var move_back_action: StringName = &"camera_move_back"
+## InputMap action used for left yaw torque.
 @export var turn_left_action: StringName = &"camera_move_left"
+## InputMap action used for right yaw torque.
 @export var turn_right_action: StringName = &"camera_move_right"
+## Forward speed above which forward throttle stops adding force.
 @export_range(0.0, 20.0, 0.01, "or_greater") var max_forward_speed := 5.0
+## Reverse speed above which reverse throttle stops adding force.
 @export_range(0.0, 20.0, 0.01, "or_greater") var max_reverse_speed := 1.8
+## Forward acceleration in m/s^2 before multiplying by rigid body mass.
 @export_range(0.0, 20.0, 0.01, "or_greater") var forward_acceleration := 2.4
+## Reverse acceleration in m/s^2 before multiplying by rigid body mass.
 @export_range(0.0, 20.0, 0.01, "or_greater") var reverse_acceleration := 1.2
+## Yaw torque per kg applied at full turn input.
 @export_range(0.0, 40.0, 0.01, "or_greater") var turn_torque_per_kg := 12.0
+## Fraction of turn torque retained at very low speed.
 @export_range(0.0, 1.0, 0.01) var low_speed_turn_factor := 0.55
+## Extra side-slip damping force per kg applied along the boat's right axis.
 @export_range(0.0, 20.0, 0.01, "or_greater") var extra_lateral_damping := 0.9
 
 var rigid_body : RigidBody3D

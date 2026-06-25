@@ -96,7 +96,7 @@ rigid_body_path = NodePath("../Sketchfab_Scene/Sketchfab_model/buoy_lowpoly_fbx_
 [node name="Node3D" type="Node3D" parent="RigidBody3D" unique_id=1006859282]
 script = ExtResource("3_ow6qj")
 source_paths = Array[NodePath]([NodePath("../Sketchfab_Scene")])
-debug_draw = false
+debug_enabled = false
 
 [node name="GeneratedProbes" type="Node3D" parent="RigidBody3D/Node3D" unique_id=1323104959]
 

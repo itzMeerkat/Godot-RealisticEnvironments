@@ -10,27 +10,32 @@ const PROBE_COLOR := Color(0.1, 0.8, 1.0, 0.32)
 const DISABLED_PROBE_COLOR := Color(0.25, 0.25, 0.25, 0.12)
 const EDITOR_PROBE_RADIUS := 0.16
 
+## Enables this physical probe for buoyancy force sampling.
 @export var enabled := true :
 	set(value):
 		enabled = value
 		_update_editor_visuals()
 		_emit_probe_changed()
 
+## Displaced water volume represented by this probe when fully submerged, in cubic meters.
 @export_range(0.001, 100000.0, 0.001, "or_greater") var max_submerged_volume_cubic_meters := 1.0 :
 	set(value):
 		max_submerged_volume_cubic_meters = maxf(value, 0.001)
 		_emit_probe_changed()
 
+## Vertical distance over which this probe ramps from dry to fully submerged.
 @export_range(0.001, 100.0, 0.001, "or_greater") var buoyancy_height := 1.0 :
 	set(value):
 		buoyancy_height = maxf(value, 0.001)
 		_emit_probe_changed()
 
+## Multiplies body-forward/back water drag applied at this probe.
 @export_range(0.0, 100.0, 0.01, "or_greater") var longitudinal_water_drag_multiplier := 1.0 :
 	set(value):
 		longitudinal_water_drag_multiplier = maxf(value, 0.0)
 		_emit_probe_changed()
 
+## Multiplies body-sideways water drag applied at this probe.
 @export_range(0.0, 100.0, 0.01, "or_greater") var lateral_water_drag_multiplier := 1.0 :
 	set(value):
 		lateral_water_drag_multiplier = maxf(value, 0.0)

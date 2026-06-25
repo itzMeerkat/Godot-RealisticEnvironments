@@ -2,15 +2,25 @@ class_name ProjectileWaterImpactEffect
 extends Node3D
 ## Configurable one-shot water impact particles for projectile types.
 
+## Number of splash particles emitted at impact.
 @export_range(1, 512, 1) var splash_amount := 42
+## Splash particle lifetime in seconds.
 @export_range(0.01, 5.0, 0.01, "or_greater") var splash_lifetime := 0.85
+## Minimum upward splash speed.
 @export_range(0.0, 100.0, 0.1, "or_greater") var splash_velocity_min := 3.0
+## Maximum upward splash speed.
 @export_range(0.0, 100.0, 0.1, "or_greater") var splash_velocity_max := 10.0
+## Splash emission cone angle in degrees.
 @export_range(0.0, 180.0, 0.1, "degrees") var splash_spread := 55.0
+## Minimum splash particle scale.
 @export_range(0.001, 5.0, 0.001, "or_greater") var splash_scale_min := 0.04
+## Maximum splash particle scale.
 @export_range(0.001, 5.0, 0.001, "or_greater") var splash_scale_max := 0.18
+## Splash particle color tint.
 @export var splash_color := Color(0.72, 0.9, 1.0, 0.85)
+## Gravity applied to splash particles.
 @export var splash_gravity := Vector3(0.0, -9.8, 0.0)
+## Extra seconds kept alive after splash_lifetime so late particles can finish.
 @export_range(0.0, 5.0, 0.01, "or_greater") var extra_lifetime := 0.35
 
 var _splash_particles: GPUParticles3D

@@ -4,40 +4,65 @@ extends Node3D
 
 const AIM_MARKER_NODE_NAME := &"AimMarker"
 
+## Enables aim-point tracking, marker drawing, ballistic solving, and yaw rotation.
 @export var enabled := true
+## Optional Camera3D used for center-screen aiming. Leave empty to use the active viewport camera.
 @export var camera_path: NodePath
+## ProjectileLaunchers controlled by this aim controller.
 @export var launcher_paths: Array[NodePath] = []
 ## Optional visual/yaw targets matching launcher_paths by index. Empty entries rotate the launcher itself.
 @export var yaw_target_paths: Array[NodePath] = []
 
 @export_group("Aim")
+## World Y height of the horizontal plane used for center-screen aim intersection.
 @export var aim_plane_y := 0.0
+## Rotates launchers/yaw targets toward the current aim point.
 @export var rotate_launchers := true
 ## Yaw axis reference. Empty uses this controller's parent, which is usually the boat body.
 @export var yaw_reference_path: NodePath
+## Exponential smoothing speed for yaw rotation. Set 0 for instant rotation.
 @export_range(0.0, 60.0, 0.01) var yaw_smoothing := 18.0
+## Maximum accepted camera ray distance to the aim plane.
 @export_range(0.0, 100000.0, 0.1, "or_greater") var max_aim_distance := 10000.0
 
 @export_group("Marker")
+## Shows the aim marker at the current aim point.
 @export var marker_visible := true
+## Radius of the aim marker ring.
 @export_range(0.1, 100.0, 0.01, "or_greater") var marker_radius := 1.25
+## Height of the aim marker center line.
 @export_range(0.0, 100.0, 0.01, "or_greater") var marker_height := 4.0
+## Segment count used to draw the marker ring.
 @export_range(8, 128, 1) var marker_segments := 48
+## Marker color when no ballistic reachability result is available.
 @export var marker_color := Color(1.0, 0.35, 0.05, 1.0)
+## Marker color when at least one launcher can reach the aim point.
 @export var reachable_marker_color := Color(0.2, 1.0, 0.25, 1.0)
+## Marker color when no launcher can reach the aim point.
 @export var unreachable_marker_color := Color(1.0, 0.1, 0.05, 1.0)
+## Draws the marker without depth testing so it stays visible through waves/geometry.
 @export var marker_on_top := true
 
 @export_group("Ballistics")
+## Numerically solves launch pitch so projectiles can hit the aim point.
 @export var solve_ballistics := true
+## Requires every configured launcher to have a solution before the marker is reachable.
 @export var require_all_launchers_reachable := false
+## Chooses the highest valid arc instead of the lowest valid arc.
 @export var prefer_high_arc := false
+## Minimum pitch angle considered by the solver.
 @export_range(-10.0, 89.0, 0.1, "degrees") var min_pitch_degrees := 0.0
+## Maximum pitch angle considered by the solver.
 @export_range(-10.0, 89.0, 0.1, "degrees") var max_pitch_degrees := 65.0
+## Coarse pitch samples tested before refinement.
 @export_range(8, 256, 1) var pitch_search_steps := 64
+## Binary refinement steps after the best coarse pitch is found.
 @export_range(1, 32, 1) var pitch_refine_steps := 12
+## Projectile simulation step used by the solver, in seconds.
 @export_range(0.001, 0.1, 0.001) var simulation_step := 0.016
+## Maximum simulated flight time per pitch candidate.
 @export_range(0.1, 60.0, 0.1) var max_simulation_time := 12.0
+## Acceptable vertical miss distance when the trajectory reaches the aim point.
 @export_range(0.01, 10.0, 0.01, "or_greater") var impact_height_tolerance := 0.35
 
 var aim_point := Vector3.ZERO

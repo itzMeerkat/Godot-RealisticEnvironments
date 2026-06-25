@@ -2,15 +2,25 @@ class_name BoatWakeTrail
 extends Node3D
 ## World-space stern foam trail for floating boats, blended by the ocean shader.
 
+## Enables stern wake trail source generation.
 @export var enabled := true
+## Local stern point where wake trail points are emitted.
 @export var stern_offset := Vector3(0.0, 0.0, 1.15)
+## Minimum horizontal boat speed before wake points are emitted.
 @export_range(0.0, 100.0, 0.01, "or_greater") var min_speed := 0.45
+## Speed that maps to max_radius and max_foam_amount.
 @export_range(0.01, 100.0, 0.01, "or_greater") var max_speed := 5.0
+## Wake point radius at min_speed.
 @export_range(0.05, 20.0, 0.01, "or_greater") var min_radius := 0.18
+## Wake point radius at max_speed.
 @export_range(0.05, 20.0, 0.01, "or_greater") var max_radius := 0.58
+## Minimum distance between consecutive wake points.
 @export_range(0.05, 20.0, 0.01, "or_greater") var point_spacing := 0.28
+## Seconds before each wake point fades out and is removed.
 @export_range(0.1, 60.0, 0.01, "or_greater") var lifetime := 5.0
+## Maximum foam amount stored on newly emitted wake points.
 @export_range(0.0, 1.0, 0.001) var max_foam_amount := 0.58
+## Maximum number of stored wake points.
 @export_range(2, 96, 1) var max_points := 72
 
 var rigid_body : RigidBody3D

@@ -2,13 +2,19 @@ class_name ProjectileFireInputController
 extends Node
 ## Input bridge that fires one or more ProjectileLauncher nodes.
 
+## Enables this input bridge.
 @export var enabled := true
+## When enabled, input is ignored unless an ancestor exposes controlled_property as true.
 @export var require_controlled_owner := true
+## Ancestor boolean property used to decide whether this controller may fire.
 @export var controlled_property: StringName = &"player_controlled"
+## InputMap action that triggers all configured launchers.
 @export var fire_action: StringName = &"fire_projectile"
+## ProjectileLaunchers fired together when fire_action is pressed.
 @export var launcher_paths: Array[NodePath] = []
-@export var launcher_path := NodePath("../ProjectileLauncher")
+## Optional aim controller that supplies solved fire directions per launcher.
 @export var aim_controller_path: NodePath
+## Minimum seconds between accepted fire inputs.
 @export_range(0.0, 10.0, 0.01, "or_greater") var cooldown := 0.5
 
 var launchers: Array[ProjectileLauncher] = []
@@ -57,11 +63,7 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _resolve_launchers() -> void:
 	launchers.clear()
-	var paths := launcher_paths
-	if paths.is_empty() and not launcher_path.is_empty():
-		paths = [launcher_path]
-
-	for path in paths:
+	for path in launcher_paths:
 		var launcher := get_node_or_null(path) as ProjectileLauncher
 		if launcher != null and not launchers.has(launcher):
 			launchers.push_back(launcher)

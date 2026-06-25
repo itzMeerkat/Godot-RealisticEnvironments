@@ -8,60 +8,64 @@ signal fired(projectile: Node, fire_direction: Vector3, shot_data: Dictionary)
 const DEFAULT_PROJECTILE_SCENE := preload("res://addons/projectile_launcher_system/default_projectile.tscn")
 const DEFAULT_MUZZLE_FLASH_SCENE := preload("res://addons/projectile_launcher_system/default_muzzle_flash.tscn")
 const DEBUG_ARROW_NODE_NAME := &"DebugFireDirectionArrow"
+const DEBUG_ARROW_LENGTH := 3.0
+const DEBUG_ARROW_HEAD_LENGTH := 0.45
+const DEBUG_ARROW_HEAD_ANGLE_DEGREES := 25.0
+const DEBUG_ARROW_COLOR := Color(1.0, 0.35, 0.05, 1.0)
+const DEBUG_ARROW_ON_TOP := true
 
 @export_group("Launch")
+## Optional muzzle Node3D. Leave empty to fire from the launcher node itself.
 @export var muzzle_path: NodePath
+## Optional parent for spawned projectiles. Leave empty to use the current scene root.
 @export var projectile_parent_path: NodePath
+## Projectile scene to instantiate. Leave empty to use the default rigid-body projectile.
 @export var projectile_scene: PackedScene
+## Mass assigned to launched projectiles.
 @export_range(0.001, 10000.0, 0.001, "or_greater") var projectile_mass := 1.0
+## Initial launch speed in meters per second.
 @export_range(0.0, 10000.0, 0.1, "or_greater") var initial_speed := 60.0
+## Drag coefficient passed to projectiles that expose drag_coefficient or launch().
 @export_range(0.0, 100.0, 0.001, "or_greater") var drag_coefficient := 0.0
+## Lifetime passed to projectiles that expose lifetime or launch().
 @export_range(0.0, 120.0, 0.01, "or_greater") var projectile_lifetime := 10.0
+## Adds the launcher platform's current velocity at the muzzle to the shot velocity.
 @export var inherit_launcher_velocity := true
 
 @export_group("Collision")
+## Overrides collision layer and mask on spawned projectile RigidBody3D nodes.
 @export var configure_projectile_collision := true
+## Physics layer assigned to spawned projectiles when configure_projectile_collision is enabled.
 @export_flags_3d_physics var projectile_collision_layer: int = 2
+## Physics mask assigned to spawned projectiles when configure_projectile_collision is enabled.
 @export_flags_3d_physics var projectile_collision_mask: int = 4
 
 @export_group("Spread")
+## Enables random cone spread around the requested fire direction.
 @export var spread_enabled := false
+## Maximum half-angle of the random spread cone, in degrees.
 @export_range(0.0, 45.0, 0.01, "degrees") var spread_degrees := 0.0
 
 @export_group("Muzzle Flash")
+## Optional muzzle flash scene. Leave empty to use the default flash effect.
 @export var muzzle_flash_scene: PackedScene
+## Optional parent for spawned muzzle flashes. Leave empty to parent near the launcher.
 @export var muzzle_flash_parent_path: NodePath
+## Fallback seconds before spawned muzzle flashes are freed if they do not self-delete.
 @export_range(0.01, 10.0, 0.01, "or_greater") var muzzle_flash_lifetime := 0.25
 
 @export_group("Recoil")
+## Strength value sent to recoil receivers for this shot.
 @export_range(0.0, 10000.0, 0.001, "or_greater") var recoil_strength := 1.0
+## Nodes that implement apply_recoil(fire_direction, shot_data).
 @export var recoil_receiver_paths: Array[NodePath] = []
 
 @export_group("Debug")
-@export var debug_draw_fire_direction := false:
+## Shows the current default muzzle fire direction as a helper arrow.
+@export var debug_enabled := false:
 	set(value):
-		debug_draw_fire_direction = value
+		debug_enabled = value
 		_update_debug_arrow()
-@export_range(0.1, 100.0, 0.01, "or_greater") var debug_arrow_length := 3.0:
-	set(value):
-		debug_arrow_length = maxf(value, 0.1)
-		_update_debug_arrow()
-@export_range(0.01, 10.0, 0.01, "or_greater") var debug_arrow_head_length := 0.45:
-	set(value):
-		debug_arrow_head_length = maxf(value, 0.01)
-		_update_debug_arrow()
-@export_range(1.0, 89.0, 0.1, "degrees") var debug_arrow_head_angle_degrees := 25.0:
-	set(value):
-		debug_arrow_head_angle_degrees = clampf(value, 1.0, 89.0)
-		_update_debug_arrow()
-@export var debug_arrow_color := Color(1.0, 0.35, 0.05, 1.0):
-	set(value):
-		debug_arrow_color = value
-		_update_debug_material()
-@export var debug_arrow_on_top := true:
-	set(value):
-		debug_arrow_on_top = value
-		_update_debug_material()
 
 var _debug_arrow_instance: MeshInstance3D
 var _debug_arrow_mesh := ImmediateMesh.new()
@@ -78,7 +82,7 @@ func _ready() -> void:
 
 
 func _process(_delta: float) -> void:
-	if debug_draw_fire_direction:
+	if debug_enabled:
 		_update_debug_arrow()
 
 
@@ -300,7 +304,7 @@ func _object_has_property(object: Object, property_name: StringName) -> bool:
 func _update_debug_arrow() -> void:
 	if not is_inside_tree():
 		return
-	if not debug_draw_fire_direction:
+	if not debug_enabled:
 		if _debug_arrow_instance != null:
 			_debug_arrow_instance.visible = false
 		return
@@ -321,13 +325,13 @@ func _update_debug_arrow() -> void:
 	_debug_arrow_mesh.surface_begin(Mesh.PRIMITIVE_LINES)
 
 	var origin := muzzle_transform.origin
-	var end := origin + direction * debug_arrow_length
+	var end := origin + direction * DEBUG_ARROW_LENGTH
 	_debug_arrow_mesh.surface_add_vertex(origin)
 	_debug_arrow_mesh.surface_add_vertex(end)
 
 	var basis := _basis_for_direction(direction)
-	var head_length := minf(debug_arrow_head_length, debug_arrow_length * 0.5)
-	var head_side_offset := tan(deg_to_rad(debug_arrow_head_angle_degrees)) * head_length
+	var head_length := minf(DEBUG_ARROW_HEAD_LENGTH, DEBUG_ARROW_LENGTH * 0.5)
+	var head_side_offset := tan(deg_to_rad(DEBUG_ARROW_HEAD_ANGLE_DEGREES)) * head_length
 	var back := basis.z * head_length
 	var right := basis.x * head_side_offset
 	var up := basis.y * head_side_offset
@@ -364,7 +368,7 @@ func _update_debug_material() -> void:
 		_debug_arrow_material = StandardMaterial3D.new()
 		_debug_arrow_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 		_debug_arrow_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	_debug_arrow_material.albedo_color = debug_arrow_color
-	_debug_arrow_material.no_depth_test = debug_arrow_on_top
+	_debug_arrow_material.albedo_color = DEBUG_ARROW_COLOR
+	_debug_arrow_material.no_depth_test = DEBUG_ARROW_ON_TOP
 	if _debug_arrow_instance != null:
 		_debug_arrow_instance.material_override = _debug_arrow_material
