@@ -49,4 +49,4 @@ cast_shadow = 0
 extra_cull_margin = 7000.0
 script = ExtResource("1_ocean")
 parameters = Array[ExtResource("2_params")]([SubResource("Resource_primary_swell"), SubResource("Resource_secondary_swell"), SubResource("Resource_surface_detail")])
-generated_base_cell_size = 0.5
+mesh_base_cell_size = 0.5

@@ -2,8 +2,8 @@
 
 [ext_resource type="PackedScene" uid="uid://cu4i5s60m0u7x" path="res://demo/assets/buoy/red_marine_navigation_buoy_game_ready.glb" id="1_lq5a0"]
 [ext_resource type="Script" uid="uid://cv6g660t6s5av" path="res://addons/buoyancy_system/buoyant_body.gd" id="2_7hk8w"]
-[ext_resource type="Script" uid="uid://ianh08wohto0" path="res://addons/buoyancy_system/buoyancy_cell_volume.gd" id="3_ow6qj"]
-[ext_resource type="Script" uid="uid://obesevate4xe" path="res://addons/buoyancy_system/buoyancy_cell_node.gd" id="4_54211"]
+[ext_resource type="Script" path="res://addons/buoyancy_system/buoyancy_probe_volume.gd" id="3_ow6qj"]
+[ext_resource type="Script" path="res://addons/buoyancy_system/buoyancy_probe_node.gd" id="4_54211"]
 [ext_resource type="Script" uid="uid://c8hdl5abw2t2d" path="res://demo/buoy_distance_label.gd" id="5_distance"]
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_lq5a0"]
@@ -92,88 +92,93 @@ shape = SubResource("CapsuleShape3D_lq5a0")
 [node name="BuoyBody" type="Node3D" parent="RigidBody3D" unique_id=659075801]
 script = ExtResource("2_7hk8w")
 rigid_body_path = NodePath("../Sketchfab_Scene/Sketchfab_model/buoy_lowpoly_fbx_fbx/RootNode")
-vertical_damping = 8.0
 
 [node name="Node3D" type="Node3D" parent="RigidBody3D" unique_id=1006859282]
 script = ExtResource("3_ow6qj")
-source_model_path = NodePath("../Sketchfab_Scene")
-voxel_size = Vector3(1, 2, 1)
-center_of_mass_offset = Vector3(0, -4, 0)
-debug_draw = false
+source_paths = Array[NodePath]([NodePath("../Sketchfab_Scene")])
+debug_enabled = false
 
-[node name="GeneratedCells" type="Node3D" parent="RigidBody3D/Node3D" unique_id=1323104959]
+[node name="GeneratedProbes" type="Node3D" parent="RigidBody3D/Node3D" unique_id=1323104959]
 
-[node name="Cell_000" type="MeshInstance3D" parent="RigidBody3D/Node3D/GeneratedCells" unique_id=958575109]
+[node name="Probe_000" type="MeshInstance3D" parent="RigidBody3D/Node3D/GeneratedProbes" unique_id=958575109]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.44630045, -0.8164333, -0.44630045)
 material_override = SubResource("StandardMaterial3D_54211")
 cast_shadow = 0
 extra_cull_margin = 10000.0
 mesh = SubResource("ImmediateMesh_pevfj")
 script = ExtResource("4_54211")
-size = Vector3(0.8926009, 1.6078372, 0.892601)
+max_submerged_volume_cubic_meters = 1.2809
+buoyancy_height = 1.6078372
 
-[node name="Cell_001" type="MeshInstance3D" parent="RigidBody3D/Node3D/GeneratedCells" unique_id=282954885]
+[node name="Probe_001" type="MeshInstance3D" parent="RigidBody3D/Node3D/GeneratedProbes" unique_id=282954885]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.4463004, -0.8164333, -0.44630045)
 material_override = SubResource("StandardMaterial3D_571ab")
 cast_shadow = 0
 extra_cull_margin = 10000.0
 mesh = SubResource("ImmediateMesh_t66q4")
 script = ExtResource("4_54211")
-size = Vector3(0.8926009, 1.6078372, 0.892601)
+max_submerged_volume_cubic_meters = 1.2809
+buoyancy_height = 1.6078372
 
-[node name="Cell_002" type="MeshInstance3D" parent="RigidBody3D/Node3D/GeneratedCells" unique_id=606315226]
+[node name="Probe_002" type="MeshInstance3D" parent="RigidBody3D/Node3D/GeneratedProbes" unique_id=606315226]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.44630045, 0.7914039, -0.44630045)
 material_override = SubResource("StandardMaterial3D_3aspy")
 cast_shadow = 0
 extra_cull_margin = 10000.0
 mesh = SubResource("ImmediateMesh_xapa5")
 script = ExtResource("4_54211")
-size = Vector3(0.8926009, 1.6078372, 0.892601)
+max_submerged_volume_cubic_meters = 1.2809
+buoyancy_height = 1.6078372
 
-[node name="Cell_003" type="MeshInstance3D" parent="RigidBody3D/Node3D/GeneratedCells" unique_id=2073005665]
+[node name="Probe_003" type="MeshInstance3D" parent="RigidBody3D/Node3D/GeneratedProbes" unique_id=2073005665]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.4463004, 0.7914039, -0.44630045)
 material_override = SubResource("StandardMaterial3D_y2khd")
 cast_shadow = 0
 extra_cull_margin = 10000.0
 mesh = SubResource("ImmediateMesh_1kh0k")
 script = ExtResource("4_54211")
-size = Vector3(0.8926009, 1.6078372, 0.892601)
+max_submerged_volume_cubic_meters = 1.2809
+buoyancy_height = 1.6078372
 
-[node name="Cell_004" type="MeshInstance3D" parent="RigidBody3D/Node3D/GeneratedCells" unique_id=826536182]
+[node name="Probe_004" type="MeshInstance3D" parent="RigidBody3D/Node3D/GeneratedProbes" unique_id=826536182]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.44630045, -0.8164333, 0.44630057)
 material_override = SubResource("StandardMaterial3D_yspub")
 cast_shadow = 0
 extra_cull_margin = 10000.0
 mesh = SubResource("ImmediateMesh_i3j5b")
 script = ExtResource("4_54211")
-size = Vector3(0.8926009, 1.6078372, 0.892601)
+max_submerged_volume_cubic_meters = 1.2809
+buoyancy_height = 1.6078372
 
-[node name="Cell_005" type="MeshInstance3D" parent="RigidBody3D/Node3D/GeneratedCells" unique_id=601307136]
+[node name="Probe_005" type="MeshInstance3D" parent="RigidBody3D/Node3D/GeneratedProbes" unique_id=601307136]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.4463004, -0.8164333, 0.44630057)
 material_override = SubResource("StandardMaterial3D_nrol3")
 cast_shadow = 0
 extra_cull_margin = 10000.0
 mesh = SubResource("ImmediateMesh_t6yrx")
 script = ExtResource("4_54211")
-size = Vector3(0.8926009, 1.6078372, 0.892601)
+max_submerged_volume_cubic_meters = 1.2809
+buoyancy_height = 1.6078372
 
-[node name="Cell_006" type="MeshInstance3D" parent="RigidBody3D/Node3D/GeneratedCells" unique_id=1325008678]
+[node name="Probe_006" type="MeshInstance3D" parent="RigidBody3D/Node3D/GeneratedProbes" unique_id=1325008678]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.44630045, 0.7914039, 0.44630057)
 material_override = SubResource("StandardMaterial3D_wjqy0")
 cast_shadow = 0
 extra_cull_margin = 10000.0
 mesh = SubResource("ImmediateMesh_2p8vy")
 script = ExtResource("4_54211")
-size = Vector3(0.8926009, 1.6078372, 0.892601)
+max_submerged_volume_cubic_meters = 1.2809
+buoyancy_height = 1.6078372
 
-[node name="Cell_007" type="MeshInstance3D" parent="RigidBody3D/Node3D/GeneratedCells" unique_id=701507295]
+[node name="Probe_007" type="MeshInstance3D" parent="RigidBody3D/Node3D/GeneratedProbes" unique_id=701507295]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.4463004, 0.7914039, 0.44630057)
 material_override = SubResource("StandardMaterial3D_d63e2")
 cast_shadow = 0
 extra_cull_margin = 10000.0
 mesh = SubResource("ImmediateMesh_qo6cr")
 script = ExtResource("4_54211")
-size = Vector3(0.8926009, 1.6078372, 0.892601)
+max_submerged_volume_cubic_meters = 1.2809
+buoyancy_height = 1.6078372
 
 [node name="DebugDraw" type="MeshInstance3D" parent="RigidBody3D/Node3D" unique_id=679927406]
 visible = false

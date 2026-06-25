@@ -5,6 +5,7 @@ extends MeshInstance3D
 ## managing wave generation pipelines.
 
 const WATER_MAT := preload('res://addons/ocean_system/mat_water.tres')
+const EDITOR_WATER_PREVIEW_MESH := preload('res://addons/ocean_system/editor_water_preview_mesh.tres')
 const OCEAN_REFLECTION_RENDERER := preload('res://addons/ocean_system/ocean_reflection_renderer.gd')
 const MAX_CASCADES := 8
 const MAX_HULL_CUTOUTS := 16
@@ -16,6 +17,7 @@ const SURFACE_QUERY_BYTES_PER_SAMPLE := 48
 const EXTERNAL_WIND_SPEED_DIRTY_THRESHOLD := 0.25
 const EXTERNAL_WIND_DIRECTION_DIRTY_THRESHOLD := 2.0
 const EXTERNAL_WIND_SPECTRUM_REFRESH_INTERVAL := 0.5
+const WATER_DEBUG_VIEW_NORMAL := 0
 
 @export_group('Wave Parameters')
 ## Base deep-water tint before foam, reflections, and emission are added. This
@@ -306,13 +308,6 @@ const EXTERNAL_WIND_SPECTRUM_REFRESH_INTERVAL := 0.5
 	set(value):
 		crest_low_sun_end = value
 		_set_water_shader_parameter(&'crest_low_sun_end', crest_low_sun_end)
-## Debug visualization mode for water shading masks and reflection terms. Use
-## Normal for gameplay; other modes help tune sky reflection, glitter, and glow.
-@export_enum('Normal:0', 'Sky Reflection:1', 'Sky Color:2', 'Sun Glitter:3', 'Crest Height:4', 'Crest Slope:5', 'Crest Backlight:6', 'Crest Final:7', 'Reflection Direction Y:8', 'Reflection Roughness:9', 'Sun Scatter:10', 'Sun Scatter NoL:11', 'View Sun Phase:12', 'Micro Slope Energy:13') var water_debug_view := 0 :
-	set(value):
-		water_debug_view = value
-		_set_water_shader_parameter(&'water_debug_view', water_debug_view)
-
 @export_group('Foam Shading')
 ## Multiplies the foam signal produced by the wave compute pass before threshold
 ## and softness are applied. Raise for more whitecaps; lower for cleaner water.
@@ -383,6 +378,18 @@ const EXTERNAL_WIND_SPECTRUM_REFRESH_INTERVAL := 0.5
 	set(value):
 		reflection_cull_mask = value
 		_update_planar_reflection_settings()
+## Clips reflected pixels below the water plane using the reflection viewport's
+## depth buffer. This keeps submerged/sinking objects out of planar reflections.
+@export var reflection_clip_below_water := true :
+	set(value):
+		reflection_clip_below_water = value
+		_update_planar_reflection_settings()
+## Extra distance below the water plane allowed before reflection pixels are
+## clipped. Small positive values reduce flicker at waterline intersections.
+@export_range(0.0, 1.0, 0.005) var reflection_clip_bias := 0.03 :
+	set(value):
+		reflection_clip_bias = value
+		_update_planar_reflection_settings()
 
 @export_group('External Wind')
 ## When enabled, cascades read wind speed and direction from wind_source_path.
@@ -434,9 +441,9 @@ const EXTERNAL_WIND_SPECTRUM_REFRESH_INTERVAL := 0.5
 @export_group('Performance Parameters')
 ## Resolution for each displacement/normal texture layer and FFT simulation.
 ## Cost scales roughly with resolution squared; 512 is much cheaper than 1024.
-@export_enum('128x128:128', '256x256:256', '512x512:512', '1024x1024:1024') var map_size := 1024 :
+@export_enum('128x128:128', '256x256:256', '512x512:512', '1024x1024:1024') var simulation_map_size := 1024 :
 	set(value):
-		map_size = value
+		simulation_map_size = value
 		_setup_wave_generator()
 
 @export_group('Mesh')
@@ -448,21 +455,21 @@ const EXTERNAL_WIND_SPECTRUM_REFRESH_INTERVAL := 0.5
 		_update_water_mesh()
 ## Full side length of the highest-density center patch, in meters. Larger values
 ## keep fine tessellation farther from the camera but increase vertex count.
-@export_range(16.0, 512.0, 1.0) var generated_inner_extent := 128.0 :
+@export_range(16.0, 512.0, 1.0) var mesh_inner_extent := 128.0 :
 	set(value):
-		generated_inner_extent = value
+		mesh_inner_extent = value
 		_update_water_mesh()
 ## Vertex spacing in meters for the highest-density center patch. Smaller values
 ## create smoother near displacement but can add many vertices.
-@export_range(0.5, 16.0, 0.5) var generated_base_cell_size := 1.0 :
+@export_range(0.5, 16.0, 0.5) var mesh_base_cell_size := 1.0 :
 	set(value):
-		generated_base_cell_size = value
+		mesh_base_cell_size = value
 		_update_water_mesh()
 ## Number of progressively coarser rings before the outer near-ocean radius.
 ## More rings preserve detail over distance; fewer rings reduce mesh complexity.
-@export_range(0, 8, 1) var generated_ring_count := 2 :
+@export_range(0, 8, 1) var mesh_ring_count := 2 :
 	set(value):
-		generated_ring_count = value
+		mesh_ring_count = value
 		_update_water_mesh()
 ## Keeps the generated water mesh centered around the active camera in XZ space.
 ## Wave sampling remains world-space stable, so this does not slide the waves.
@@ -670,7 +677,7 @@ func _setup_wave_generator() -> void:
 
 	_reset_surface_query_resources()
 	wave_generator = WaveGenerator.new()
-	wave_generator.map_size = map_size
+	wave_generator.map_size = simulation_map_size
 	# The output ping-pong path expects at least two texture-array layers.
 	wave_generator.init_gpu(maxi(2, mini(parameters.size(), MAX_CASCADES)))
 	wave_generator.output_maps_swapped.connect(_on_wave_output_maps_swapped)
@@ -798,7 +805,7 @@ func _update_sky_shading_static_parameters() -> void:
 	_set_water_shader_parameter(&'crest_back_normal_power', crest_back_normal_power)
 	_set_water_shader_parameter(&'crest_low_sun_start', crest_low_sun_start)
 	_set_water_shader_parameter(&'crest_low_sun_end', crest_low_sun_end)
-	_set_water_shader_parameter(&'water_debug_view', water_debug_view)
+	_set_water_shader_parameter(&'water_debug_view', WATER_DEBUG_VIEW_NORMAL)
 
 func _update_sky_lighting_shader_parameters() -> void:
 	var sun_direction := _get_sky_vector(&'get_sun_direction', &'sun_direction', manual_sun_direction)
@@ -910,7 +917,9 @@ func _clear_wave_generator() -> void:
 
 func _update_water_mesh() -> void:
 	if Engine.is_editor_hint():
-		mesh = null
+		mesh = EDITOR_WATER_PREVIEW_MESH
+		extra_cull_margin = maxf(256.0, EDITOR_WATER_PREVIEW_MESH.size.length() * 0.5)
+		_update_far_lod_shader_parameters()
 		return
 
 	mesh = _create_generated_clipmap_mesh()
@@ -1001,12 +1010,12 @@ func _build_circular_clipmap_radii() -> PackedFloat32Array:
 	var radii := PackedFloat32Array()
 	radii.push_back(0.0)
 
-	var base_cell := maxf(generated_base_cell_size, 0.1)
-	var inner_radius := generated_inner_extent * 0.5
+	var base_cell := maxf(mesh_base_cell_size, 0.1)
+	var inner_radius := mesh_inner_extent * 0.5
 	var outer_radius := maxf(ocean_radius, inner_radius)
 	var current_radius := 0.0
 
-	for band in range(generated_ring_count + 1):
+	for band in range(mesh_ring_count + 1):
 		var band_outer := minf(inner_radius * pow(2.0, band), outer_radius)
 		var cell_size := base_cell * pow(2.0, band)
 		while current_radius + cell_size < band_outer - 0.001:
@@ -1016,7 +1025,7 @@ func _build_circular_clipmap_radii() -> PackedFloat32Array:
 			current_radius = band_outer
 			radii.push_back(current_radius)
 
-	var outer_cell_size := base_cell * pow(2.0, generated_ring_count + 1)
+	var outer_cell_size := base_cell * pow(2.0, mesh_ring_count + 1)
 	while current_radius + outer_cell_size < outer_radius - 0.001:
 		current_radius += outer_cell_size
 		radii.push_back(current_radius)
@@ -1037,17 +1046,17 @@ func _build_circular_clipmap_radii() -> PackedFloat32Array:
 	return radii
 
 func _get_circular_clipmap_segment_count() -> int:
-	var base_cell := maxf(generated_base_cell_size, 0.1)
-	var inner_radius := maxf(generated_inner_extent * 0.5, base_cell)
+	var base_cell := maxf(mesh_base_cell_size, 0.1)
+	var inner_radius := maxf(mesh_inner_extent * 0.5, base_cell)
 	var target_count := int(ceil(TAU * inner_radius / base_cell))
 	return clampi(target_count, 32, 1024)
 
 func _get_generated_mesh_half_extent() -> float:
-	var near_extent := maxf(ocean_radius, generated_inner_extent * 0.5)
+	var near_extent := maxf(ocean_radius, mesh_inner_extent * 0.5)
 	return maxf(near_extent, far_lod_radius) if enable_far_lod else near_extent
 
 func get_ocean_radius() -> float:
-	return maxf(ocean_radius, generated_inner_extent * 0.5)
+	return maxf(ocean_radius, mesh_inner_extent * 0.5)
 
 func _update_far_lod_shader_parameters() -> void:
 	_set_water_shader_parameter(&'enable_far_lod', enable_far_lod)
@@ -1084,6 +1093,8 @@ func _update_planar_reflection_settings() -> void:
 		_reflection_renderer.fresnel_power = reflection_fresnel_power
 		_reflection_renderer.water_layer = reflection_water_layer
 		_reflection_renderer.reflection_cull_mask = reflection_cull_mask
+		_reflection_renderer.clip_below_water = reflection_clip_below_water
+		_reflection_renderer.clip_bias = reflection_clip_bias
 		_reflection_renderer.setup(self, water_level)
 		return
 	_set_water_shader_parameter(&'planar_reflection_enabled', enable_planar_reflections)

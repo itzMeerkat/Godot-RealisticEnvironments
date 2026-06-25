@@ -1,0 +1,108 @@
+[gd_scene format=3 uid="uid://dxqyyqwa3mn4a"]
+
+[ext_resource type="Script" uid="uid://dveyhksfy85al" path="res://addons/floating_boat_template/floating_boat.gd" id="1_boat"]
+[ext_resource type="Script" uid="uid://cv6g660t6s5av" path="res://addons/buoyancy_system/buoyant_body.gd" id="2_buoyant"]
+[ext_resource type="Script" uid="uid://ianh08wohto0" path="res://addons/buoyancy_system/buoyancy_probe_volume.gd" id="3_probe_volume"]
+[ext_resource type="Script" uid="uid://bbjbt0xvgiunf" path="res://addons/buoyancy_system/buoyant_sinking_monitor.gd" id="4_sinking"]
+[ext_resource type="Script" uid="uid://ci8d431qqx5lx" path="res://addons/hitbox_damage_system/hitbox_health_manager.gd" id="5_health"]
+[ext_resource type="Script" uid="uid://cyex1yty0rfvh" path="res://addons/hitbox_damage_system/hitbox_health_debug_ui.gd" id="6_health_ui"]
+[ext_resource type="PackedScene" uid="uid://cs4tsoxha78ww" path="res://addons/hitbox_damage_system/default_projectile_hit_smoke.tscn" id="7_hit_smoke"]
+[ext_resource type="Script" uid="uid://batvq42pf87f8" path="res://addons/floating_boat_template/boat_water_interactor.gd" id="8_water_interactor"]
+[ext_resource type="Script" uid="uid://cnn1xqo6ypdf2" path="res://addons/floating_boat_template/simple_boat_controller.gd" id="9_controller"]
+[ext_resource type="Script" uid="uid://u6lgimj01c85" path="res://addons/floating_boat_template/boat_wake_trail.gd" id="10_wake"]
+[ext_resource type="Script" uid="uid://bktoohcajlutg" path="res://addons/projectile_launcher_system/physics_recoil.gd" id="11_physics_recoil"]
+[ext_resource type="Script" uid="uid://dp8nov4qj3vxr" path="res://addons/projectile_launcher_system/projectile_fire_input_controller.gd" id="12_fire_input"]
+[ext_resource type="Script" uid="uid://bm0kcmnihljlv" path="res://addons/projectile_launcher_system/projectile_aim_controller.gd" id="13_aim"]
+[ext_resource type="Script" uid="uid://obesevate4xe" path="res://addons/buoyancy_system/buoyancy_probe_node.gd" id="14_probe"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_template"]
+size = Vector3(2, 1, 5)
+
+[node name="FloatingBoat" type="RigidBody3D"]
+mass = 1000.0
+center_of_mass_mode = 1
+script = ExtResource("1_boat")
+local_angular_damping_enabled = true
+roll_righting_torque_enabled = true
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+shape = SubResource("BoxShape3D_template")
+
+[node name="BuoyantBody" type="Node" parent="."]
+script = ExtResource("2_buoyant")
+heave_damping = 1.0
+
+[node name="BuoyantSinkingMonitor" type="Node" parent="."]
+script = ExtResource("4_sinking")
+buoyant_body_path = NodePath("../BuoyantBody")
+
+[node name="HitboxHealthManager" type="Node" parent="."]
+script = ExtResource("5_health")
+hit_effect_scene = ExtResource("7_hit_smoke")
+
+[node name="HitboxHealthDebugUI" type="CanvasLayer" parent="."]
+script = ExtResource("6_health_ui")
+debug_enabled = false
+hitbox_manager_path = NodePath("../HitboxHealthManager")
+
+[node name="ProjectileHitboxes" type="Node3D" parent="."]
+
+[node name="BoatWaterInteractor" type="Node3D" parent="."]
+script = ExtResource("8_water_interactor")
+
+[node name="SimpleBoatController" type="Node" parent="."]
+script = ExtResource("9_controller")
+
+[node name="BoatWakeTrail" type="Node3D" parent="."]
+script = ExtResource("10_wake")
+
+[node name="CameraTargets" type="Node3D" parent="."]
+
+[node name="ThirdPersonFocus" type="Marker3D" parent="CameraTargets"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2, 0)
+
+[node name="FirstPersonSeat" type="Marker3D" parent="CameraTargets"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2, -1)
+
+[node name="BuoyancyProbeVolume" type="Node3D" parent="."]
+script = ExtResource("3_probe_volume")
+editor_auto_generate_if_empty = false
+debug_enabled = false
+
+[node name="GeneratedProbes" type="Node3D" parent="BuoyancyProbeVolume"]
+
+[node name="Probe_000" type="MeshInstance3D" parent="BuoyancyProbeVolume/GeneratedProbes"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.75, 0, -1.75)
+script = ExtResource("14_probe")
+max_submerged_volume_cubic_meters = 0.35
+buoyancy_height = 1.0
+
+[node name="Probe_001" type="MeshInstance3D" parent="BuoyancyProbeVolume/GeneratedProbes"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.75, 0, -1.75)
+script = ExtResource("14_probe")
+max_submerged_volume_cubic_meters = 0.35
+buoyancy_height = 1.0
+
+[node name="Probe_002" type="MeshInstance3D" parent="BuoyancyProbeVolume/GeneratedProbes"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.75, 0, 1.75)
+script = ExtResource("14_probe")
+max_submerged_volume_cubic_meters = 0.35
+buoyancy_height = 1.0
+
+[node name="Probe_003" type="MeshInstance3D" parent="BuoyancyProbeVolume/GeneratedProbes"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.75, 0, 1.75)
+script = ExtResource("14_probe")
+max_submerged_volume_cubic_meters = 0.35
+buoyancy_height = 1.0
+
+[node name="PhysicsRecoil" type="Node" parent="."]
+script = ExtResource("11_physics_recoil")
+
+[node name="ProjectileFireInputController" type="Node" parent="."]
+script = ExtResource("12_fire_input")
+
+[node name="ProjectileAimController" type="Node3D" parent="."]
+script = ExtResource("13_aim")
+yaw_reference_path = NodePath("..")
+
+[connection signal="group_destroyed" from="HitboxHealthManager" to="BuoyantSinkingMonitor" method="_on_hitbox_group_destroyed"]

@@ -23,6 +23,10 @@ Project files are grouped by system boundary:
  * `addons/ocean_system/` contains the reusable ocean scene, wave parameters, wave generator, material, ocean shaders, and ocean-internal RenderingDevice helpers under `addons/ocean_system/rendering/`.
  * `addons/wind_system/` contains the optional wind provider used by the demo and available to future gameplay systems.
  * `addons/sky_system/` contains the reusable day-night sky scene, sky profile resource, celestial shaders, and lighting controller.
+ * `addons/buoyancy_system/` contains reusable probe-based buoyancy and sinking helpers for floating rigid bodies.
+ * `addons/projectile_launcher_system/` contains reusable projectile launchers, projectiles, aiming, input bridging, muzzle effects, and recoil helpers.
+ * `addons/hitbox_damage_system/` contains reusable projectile hitboxes, grouped health, hit effects, and debug UI.
+ * `addons/floating_boat_template/` contains the reusable floating boat scene template used by `demo/floating_box.tscn`.
  * `systems/debug/` contains the optional native debug UI.
  * `demo/` contains the sample scene, camera controller, skybox, and audio assets.
 
@@ -63,9 +67,9 @@ The wave update path now supports lower simulation update rates while preserving
 ### Procedural clipmap mesh
 The water mesh no longer relies on pre-authored mesh assets. `OceanSystem` always generates a clipmap-style grid procedurally from exported parameters:
 
- * `generated_inner_extent`
- * `generated_base_cell_size`
- * `generated_ring_count`
+ * `mesh_inner_extent`
+ * `mesh_base_cell_size`
+ * `mesh_ring_count`
 
 The generated mesh is a circular ring layout centered around the ocean node. Far LOD extends the same mesh with coarse outer rings, so the water shader no longer carries the old grid-morph branch or extra morph metadata.
 
@@ -87,6 +91,10 @@ The project is organized as a small collection of reusable Godot addons. Each sy
 * [Ocean System](addons/ocean_system/) provides the reusable FFT ocean renderer. It generates wave displacement and normal maps on the GPU, builds its own clipmap-style water mesh, supports far-ocean LOD, and exposes water height queries for gameplay.
 * [Sky System](addons/sky_system/) provides a dynamic day-night sky. It controls sun and moon lighting, sky colors, moon phase, starfield visibility, and optional water/foam color driving for an ocean node.
 * [Wind System](addons/wind_system/) provides a lightweight wind source. It exposes wind speed, direction, gusts, and vector getters that can be consumed by the ocean or by other gameplay systems.
+* [Buoyancy System](addons/buoyancy_system/) provides probe-based buoyancy, water contact state, and sinking monitoring.
+* [Projectile Launcher System](addons/projectile_launcher_system/) provides projectile spawning, muzzle transforms, velocity inheritance, aim solving, input bridging, muzzle effects, and recoil.
+* [Hitbox Damage System](addons/hitbox_damage_system/) provides projectile hitboxes, grouped health, hit effects, and health debug UI.
+* [Floating Boat Template](addons/floating_boat_template/) packages the reusable boat scene structure used by the demo pirate ship, so models, probes, hitboxes, and weapons can be replaced in scene instances.
 
 Each system folder includes a `HOW_TO_USE.md` file for setup instructions and a `CODEBASE.md` file that briefly explains the implementation.
 
@@ -96,6 +104,8 @@ Run the `demo/main.tscn`. You will see everything.
 
 "Stylized Low Poly Rowboat with Paddles" (https://sketchfab.com/3d-models/stylized-low-poly-rowboat-with-paddles-f2c35c716f32474e96cce3625073e6b8) by Muyaya Concept (https://sketchfab.com/muyayaconcept) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
 "Red Marine Navigation Buoy (Game Ready)" (https://skfb.ly/pINBD) by Muyaya Concept is licensed under Creative Commons Attribution (http://creativecommons.org/licenses/by/4.0/).
+"Caravel Ship" (https://skfb.ly/6VL7W) by Ginny Sutton is licensed under Creative Commons Attribution (http://creativecommons.org/licenses/by/4.0/).
+
 ## License
 
 MIT license.

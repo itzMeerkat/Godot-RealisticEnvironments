@@ -4,6 +4,7 @@ extends MeshInstance3D
 ## Editable top-view trapezoid water cutout segment.
 
 const DEBUG_COLOR := Color(0.2, 0.7, 1.0, 0.9)
+const DEBUG_VISIBLE_IN_GAME := false
 
 ## Enables this trapezoid cutout. Disabled cutouts stay editable and visible in
 ## debug mode but are not submitted to the ocean shader.
@@ -64,18 +65,10 @@ const DEBUG_COLOR := Color(0.2, 0.7, 1.0, 0.9)
 	set(value):
 		foam_amount = clampf(value, 0.0, 1.0)
 
-## Shows the editable cutout wireframe in the editor. The wireframe is only a
-## helper mesh and is not rendered as water.
-@export var debug_draw := true :
+## Shows the editable cutout wireframe in the editor. Runtime wireframes are hardcoded off.
+@export var debug_enabled := true :
 	set(value):
-		debug_draw = value
-		_update_debug_visibility()
-
-## Shows the helper wireframe at runtime. Leave off for gameplay and turn on
-## only when tuning cutouts in a running scene.
-@export var debug_draw_in_game := false :
-	set(value):
-		debug_draw_in_game = value
+		debug_enabled = value
 		_update_debug_visibility()
 
 var _debug_mesh := ImmediateMesh.new()
@@ -141,4 +134,4 @@ func _update_material() -> void:
 
 
 func _update_debug_visibility() -> void:
-	visible = debug_draw and (Engine.is_editor_hint() or debug_draw_in_game)
+	visible = debug_enabled and (Engine.is_editor_hint() or DEBUG_VISIBLE_IN_GAME)

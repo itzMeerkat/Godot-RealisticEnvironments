@@ -1,0 +1,11 @@
+[gd_scene format=3 uid="uid://bd00hu527p6mp"]
+
+[ext_resource type="Script" uid="uid://cucjmqiglbv8m" path="res://addons/projectile_launcher_system/water_impact_effect.gd" id="1_water_impact"]
+
+[node name="DefaultWaterImpact" type="Node3D" unique_id=1751358027]
+script = ExtResource("1_water_impact")
+splash_amount = 500
+splash_lifetime = 2.0
+splash_velocity_max = 10.5
+splash_spread = 10.0
+splash_scale_max = 0.12

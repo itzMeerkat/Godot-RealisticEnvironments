@@ -48,14 +48,13 @@ const WATER_CUTOUT_TRAPEZOID := preload("res://addons/ocean_system/water_cutout_
 @export_range(0.0, 1.0, 0.01) var bow_length_scale := 0.75 :
 	set(value):
 		bow_length_scale = clampf(value, 0.0, 1.0)
-## Editor action toggle. Set to true in the Inspector to regenerate editable
-## WaterCutoutTrapezoid children from the current source model and settings.
-@export var generate_cutouts_now := false :
+## Editor action: toggle on to regenerate editable WaterCutoutTrapezoid children.
+@export var editor_generate_cutouts := false :
 	set(value):
 		if not value:
-			generate_cutouts_now = false
+			editor_generate_cutouts = false
 			return
-		generate_cutouts_now = false
+		editor_generate_cutouts = false
 		generate_cutouts_from_source()
 
 @export_group("Defaults")
@@ -79,17 +78,10 @@ const WATER_CUTOUT_TRAPEZOID := preload("res://addons/ocean_system/water_cutout_
 @export_range(1.0, 4.0, 0.01, "or_greater") var bow_feather_multiplier := 1.5
 
 @export_group("Debug")
-## Shows generated cutout wireframes in the editor so each trapezoid can be
-## selected, moved, and tuned visually.
-@export var debug_draw := true :
+## Shows generated cutout wireframes in the editor so each trapezoid can be tuned visually.
+@export var debug_enabled := true :
 	set(value):
-		debug_draw = value
-		_apply_debug_settings()
-## Also shows cutout wireframes while the game is running. Keep disabled for
-## normal gameplay; enable only when debugging hull-water intersections.
-@export var debug_draw_in_game := false :
-	set(value):
-		debug_draw_in_game = value
+		debug_enabled = value
 		_apply_debug_settings()
 
 
@@ -146,8 +138,7 @@ func generate_cutouts_from_source() -> void:
 		cutout.height_feather = default_height_feather
 		cutout.feather = default_feather * (bow_feather_multiplier if segment_kind == &"bow" else 1.0)
 		cutout.foam_amount = default_foam_amount
-		cutout.debug_draw = debug_draw
-		cutout.debug_draw_in_game = debug_draw_in_game
+		cutout.debug_enabled = debug_enabled
 		root.add_child(cutout)
 		cutout.owner = owner
 
@@ -222,8 +213,7 @@ func _collect_cutouts(root: Node, cutouts: Array[WaterCutoutTrapezoid]) -> void:
 
 func _apply_debug_settings() -> void:
 	for cutout in _get_cutouts():
-		cutout.debug_draw = debug_draw
-		cutout.debug_draw_in_game = debug_draw_in_game
+		cutout.debug_enabled = debug_enabled
 
 
 func _get_source_points_in_local_space() -> PackedVector3Array:
