@@ -482,7 +482,7 @@ const WATER_DEBUG_VIEW_NORMAL := 0
 @export var follow_camera_in_editor := false
 
 ## Target number of accepted wave simulation updates per second. Lower values
-## reduce GPU FFT work; smooth_wave_interpolation hides the visual stepping.
+## reduce GPU FFT work
 ## Set to 0 for uncapped updates.
 @export_range(0, 60) var updates_per_second := 20.0 :
 	set(value):
@@ -496,10 +496,7 @@ const WATER_DEBUG_VIEW_NORMAL := 0
 	set(value):
 		water_level = value
 		_update_planar_reflection_settings()
-@export_group('Visual Smoothing')
-## Blends between previous and current wave output maps. This reduces visible
-## stutter when updates_per_second is below the render frame rate.
-@export var smooth_wave_interpolation := true
+
 @export_group('Far Ocean LOD')
 ## Adds lower-density far rings and fades high-frequency normals/foam with
 ## distance. Disable for small contained water areas or debugging near mesh only.
@@ -1082,6 +1079,13 @@ func _ensure_planar_reflection_renderer() -> bool:
 
 
 func _update_planar_reflection_settings() -> void:
+	if Engine.is_editor_hint():
+		_set_water_shader_parameter(&'planar_reflection_enabled', false)
+		_set_water_shader_parameter(&'planar_reflection_strength', 0.0)
+		_set_water_shader_parameter(&'planar_reflection_distortion', reflection_distortion)
+		_set_water_shader_parameter(&'planar_reflection_fresnel_power', reflection_fresnel_power)
+		_set_water_shader_parameter(&'planar_reflection_plane_y', water_level)
+		return
 	if enable_planar_reflections and _reflection_renderer == null:
 		_ensure_planar_reflection_renderer()
 	if _reflection_renderer != null:
@@ -1560,7 +1564,7 @@ func _on_wave_output_maps_swapped(current_displacement: RID, previous_displaceme
 		_set_texture_rid(previous_normal_maps, previous_normal)
 		_wave_blend_duration = maxf(time - _last_wave_output_time, 1.0 / 60.0)
 		_wave_blend_start_time = time
-		_set_wave_blend_alpha(0.0 if smooth_wave_interpolation else 1.0)
+		_set_wave_blend_alpha(0.0)
 	else:
 		_set_texture_rid(previous_displacement_maps, current_displacement)
 		_set_texture_rid(previous_normal_maps, current_normal)
@@ -1577,7 +1581,7 @@ func _update_wave_blend_alpha() -> void:
 	_set_wave_blend_alpha(_get_wave_blend_alpha())
 
 func _get_wave_blend_alpha() -> float:
-	if not smooth_wave_interpolation or not _has_wave_output:
+	if not _has_wave_output:
 		return 1.0
 	return clampf((time - _wave_blend_start_time) / maxf(_wave_blend_duration, 1e-5), 0.0, 1.0)
 

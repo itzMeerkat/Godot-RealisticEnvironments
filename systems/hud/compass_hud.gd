@@ -89,8 +89,8 @@ func _draw_cardinals(center: Vector2, radius: float) -> void:
 	}
 	for label in labels:
 		var text_size := font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1.0, font_size)
-		var position: Vector2 = center + labels[label] * (radius - 21.0) - text_size * 0.5
-		draw_string(font, position, label, HORIZONTAL_ALIGNMENT_LEFT, -1.0, font_size, CARDINAL_COLOR)
+		var _position: Vector2 = center + labels[label] * (radius - 21.0) - text_size * 0.5
+		draw_string(font, _position, label, HORIZONTAL_ALIGNMENT_LEFT, -1.0, font_size, CARDINAL_COLOR)
 
 
 func _draw_wind_arrow(center: Vector2, radius: float) -> void:

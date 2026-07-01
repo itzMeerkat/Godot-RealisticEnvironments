@@ -37,8 +37,8 @@ func setup(
 		_rebuild()
 
 
-func set_panel_visible(is_visible : bool) -> void:
-	visible = is_visible
+func set_panel_visible(_is_visible : bool) -> void:
+	visible = _is_visible
 
 
 func toggle_panel_visible() -> void:
