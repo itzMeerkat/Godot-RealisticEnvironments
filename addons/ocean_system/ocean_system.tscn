@@ -2,7 +2,6 @@
 
 [ext_resource type="Script" uid="uid://dbxip3y4rh1va" path="res://addons/ocean_system/ocean_system.gd" id="1_ocean"]
 [ext_resource type="Script" uid="uid://cqbpvt36rest3" path="res://addons/ocean_system/wave_cascade_parameters.gd" id="2_params"]
-[ext_resource type="Material" uid="uid://byumtcccq4ew3" path="res://addons/ocean_system/mat_water.tres" id="3_water_mat"]
 [sub_resource type="Resource" id="Resource_primary_swell"]
 script = ExtResource("2_params")
 tile_length = Vector2(128, 128)
@@ -44,7 +43,6 @@ foam_amount = 0.8
 [node name="OceanSystem" type="MeshInstance3D" unique_id=1912029964]
 process_priority = 100
 sorting_offset = 999.0
-material_override = ExtResource("3_water_mat")
 cast_shadow = 0
 extra_cull_margin = 7000.0
 script = ExtResource("1_ocean")

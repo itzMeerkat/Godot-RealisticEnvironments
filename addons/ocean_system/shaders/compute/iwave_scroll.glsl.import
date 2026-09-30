@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://bqk2crst213i2"
+path="res://.godot/imported/iwave_scroll.glsl-ea169a0be9ee152d9b05f884bd42eb0f.res"
+
+[deps]
+
+source_file="res://addons/ocean_system/shaders/compute/iwave_scroll.glsl"
+dest_files=["res://.godot/imported/iwave_scroll.glsl-ea169a0be9ee152d9b05f884bd42eb0f.res"]
+
+[params]
+

@@ -7,13 +7,12 @@
 [ext_resource type="Script" uid="uid://ci8d431qqx5lx" path="res://addons/hitbox_damage_system/hitbox_health_manager.gd" id="5_health"]
 [ext_resource type="Script" uid="uid://cyex1yty0rfvh" path="res://addons/hitbox_damage_system/hitbox_health_debug_ui.gd" id="6_health_ui"]
 [ext_resource type="PackedScene" uid="uid://cs4tsoxha78ww" path="res://addons/hitbox_damage_system/default_projectile_hit_smoke.tscn" id="7_hit_smoke"]
-[ext_resource type="Script" uid="uid://batvq42pf87f8" path="res://addons/floating_boat_template/boat_water_interactor.gd" id="8_water_interactor"]
 [ext_resource type="Script" uid="uid://cnn1xqo6ypdf2" path="res://addons/floating_boat_template/simple_boat_controller.gd" id="9_controller"]
-[ext_resource type="Script" uid="uid://u6lgimj01c85" path="res://addons/floating_boat_template/boat_wake_trail.gd" id="10_wake"]
 [ext_resource type="Script" uid="uid://bktoohcajlutg" path="res://addons/projectile_launcher_system/physics_recoil.gd" id="11_physics_recoil"]
 [ext_resource type="Script" uid="uid://dp8nov4qj3vxr" path="res://addons/projectile_launcher_system/projectile_fire_input_controller.gd" id="12_fire_input"]
 [ext_resource type="Script" uid="uid://bm0kcmnihljlv" path="res://addons/projectile_launcher_system/projectile_aim_controller.gd" id="13_aim"]
 [ext_resource type="Script" uid="uid://obesevate4xe" path="res://addons/buoyancy_system/buoyancy_probe_node.gd" id="14_probe"]
+[ext_resource type="Script" path="res://addons/ocean_system/hull_water_footprint.gd" id="15_footprint"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_template"]
 size = Vector3(2, 1, 5)
@@ -47,14 +46,8 @@ hitbox_manager_path = NodePath("../HitboxHealthManager")
 
 [node name="ProjectileHitboxes" type="Node3D" parent="."]
 
-[node name="BoatWaterInteractor" type="Node3D" parent="."]
-script = ExtResource("8_water_interactor")
-
 [node name="SimpleBoatController" type="Node" parent="."]
 script = ExtResource("9_controller")
-
-[node name="BoatWakeTrail" type="Node3D" parent="."]
-script = ExtResource("10_wake")
 
 [node name="CameraTargets" type="Node3D" parent="."]
 
@@ -104,5 +97,8 @@ script = ExtResource("12_fire_input")
 [node name="ProjectileAimController" type="Node3D" parent="."]
 script = ExtResource("13_aim")
 yaw_reference_path = NodePath("..")
+
+[node name="HullWaterFootprint" type="Node3D" parent="."]
+script = ExtResource("15_footprint")
 
 [connection signal="group_destroyed" from="HitboxHealthManager" to="BuoyantSinkingMonitor" method="_on_hitbox_group_destroyed"]

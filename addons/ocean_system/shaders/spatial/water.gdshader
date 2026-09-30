@@ -6,8 +6,7 @@ render_mode world_vertex_coords, cull_disabled, shadows_disabled;
  */
 
 #define MAX_CASCADES 8
-#define MAX_HULL_CUTOUTS 16
-#define MAX_MANUAL_FOAM_SOURCES 96
+#define MAX_NEAR_HULLS 8
 
 uniform vec4 water_color : source_color;
 uniform vec4 foam_color : source_color;
@@ -77,19 +76,26 @@ uniform float far_low_frequency_tile_length : hint_range(1.0, 512.0) = 32.0;
 uniform float far_normal_strength : hint_range(0.0, 2.0) = 0.14;
 uniform float far_foam_coverage : hint_range(0.0, 1.0) = 0.24;
 uniform float far_foam_threshold_boost : hint_range(0.0, 1.0) = 0.2; // Historical name: widens far foam softness.
-uniform int hull_cutout_count = 0;
-uniform vec4 hull_cutout_centers[MAX_HULL_CUTOUTS]; // xyz center, feather in meters
-uniform vec4 hull_cutout_axes[MAX_HULL_CUTOUTS];    // right.xz, forward.xz
-uniform vec4 hull_cutout_shapes[MAX_HULL_CUTOUTS];  // max half width, half length, foam amount, shape type
-uniform vec4 hull_cutout_verticals[MAX_HULL_CUTOUTS]; // min y, max y, height feather, unused
-uniform vec4 hull_cutout_widths[MAX_HULL_CUTOUTS]; // start half width, end half width, unused, unused
-uniform int manual_foam_count = 0;
-uniform vec4 manual_foam_sources[MAX_MANUAL_FOAM_SOURCES]; // xz center, radius, amount
-uniform vec4 manual_foam_shapes[MAX_MANUAL_FOAM_SOURCES]; // direction.xz, half length, unused
+// Hulls near the camera (see OceanSystem._update_hull_cutouts and HullProfile).
+uniform int near_hull_count = 0;
+uniform vec4 near_hull_world_to_local_x[MAX_NEAR_HULLS]; // rows of the world-to-hull affine transform: xyz basis row, w origin
+uniform vec4 near_hull_world_to_local_y[MAX_NEAR_HULLS];
+uniform vec4 near_hull_world_to_local_z[MAX_NEAR_HULLS];
+uniform vec4 near_hull_spheres[MAX_NEAR_HULLS]; // world center xyz, (radius + feather)^2
+uniform vec4 near_hull_rects[MAX_NEAR_HULLS];   // profile min z, min y, 1 / length, 1 / height
+uniform vec4 near_hull_params[MAX_NEAR_HULLS];  // profile layer, center x, feather (m), edge foam
+uniform sampler2DArray hull_profiles : filter_linear, repeat_disable; // R = inner half-width over (z, y)
+
+// Interaction simulation (WaterInteractionSim): rgba16f h, eta, foam, wrap-around addressed.
+uniform bool interaction_enabled = false;
+uniform sampler2D interaction_render : repeat_enable, filter_linear;
+uniform vec4 interaction_window = vec4(0.0); // window center x, center z, fade start, fade end (Chebyshev distance from center, m)
+uniform float interaction_inv_extent = 0.0;  // 1 / window size (m)
+uniform float interaction_cell_size = 0.5;
 
 group_uniforms cascade_data;
 uniform vec4 map_scales[MAX_CASCADES];               // Scales for displacement/normal maps. Packed: [uv scale, displacement scale, normal scale]
-uniform vec4 spectrum_blend_states[MAX_CASCADES];    // Packed: [active layer, pending layer, blend alpha, unused]
+uniform vec4 spectrum_blend_states[MAX_CASCADES];    // Packed: [active layer, pending layer, active weight, pending weight]; pending weight is 0 unless a spectrum crossfade is running
 uniform int num_cascades = 0;
 uniform sampler2DArray displacements;         // Each layer represents one wave cascade.
 uniform sampler2DArray normals : hint_normal; // Each layer represents one wave cascade.
@@ -119,50 +125,15 @@ float get_cascade_lod_weight(vec4 scales, float lod) {
 	return mix(1.0, far_weight, lod);
 }
 
-float get_hull_cutout_sdf(vec3 world_position, int index) {
-	vec4 center = hull_cutout_centers[index];
-	vec4 axes = hull_cutout_axes[index];
-	vec4 shape = hull_cutout_shapes[index];
-	vec4 widths = hull_cutout_widths[index];
-	vec2 delta = world_position.xz - center.xz;
-	vec2 right = normalize(axes.xy);
-	vec2 forward = normalize(axes.zw);
-	vec2 local = vec2(dot(delta, right), dot(delta, forward));
-	float half_length = max(shape.y, 0.001);
-	float half_width = shape.x;
-	if (shape.w > 0.5) {
-		float t = clamp(local.y / (half_length * 2.0) + 0.5, 0.0, 1.0);
-		half_width = mix(widths.x, widths.y, t);
-	}
-	vec2 q = vec2(abs(local.x) - half_width, abs(local.y) - half_length);
-	return length(max(q, vec2(0.0))) + min(max(q.x, q.y), 0.0);
+/** 1 inside the interaction window, fading to 0 before its absorbing border. */
+float interaction_fade(vec2 xz) {
+	vec2 from_center = abs(xz - interaction_window.xy);
+	return 1.0 - smoothstep(interaction_window.z, interaction_window.w, max(from_center.x, from_center.y));
 }
 
-float get_hull_cutout_height_mask(vec3 world_position, int index) {
-	vec4 vertical = hull_cutout_verticals[index];
-	float height_feather = max(vertical.z, 0.001);
-	float lower_mask = smoothstep(vertical.x - height_feather, vertical.x, world_position.y);
-	float upper_mask = 1.0 - smoothstep(vertical.y, vertical.y + height_feather, world_position.y);
-	return lower_mask * upper_mask;
-}
-
-float sample_manual_foam(vec3 world_position) {
-	float foam = 0.0;
-	for (int i = 0; i < min(manual_foam_count, MAX_MANUAL_FOAM_SOURCES); ++i) {
-		vec4 source = manual_foam_sources[i];
-		vec4 shape = manual_foam_shapes[i];
-		float radius = max(source.z, 0.001);
-		vec2 delta = world_position.xz - source.xy;
-		float half_length = max(shape.z, 0.0);
-		if (half_length > 0.001) {
-			vec2 direction = normalize(shape.xy);
-			delta -= direction * clamp(dot(delta, direction), -half_length, half_length);
-		}
-		float dist = length(delta) / radius;
-		float spot = (1.0 - smoothstep(0.15, 1.0, dist)) * source.w;
-		foam = max(foam, spot);
-	}
-	return clamp(foam, 0.0, 1.0);
+/** Interaction render texel at world XZ; repeat addressing matches the wrap-around grid. */
+vec4 sample_interaction(vec2 xz) {
+	return textureLod(interaction_render, xz * interaction_inv_extent, 0.0);
 }
 
 void vertex() {
@@ -181,16 +152,19 @@ void vertex() {
 			continue;
 		vec4 blend_state = spectrum_blend_states[i];
 		vec3 active_coords = vec3(UV*scales.xy, blend_state.x);
-		vec3 pending_coords = vec3(UV*scales.xy, blend_state.y);
-		vec3 previous_active = texture(previous_displacements, active_coords).xyz;
-		vec3 current_active = texture(displacements, active_coords).xyz;
-		vec3 previous_pending = texture(previous_displacements, pending_coords).xyz;
-		vec3 current_pending = texture(displacements, pending_coords).xyz;
-		vec3 active_displacement = mix(previous_active, current_active, wave_blend_alpha);
-		vec3 pending_displacement = mix(previous_pending, current_pending, wave_blend_alpha);
-		displacement += mix(active_displacement, pending_displacement, blend_state.z) * scales.z * cascade_weight;
+		vec3 cascade_displacement = mix(texture(previous_displacements, active_coords).xyz, texture(displacements, active_coords).xyz, wave_blend_alpha) * blend_state.z;
+		// Uniform branch: the pending spectrum is only sampled during a crossfade.
+		if (blend_state.w > 0.0) {
+			vec3 pending_coords = vec3(UV*scales.xy, blend_state.y);
+			cascade_displacement += mix(texture(previous_displacements, pending_coords).xyz, texture(displacements, pending_coords).xyz, wave_blend_alpha) * blend_state.w;
+		}
+		displacement += cascade_displacement * scales.z * cascade_weight;
 	}
 	VERTEX += displacement;
+	if (interaction_enabled) {
+		// Sampled at the displaced position: the simulation lives at final surface positions.
+		VERTEX.y += sample_interaction(VERTEX.xz).x * interaction_fade(VERTEX.xz);
+	}
 	water_world_position = VERTEX;
 }
 
@@ -223,6 +197,17 @@ vec4 texture_bicubic(in sampler2DArray sampler, in vec3 uvw) {
     return mix(
 		mix(texture(sampler, vec3(h.yw, uvw.z)), texture(sampler, vec3(h.xw, uvw.z)), w.x),
 		mix(texture(sampler, vec3(h.yz, uvw.z)), texture(sampler, vec3(h.xz, uvw.z)), w.x), w.y); 
+}
+
+/** Normal/foam sample of one spectrum layer, blended between the previous and current FFT output. */
+vec4 sample_normal_layer(vec3 coords, float bilinear_weight) {
+	vec4 previous_sample = texture(previous_normals, coords);
+	vec4 current_sample = texture(normals, coords);
+	if (use_bicubic_normals) {
+		previous_sample = mix(texture_bicubic(previous_normals, coords), previous_sample, bilinear_weight);
+		current_sample = mix(texture_bicubic(normals, coords), current_sample, bilinear_weight);
+	}
+	return mix(previous_sample, current_sample, wave_blend_alpha);
 }
 
 float saturate(float value) {
@@ -287,17 +272,43 @@ float smith_ggx_visibility(float no_v, float no_l, float roughness) {
 }
 
 void fragment() {
+	// Hide water inside nearby hulls. The test runs on the water-surface point
+	// itself, so it is view-independent; pitch and roll come from the transform.
 	float hull_edge_foam = 0.0;
-	for (int i = 0; i < min(hull_cutout_count, MAX_HULL_CUTOUTS); ++i) {
-		float cutout_sdf = get_hull_cutout_sdf(water_world_position, i);
-		float height_mask = get_hull_cutout_height_mask(water_world_position, i);
-		if (cutout_sdf < 0.0 && height_mask > 0.5) {
+	for (int i = 0; i < min(near_hull_count, MAX_NEAR_HULLS); ++i) {
+		vec3 to_center = water_world_position - near_hull_spheres[i].xyz;
+		if (dot(to_center, to_center) > near_hull_spheres[i].w)
+			continue; // Far from this hull.
+		vec4 world_position = vec4(water_world_position, 1.0);
+		vec3 local = vec3(dot(near_hull_world_to_local_x[i], world_position), dot(near_hull_world_to_local_y[i], world_position), dot(near_hull_world_to_local_z[i], world_position));
+		vec2 profile_uv = (local.zy - near_hull_rects[i].xy) * near_hull_rects[i].zw;
+		if (any(lessThan(profile_uv, vec2(0.0))) || any(greaterThan(profile_uv, vec2(1.0))))
+			continue; // Beyond the bow/stern, above the hull or below the keel.
+		vec4 params = near_hull_params[i];
+		// Explicit LOD: this lookup sits in divergent control flow, where implicit derivatives are undefined.
+		float half_width = textureLod(hull_profiles, vec3(profile_uv, params.x), 0.0).r;
+		float hull_sdf = abs(local.x - params.y) - half_width; // < 0 inside the hull
+		if (hull_sdf < 0.0) {
 			discard;
 		}
-		vec4 center = hull_cutout_centers[i];
-		vec4 shape = hull_cutout_shapes[i];
-		float feather = max(center.w, 0.001);
-		hull_edge_foam = max(hull_edge_foam, (1.0 - smoothstep(0.0, feather, cutout_sdf)) * shape.z * height_mask);
+		hull_edge_foam = max(hull_edge_foam, (1.0 - smoothstep(0.0, max(params.z, 0.001), hull_sdf)) * params.w);
+	}
+
+	// Interaction simulation slope and foam (wakes, bow waves, splashes).
+	vec2 interaction_gradient = vec2(0.0);
+	float interaction_foam = 0.0;
+	if (interaction_enabled) {
+		vec2 xz = water_world_position.xz;
+		float fade = interaction_fade(xz);
+		if (fade > 0.0) {
+			float e = interaction_cell_size;
+			float h_left = sample_interaction(xz - vec2(e, 0.0)).x;
+			float h_right = sample_interaction(xz + vec2(e, 0.0)).x;
+			float h_back = sample_interaction(xz - vec2(0.0, e)).x;
+			float h_front = sample_interaction(xz + vec2(0.0, e)).x;
+			interaction_gradient = vec2(h_right - h_left, h_front - h_back) / (2.0 * e) * fade;
+			interaction_foam = sample_interaction(xz).z * fade;
+		}
 	}
 
 	float dist = length(water_world_position.xz - CAMERA_POSITION_WORLD.xz);
@@ -306,7 +317,6 @@ void fragment() {
 	float foam_signal = 0.0;
 	float wave_slope = 0.0;
 	foam_factor = 0.0;
-	float manual_foam = sample_manual_foam(water_world_position);
 	float raw_wave_slope = 0.0;
 	vec3 world_normal = vec3(0.0, 1.0, 0.0);
 	float sky_reflection_amount = 0.0;
@@ -337,29 +347,25 @@ void fragment() {
 			if (cascade_weight <= 0.0)
 				continue;
 			vec4 blend_state = spectrum_blend_states[i];
-			vec3 active_coords = vec3(UV*scales.xy, blend_state.x);
-			vec3 pending_coords = vec3(UV*scales.xy, blend_state.y);
-			vec4 previous_active_sample = texture(previous_normals, active_coords);
-			vec4 current_active_sample = texture(normals, active_coords);
-			vec4 previous_pending_sample = texture(previous_normals, pending_coords);
-			vec4 current_pending_sample = texture(normals, pending_coords);
-			if (use_bicubic_normals) {
-				float ppm = map_size * min(scales.x, scales.y); // Pixels per meter
-				// Mix between bicubic and bilinear filtering depending on the world space pixels per meter.
-				// This is dependent on the tile size as well as displacement/normal map resolution.
-				previous_active_sample = mix(texture_bicubic(previous_normals, active_coords), previous_active_sample, min(1.0, ppm*0.1));
-				current_active_sample = mix(texture_bicubic(normals, active_coords), current_active_sample, min(1.0, ppm*0.1));
-				previous_pending_sample = mix(texture_bicubic(previous_normals, pending_coords), previous_pending_sample, min(1.0, ppm*0.1));
-				current_pending_sample = mix(texture_bicubic(normals, pending_coords), current_pending_sample, min(1.0, ppm*0.1));
+			// Mix between bicubic and bilinear filtering depending on the world space pixels per meter.
+			// This is dependent on the tile size as well as displacement/normal map resolution.
+			float pixels_per_meter = map_size * min(scales.x, scales.y);
+			float bilinear_weight = min(1.0, pixels_per_meter * 0.1);
+			vec4 active_sample = sample_normal_layer(vec3(UV*scales.xy, blend_state.x), bilinear_weight);
+			vec2 cascade_gradient = active_sample.xy * blend_state.z;
+			float cascade_foam = active_sample.w;
+			// Uniform branch: the pending spectrum is only sampled during a crossfade.
+			if (blend_state.w > 0.0) {
+				vec4 pending_sample = sample_normal_layer(vec3(UV*scales.xy, blend_state.y), bilinear_weight);
+				cascade_gradient += pending_sample.xy * blend_state.w;
+				// Foam is a non-negative mask, so it crossfades linearly rather than by equal power.
+				cascade_foam = mix(active_sample.w, pending_sample.w, blend_state.w / (blend_state.z + blend_state.w));
 			}
-			vec4 active_sample = mix(previous_active_sample, current_active_sample, wave_blend_alpha);
-			vec4 pending_sample = mix(previous_pending_sample, current_pending_sample, wave_blend_alpha);
-			vec4 normal_sample = mix(active_sample, pending_sample, blend_state.z);
-			vec2 normal_signal = normal_sample.xy * scales.w * cascade_weight;
+			vec2 normal_signal = cascade_gradient * scales.w * cascade_weight;
 			float tile_length = 1.0 / max(min(scales.x, scales.y), 0.0001);
 			float macro_weight = smoothstep(18.0, 80.0, tile_length);
 			gradient += normal_signal;
-			foam_signal += normal_sample.w * cascade_weight;
+			foam_signal += cascade_foam * cascade_weight;
 			macro_gradient += normal_signal * macro_weight;
 			micro_slope_energy += length(normal_signal) * (1.0 - macro_weight);
 		}
@@ -371,16 +377,18 @@ void fragment() {
 		float far_foam_softness = foam_softness * (1.0 + far_foam_threshold_boost * fragment_distance_lod * 4.0);
 		float foam_distance_fade = mix(1.0, far_foam_coverage, fragment_distance_lod);
 		foam_factor = smoothstep(foam_threshold, foam_threshold + far_foam_softness, visible_foam_signal) * exp(-dist*0.0075) * foam_distance_fade;
-		foam_factor = max(max(foam_factor, hull_edge_foam), manual_foam);
 		wave_slope = clamp(length(gradient) * slope_roughness_strength, 0.0, 1.0);
 
 		float near_normal_fade = exp(-dist*0.0175);
 		float far_normal_fade = far_normal_strength * 0.35;
 		gradient *= normal_strength * mix(max(near_normal_fade, 0.015), far_normal_fade, fragment_distance_lod);
+		// Added after the distance fade, which exists to hide high-frequency FFT detail;
+		// simulated waves are long and stay near the camera.
+		gradient += interaction_gradient * normal_strength;
 		world_normal = normalize(vec3(-gradient.x, 1.0, -gradient.y));
 		NORMAL = (VIEW_MATRIX * vec4(world_normal, 0.0)).xyz;
 	}
-	foam_factor = max(max(foam_factor, hull_edge_foam), manual_foam);
+	foam_factor = max(max(foam_factor, hull_edge_foam), interaction_foam);
 
 	vec3 water_body_albedo = water_color.rgb * water_diffuse_strength;
 	vec3 base_albedo = mix(water_body_albedo, foam_color.rgb, foam_factor);

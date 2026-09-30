@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://b01gp3ooea15g"
+path="res://.godot/imported/iwave_impulse.glsl-1275536b8c24584ba9e71b147d021a94.res"
+
+[deps]
+
+source_file="res://addons/ocean_system/shaders/compute/iwave_impulse.glsl"
+dest_files=["res://.godot/imported/iwave_impulse.glsl-1275536b8c24584ba9e71b147d021a94.res"]
+
+[params]
+

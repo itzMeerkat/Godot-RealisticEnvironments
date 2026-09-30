@@ -60,7 +60,8 @@ func create_storage_buffer(size : int, data : PackedByteArray=[], usage:=0) -> D
 		data += padding
 	return Descriptor.new(deletion_queue.push(device.storage_buffer_create(max(size, len(data)), data, usage)), RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER)
 
-func create_texture(dimensions : Vector2i, format : RenderingDevice.DataFormat, usage:=0x18B, num_layers:=0, view:=RDTextureView.new(), data : PackedByteArray=[]) -> Descriptor:
+## data holds one PackedByteArray per layer (or is empty for uninitialized contents).
+func create_texture(dimensions : Vector2i, format : RenderingDevice.DataFormat, usage:=0x18B, num_layers:=0, view:=RDTextureView.new(), data : Array=[]) -> Descriptor:
 	assert(num_layers >= 0)
 	var texture_format := RDTextureFormat.new()
 	texture_format.array_layers = 1 if num_layers == 0 else num_layers

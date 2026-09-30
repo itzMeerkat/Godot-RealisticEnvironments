@@ -112,9 +112,27 @@ const MIDNIGHT_PROFILE_TIME := 0.0
 
 var _elapsed_time := 0.0
 var _sun_hour_angle := 0.0
+var _profile_sample_time := 0.5
+## True while _process advances several calendar properties; their setters then
+## skip _update_sky and _process runs it once afterwards.
+var _advancing_cycle := false
+
+# Lighting state, recomputed by _update_lighting_state() whenever an input changes.
+# The public getters return these, so reading the sky costs nothing per call.
+var _sun_direction := Vector3.UP
+var _moon_direction := Vector3.DOWN
+var _sun_visibility := 1.0
+var _moon_visibility := 0.0
+var _night_factor := 0.0
 var _moon_phase := 1.0
 var _star_visibility := 0.0
-var _profile_sample_time := 0.5
+var _sun_color := Color.WHITE
+var _sky_top_color := Color.WHITE
+var _sky_horizon_color := Color.WHITE
+
+
+func _init() -> void:
+	_update_lighting_state()
 
 
 func _ready() -> void:
@@ -128,10 +146,13 @@ func _ready() -> void:
 func _process(delta : float) -> void:
 	if not Engine.is_editor_hint() and cycle_enabled:
 		var day_delta := delta / maxf(cycle_duration_seconds, 1.0)
+		_advancing_cycle = true
 		time_of_day = time_of_day + day_delta
 		if advance_calendar_with_cycle:
 			day_of_year = day_of_year + day_delta
 			lunar_age_days = lunar_age_days + day_delta
+		_advancing_cycle = false
+		_update_sky()
 	_elapsed_time += delta
 	_update_visual_positions()
 	_update_starfield_time()
@@ -160,78 +181,84 @@ func get_time_of_day() -> float:
 
 
 func get_sun_direction() -> Vector3:
-	var solar_coordinates := _get_solar_equatorial_coordinates()
-	_sun_hour_angle = _get_solar_hour_angle()
-	return _equatorial_to_horizontal_direction(solar_coordinates.y, _sun_hour_angle)
+	return _sun_direction
 
 
 func get_moon_direction() -> Vector3:
-	return _get_moon_state()["direction"]
+	return _moon_direction
 
 
 func get_sun_visibility() -> float:
-	return _sun_altitude_visibility(get_sun_direction().y)
+	return _sun_visibility
 
 
 func get_sun_color() -> Color:
-	return _get_profile().sample_sun_color(_profile_sample_time)
+	return _sun_color
 
 
 func get_sky_top_color() -> Color:
-	return _get_profile().sample_sky_top_color(_profile_sample_time)
+	return _sky_top_color
 
 
 func get_sky_horizon_color() -> Color:
-	return _get_profile().sample_sky_horizon_color(_profile_sample_time)
+	return _sky_horizon_color
 
 
 func get_sky_ground_horizon_color() -> Color:
-	return get_sky_horizon_color().darkened(0.25)
+	return _sky_horizon_color.darkened(0.25)
 
 
 func get_sky_ground_bottom_color() -> Color:
-	return get_sky_top_color().darkened(0.55)
+	return _sky_top_color.darkened(0.55)
 
 
 func get_moon_visibility() -> float:
-	return _moon_altitude_visibility(get_moon_direction().y)
+	return _moon_visibility
 
 
 func get_night_factor() -> float:
-	return _night_factor_from_sun_height(get_sun_direction().y)
+	return _night_factor
 
 
 func get_moon_phase() -> float:
-	_moon_phase = float(_get_moon_state()["phase"])
 	return _moon_phase
 
 
 func get_star_visibility() -> float:
-	var sun_direction := get_sun_direction()
+	return _star_visibility
+
+
+## Recomputes the astronomy and profile colors behind the public getters.
+func _update_lighting_state() -> void:
+	var active_profile = _get_profile()
+	var solar_coordinates := _get_solar_equatorial_coordinates()
+	_sun_hour_angle = _get_solar_hour_angle()
+	_sun_direction = _equatorial_to_horizontal_direction(solar_coordinates.y, _sun_hour_angle)
 	var moon_state := _get_moon_state()
-	var moon_direction : Vector3 = moon_state["direction"]
-	return _calculate_star_visibility(sun_direction.y, _moon_altitude_visibility(moon_direction.y), float(moon_state["phase"]))
+	_moon_direction = moon_state["direction"]
+	_moon_phase = float(moon_state["phase"])
+	_sun_visibility = _sun_altitude_visibility(_sun_direction.y)
+	_moon_visibility = _moon_altitude_visibility(_moon_direction.y)
+	_night_factor = _night_factor_from_sun_height(_sun_direction.y)
+	_star_visibility = _calculate_star_visibility(_sun_direction.y, _moon_visibility, _moon_phase)
+	_profile_sample_time = _get_profile_sample_time(_sun_direction.y)
+	_sun_color = active_profile.sample_sun_color(_profile_sample_time)
+	_sky_top_color = active_profile.sample_sky_top_color(_profile_sample_time)
+	_sky_horizon_color = active_profile.sample_sky_horizon_color(_profile_sample_time)
 
 
 func _update_sky() -> void:
+	if _advancing_cycle:
+		return
+	_update_lighting_state()
 	if not is_inside_tree():
 		return
 	var active_profile = _get_profile()
-	var sun_direction := get_sun_direction()
-	var moon_state := _get_moon_state()
-	var moon_direction : Vector3 = moon_state["direction"]
-	var sun_visibility := _sun_altitude_visibility(sun_direction.y)
-	var moon_visibility := _moon_altitude_visibility(moon_direction.y)
-	var night_factor := _night_factor_from_sun_height(sun_direction.y)
-	_moon_phase = float(moon_state["phase"])
-	_star_visibility = _calculate_star_visibility(sun_direction.y, moon_visibility, _moon_phase)
-	_profile_sample_time = _get_profile_sample_time(sun_direction.y)
-
-	_update_light(_sun_light, sun_direction, active_profile.sample_sun_color(_profile_sample_time), active_profile.sample_sun_energy(_profile_sample_time) * _solar_energy_from_height(sun_direction.y) * sun_energy_multiplier)
-	_update_light(_moon_light, moon_direction, active_profile.sample_moon_color(_profile_sample_time), active_profile.sample_moon_energy(_profile_sample_time) * moon_visibility * _moon_phase * night_factor * moon_energy_multiplier)
-	_update_environment(active_profile, sun_direction, moon_direction, sun_visibility, moon_visibility)
+	_update_light(_sun_light, _sun_direction, _sun_color, active_profile.sample_sun_energy(_profile_sample_time) * _solar_energy_from_height(_sun_direction.y) * sun_energy_multiplier)
+	_update_light(_moon_light, _moon_direction, active_profile.sample_moon_color(_profile_sample_time), active_profile.sample_moon_energy(_profile_sample_time) * _moon_visibility * _moon_phase * _night_factor * moon_energy_multiplier)
+	_update_environment(active_profile, _sun_direction, _moon_direction, _sun_visibility, _moon_visibility)
 	_update_starfield_visibility(active_profile.sample_star_visibility(_star_visibility) * star_brightness)
-	_update_visual_colors(active_profile, sun_visibility, moon_visibility)
+	_update_visual_colors(active_profile, _sun_visibility, _moon_visibility)
 	_update_visual_positions()
 	lighting_changed.emit()
 

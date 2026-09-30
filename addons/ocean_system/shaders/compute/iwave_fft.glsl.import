@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://bwvyk5kserrer"
+path="res://.godot/imported/iwave_fft.glsl-b4b7a346ce6d9ee921d9ae3fee5decd1.res"
+
+[deps]
+
+source_file="res://addons/ocean_system/shaders/compute/iwave_fft.glsl"
+dest_files=["res://.godot/imported/iwave_fft.glsl-b4b7a346ce6d9ee921d9ae3fee5decd1.res"]
+
+[params]
+

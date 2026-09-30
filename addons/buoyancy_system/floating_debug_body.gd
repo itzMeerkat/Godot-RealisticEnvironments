@@ -186,10 +186,6 @@ func _apply_player_controlled_state() -> void:
 	for child in _find_descendants():
 		if child.is_in_group(&"boat_controller"):
 			child.set(&"enabled", player_controlled)
-		if child.is_in_group(&"boat_water_interactor"):
-			child.set(&"enabled", player_controlled)
-		if child.is_in_group(&"boat_wake_trail"):
-			child.set(&"enabled", player_controlled)
 
 
 func _find_descendants() -> Array[Node]:

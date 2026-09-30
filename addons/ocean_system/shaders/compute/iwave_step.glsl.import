@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://t82yyts2q1tv"
+path="res://.godot/imported/iwave_step.glsl-5f13d0063bdbb94f8cf93e60079668d6.res"
+
+[deps]
+
+source_file="res://addons/ocean_system/shaders/compute/iwave_step.glsl"
+dest_files=["res://.godot/imported/iwave_step.glsl-5f13d0063bdbb94f8cf93e60079668d6.res"]
+
+[params]
+

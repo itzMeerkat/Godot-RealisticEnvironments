@@ -1,41 +1,18 @@
 #[compute]
 #version 460
 /**
- * Samples OceanSystem displacement maps at arbitrary world-space points.
- * This is intended for buoyancy/gameplay queries where reading back full
- * displacement textures would be far too expensive.
+ * Samples the rendered ocean surface at arbitrary world-space points. Used by
+ * buoyancy/gameplay queries, where reading back whole displacement textures
+ * would be far too expensive.
+ *
+ * Heights include the interaction simulation's eta = h + p rather than the
+ * visible h: a hull's own rest depression (h = -p) is excluded, so bodies do not
+ * lose buoyancy to it, while radiated waves (wakes, splashes) are included.
  */
 
-#define MAX_CASCADES 8U
 #define WORKGROUP_SIZE 64U
 
 layout(local_size_x = WORKGROUP_SIZE, local_size_y = 1, local_size_z = 1) in;
-
-struct CascadeData {
-	vec4 map_scales;     // [uv scale, displacement scale, normal scale]
-	vec4 blend_state;    // [active layer, pending layer, spectrum blend alpha, unused]
-};
-
-struct SurfaceSample {
-	vec4 displacement_height; // xyz = visual displacement, w = height
-	vec4 normal_data;         // xyz = normal, w = unused
-	vec4 surface_velocity;    // xyz = displacement velocity, w = unused
-};
-
-layout(std430, set = 0, binding = 0) restrict readonly buffer PointBuffer {
-	vec4 points[];
-};
-
-layout(std430, set = 0, binding = 1) restrict readonly buffer CascadeBuffer {
-	CascadeData cascades[];
-};
-
-layout(std430, set = 0, binding = 2) restrict writeonly buffer SampleBuffer {
-	SurfaceSample samples[];
-};
-
-layout(rgba16f, set = 0, binding = 3) restrict readonly uniform image2DArray current_displacements;
-layout(rgba16f, set = 0, binding = 4) restrict readonly uniform image2DArray previous_displacements;
 
 layout(push_constant) restrict readonly uniform PushConstants {
 	uint point_count;
@@ -44,76 +21,60 @@ layout(push_constant) restrict readonly uniform PushConstants {
 	float wave_blend_alpha;
 	float wave_blend_duration;
 	float normal_sample_distance;
+	vec2 interaction_center;      // world XZ of the simulation window center
+	float interaction_cell_size;
+	float interaction_fade_start; // Chebyshev distance from the center (m)
+	float interaction_fade_end;
+	uint interaction_enabled;
 };
 
-vec4 sample_current_layer_bilinear(int layer, vec2 uv) {
-	vec2 dims = vec2(imageSize(current_displacements).xy);
-	vec2 p = fract(uv) * dims;
-	ivec2 p0 = ivec2(floor(p)) % ivec2(dims);
-	ivec2 p1 = (p0 + ivec2(1)) % ivec2(dims);
-	vec2 f = fract(p);
+#define OCEAN_SAMPLING_SET 0
+#define OCEAN_CASCADE_BUFFER_BINDING 1
+#define OCEAN_CURRENT_DISPLACEMENT_BINDING 3
+#define OCEAN_PREVIOUS_DISPLACEMENT_BINDING 4
+#include "ocean_sampling.glslinc"
 
-	vec4 c00 = imageLoad(current_displacements, ivec3(p0.x, p0.y, layer));
-	vec4 c10 = imageLoad(current_displacements, ivec3(p1.x, p0.y, layer));
-	vec4 c01 = imageLoad(current_displacements, ivec3(p0.x, p1.y, layer));
-	vec4 c11 = imageLoad(current_displacements, ivec3(p1.x, p1.y, layer));
-	return mix(mix(c00, c10, f.x), mix(c01, c11, f.x), f.y);
-}
+struct SurfaceSample {
+	vec4 displacement_height; // xyz = displacement of the surface point, w = height
+	vec4 normal_data;         // xyz = normal, w = unused
+	vec4 surface_velocity;    // xyz = displacement velocity, w = unused
+};
 
-vec4 sample_previous_layer_bilinear(int layer, vec2 uv) {
-	vec2 dims = vec2(imageSize(previous_displacements).xy);
-	vec2 p = fract(uv) * dims;
-	ivec2 p0 = ivec2(floor(p)) % ivec2(dims);
-	ivec2 p1 = (p0 + ivec2(1)) % ivec2(dims);
-	vec2 f = fract(p);
+layout(std430, set = 0, binding = 0) restrict readonly buffer PointBuffer {
+	vec4 points[];
+};
 
-	vec4 c00 = imageLoad(previous_displacements, ivec3(p0.x, p0.y, layer));
-	vec4 c10 = imageLoad(previous_displacements, ivec3(p1.x, p0.y, layer));
-	vec4 c01 = imageLoad(previous_displacements, ivec3(p0.x, p1.y, layer));
-	vec4 c11 = imageLoad(previous_displacements, ivec3(p1.x, p1.y, layer));
-	return mix(mix(c00, c10, f.x), mix(c01, c11, f.x), f.y);
-}
+layout(std430, set = 0, binding = 2) restrict writeonly buffer SampleBuffer {
+	SurfaceSample samples[];
+};
 
-vec3 sample_current_cascade_displacement(CascadeData cascade, vec3 world_position) {
-	vec2 uv = world_position.xz * cascade.map_scales.xy;
-	int active_layer = int(cascade.blend_state.x + 0.5);
-	int pending_layer = int(cascade.blend_state.y + 0.5);
-	vec3 active_displacement = sample_current_layer_bilinear(active_layer, uv).xyz;
-	vec3 pending_displacement = sample_current_layer_bilinear(pending_layer, uv).xyz;
-	return mix(active_displacement, pending_displacement, cascade.blend_state.z) * cascade.map_scales.z;
-}
+// Interaction render texture (rgba16f: h, eta, foam), wrap-around addressed.
+layout(rgba16f, set = 0, binding = 5) restrict readonly uniform image2D interaction_render;
 
-vec3 sample_previous_cascade_displacement(CascadeData cascade, vec3 world_position) {
-	vec2 uv = world_position.xz * cascade.map_scales.xy;
-	int active_layer = int(cascade.blend_state.x + 0.5);
-	int pending_layer = int(cascade.blend_state.y + 0.5);
-	vec3 active_displacement = sample_previous_layer_bilinear(active_layer, uv).xyz;
-	vec3 pending_displacement = sample_previous_layer_bilinear(pending_layer, uv).xyz;
-	return mix(active_displacement, pending_displacement, cascade.blend_state.z) * cascade.map_scales.z;
-}
-
-vec3 sample_current_total_displacement(vec3 world_position) {
-	vec3 displacement = vec3(0.0);
-	uint count = min(cascade_count, MAX_CASCADES);
-	for (uint i = 0U; i < count; ++i) {
-		displacement += sample_current_cascade_displacement(cascades[i], world_position);
+float sample_interaction_eta(vec2 p) {
+	if (interaction_enabled == 0U) {
+		return 0.0;
 	}
-	return displacement;
-}
-
-vec3 sample_previous_total_displacement(vec3 world_position) {
-	vec3 displacement = vec3(0.0);
-	uint count = min(cascade_count, MAX_CASCADES);
-	for (uint i = 0U; i < count; ++i) {
-		displacement += sample_previous_cascade_displacement(cascades[i], world_position);
+	vec2 from_center = abs(p - interaction_center);
+	float fade = 1.0 - smoothstep(interaction_fade_start, interaction_fade_end, max(from_center.x, from_center.y));
+	if (fade <= 0.0) {
+		return 0.0;
 	}
-	return displacement;
+	ivec2 dims = imageSize(interaction_render);
+	vec2 q = p / interaction_cell_size - 0.5;
+	ivec2 base = ivec2(floor(q));
+	vec2 f = q - vec2(base);
+	ivec2 p0 = base & (dims - 1);
+	ivec2 p1 = (p0 + 1) & (dims - 1);
+	float e00 = imageLoad(interaction_render, p0).y;
+	float e10 = imageLoad(interaction_render, ivec2(p1.x, p0.y)).y;
+	float e01 = imageLoad(interaction_render, ivec2(p0.x, p1.y)).y;
+	float e11 = imageLoad(interaction_render, p1).y;
+	return mix(mix(e00, e10, f.x), mix(e01, e11, f.x), f.y) * fade;
 }
 
-float sample_height(vec3 world_position) {
-	vec3 previous_displacement = sample_previous_total_displacement(world_position);
-	vec3 current_displacement = sample_current_total_displacement(world_position);
-	return water_level + mix(previous_displacement, current_displacement, wave_blend_alpha).y;
+float sample_total_height(vec2 p) {
+	return ocean_sample_surface_height(p) + sample_interaction_eta(p);
 }
 
 void main() {
@@ -122,16 +83,19 @@ void main() {
 		return;
 	}
 
-	vec3 world_position = points[index].xyz;
-	vec3 previous_displacement = sample_previous_total_displacement(world_position);
-	vec3 current_displacement = sample_current_total_displacement(world_position);
+	vec2 p = points[index].xz;
+	vec2 source = ocean_invert_horizontal_displacement(p);
+	vec3 previous_displacement;
+	vec3 current_displacement;
+	ocean_sample_displacements(source, previous_displacement, current_displacement);
 	vec3 visual_displacement = mix(previous_displacement, current_displacement, wave_blend_alpha);
+	visual_displacement.y += sample_interaction_eta(p);
 
 	float e = max(normal_sample_distance, 0.001);
-	float h_l = sample_height(world_position + vec3(-e, 0.0, 0.0));
-	float h_r = sample_height(world_position + vec3( e, 0.0, 0.0));
-	float h_b = sample_height(world_position + vec3(0.0, 0.0, -e));
-	float h_f = sample_height(world_position + vec3(0.0, 0.0,  e));
+	float h_l = sample_total_height(p + vec2(-e, 0.0));
+	float h_r = sample_total_height(p + vec2( e, 0.0));
+	float h_b = sample_total_height(p + vec2(0.0, -e));
+	float h_f = sample_total_height(p + vec2(0.0,  e));
 	vec3 normal = normalize(vec3(h_l - h_r, 2.0 * e, h_b - h_f));
 	vec3 velocity = (current_displacement - previous_displacement) / max(wave_blend_duration, 1.0 / 60.0);
 

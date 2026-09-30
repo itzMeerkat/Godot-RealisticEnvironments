@@ -60,14 +60,6 @@ func _notification(what: int) -> void:
 		_emit_probe_changed()
 
 
-func get_enter_depth_threshold(default_value: float) -> float:
-	return enter_depth_threshold if enter_depth_threshold > exit_depth_threshold else default_value
-
-
-func get_exit_depth_threshold(default_value: float) -> float:
-	return exit_depth_threshold if enter_depth_threshold > exit_depth_threshold else default_value
-
-
 func _update_editor_visuals() -> void:
 	if not Engine.is_editor_hint():
 		return

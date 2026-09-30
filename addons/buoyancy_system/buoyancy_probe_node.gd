@@ -62,14 +62,6 @@ func _notification(what: int) -> void:
 		_emit_probe_changed()
 
 
-func get_max_submerged_volume() -> float:
-	return max_submerged_volume_cubic_meters
-
-
-func get_buoyancy_height() -> float:
-	return buoyancy_height
-
-
 func _update_editor_visuals() -> void:
 	if not Engine.is_editor_hint():
 		return

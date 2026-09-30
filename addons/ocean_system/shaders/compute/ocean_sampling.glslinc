@@ -1,0 +1,105 @@
+/**
+ * Shared ocean displacement sampling for compute shaders. Matches the water
+ * material's vertex displacement so compute results agree with the visuals.
+ *
+ * Before `#include "ocean_sampling.glslinc"`, the including shader must:
+ *   - define OCEAN_SAMPLING_SET, OCEAN_CASCADE_BUFFER_BINDING,
+ *     OCEAN_CURRENT_DISPLACEMENT_BINDING and OCEAN_PREVIOUS_DISPLACEMENT_BINDING;
+ *   - declare `uint cascade_count`, `float wave_blend_alpha` and
+ *     `float water_level` (usually as push-constant members).
+ *
+ * Godot does not track include dependencies: after editing this file, reimport
+ * every .glsl that includes it (surface_query.glsl).
+ */
+
+#define OCEAN_MAX_CASCADES 8U
+#define OCEAN_DISPLACEMENT_INVERSION_ITERATIONS 3
+
+struct OceanCascade {
+	vec4 map_scales;  // [uv scale xy, displacement scale, normal scale]
+	vec4 blend_state; // [active layer, pending layer, active weight, pending weight]
+};
+
+layout(std430, set = OCEAN_SAMPLING_SET, binding = OCEAN_CASCADE_BUFFER_BINDING) restrict readonly buffer OceanCascadeBuffer {
+	OceanCascade ocean_cascades[];
+};
+
+layout(rgba16f, set = OCEAN_SAMPLING_SET, binding = OCEAN_CURRENT_DISPLACEMENT_BINDING) restrict readonly uniform image2DArray ocean_current_displacements;
+layout(rgba16f, set = OCEAN_SAMPLING_SET, binding = OCEAN_PREVIOUS_DISPLACEMENT_BINDING) restrict readonly uniform image2DArray ocean_previous_displacements;
+
+// Bilinear filtering with repeat wrapping and texel centers at (i + 0.5) / size,
+// the same convention as hardware filtering in the water material. Map sizes are
+// powers of two, so wrapping is a mask (GLSL % is undefined for negative values).
+vec3 ocean_load_current_bilinear(int layer, vec2 uv) {
+	ivec2 dims = imageSize(ocean_current_displacements).xy;
+	vec2 p = uv * vec2(dims) - 0.5;
+	ivec2 base = ivec2(floor(p));
+	vec2 f = p - vec2(base);
+	ivec2 p0 = base & (dims - 1);
+	ivec2 p1 = (p0 + 1) & (dims - 1);
+	vec3 c00 = imageLoad(ocean_current_displacements, ivec3(p0.x, p0.y, layer)).xyz;
+	vec3 c10 = imageLoad(ocean_current_displacements, ivec3(p1.x, p0.y, layer)).xyz;
+	vec3 c01 = imageLoad(ocean_current_displacements, ivec3(p0.x, p1.y, layer)).xyz;
+	vec3 c11 = imageLoad(ocean_current_displacements, ivec3(p1.x, p1.y, layer)).xyz;
+	return mix(mix(c00, c10, f.x), mix(c01, c11, f.x), f.y);
+}
+
+vec3 ocean_load_previous_bilinear(int layer, vec2 uv) {
+	ivec2 dims = imageSize(ocean_previous_displacements).xy;
+	vec2 p = uv * vec2(dims) - 0.5;
+	ivec2 base = ivec2(floor(p));
+	vec2 f = p - vec2(base);
+	ivec2 p0 = base & (dims - 1);
+	ivec2 p1 = (p0 + 1) & (dims - 1);
+	vec3 c00 = imageLoad(ocean_previous_displacements, ivec3(p0.x, p0.y, layer)).xyz;
+	vec3 c10 = imageLoad(ocean_previous_displacements, ivec3(p1.x, p0.y, layer)).xyz;
+	vec3 c01 = imageLoad(ocean_previous_displacements, ivec3(p0.x, p1.y, layer)).xyz;
+	vec3 c11 = imageLoad(ocean_previous_displacements, ivec3(p1.x, p1.y, layer)).xyz;
+	return mix(mix(c00, c10, f.x), mix(c01, c11, f.x), f.y);
+}
+
+// Summed cascade displacement at the undisplaced (source) position xz, for the
+// previous and current FFT outputs.
+void ocean_sample_displacements(vec2 xz, out vec3 previous, out vec3 current) {
+	previous = vec3(0.0);
+	current = vec3(0.0);
+	uint count = min(cascade_count, OCEAN_MAX_CASCADES);
+	for (uint i = 0U; i < count; ++i) {
+		OceanCascade cascade = ocean_cascades[i];
+		vec2 uv = xz * cascade.map_scales.xy;
+		int active_layer = int(cascade.blend_state.x + 0.5);
+		vec3 cascade_previous = ocean_load_previous_bilinear(active_layer, uv) * cascade.blend_state.z;
+		vec3 cascade_current = ocean_load_current_bilinear(active_layer, uv) * cascade.blend_state.z;
+		if (cascade.blend_state.w > 0.0) {
+			int pending_layer = int(cascade.blend_state.y + 0.5);
+			cascade_previous += ocean_load_previous_bilinear(pending_layer, uv) * cascade.blend_state.w;
+			cascade_current += ocean_load_current_bilinear(pending_layer, uv) * cascade.blend_state.w;
+		}
+		previous += cascade_previous * cascade.map_scales.z;
+		current += cascade_current * cascade.map_scales.z;
+	}
+}
+
+// Displacement as rendered this frame at source position xz.
+vec3 ocean_sample_visual_displacement(vec2 xz) {
+	vec3 previous;
+	vec3 current;
+	ocean_sample_displacements(xz, previous, current);
+	return mix(previous, current, wave_blend_alpha);
+}
+
+// The mesh moves the vertex that starts at x to x + D.xz(x). Returns the source
+// position x whose displaced vertex lands on world position p (fixed-point
+// iteration; converges quickly for non-overturning waves).
+vec2 ocean_invert_horizontal_displacement(vec2 p) {
+	vec2 x = p;
+	for (int i = 0; i < OCEAN_DISPLACEMENT_INVERSION_ITERATIONS; ++i) {
+		x = p - ocean_sample_visual_displacement(x).xz;
+	}
+	return x;
+}
+
+// World-space height of the rendered surface directly above/below p.
+float ocean_sample_surface_height(vec2 p) {
+	return water_level + ocean_sample_visual_displacement(ocean_invert_horizontal_displacement(p)).y;
+}

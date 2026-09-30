@@ -5,7 +5,7 @@ class_name WaveGenerator extends Node
 signal output_maps_swapped(current_displacement: RID, previous_displacement: RID, current_normal: RID, previous_normal: RID)
 
 const G := 9.81
-const SPECTRUM_SLOT_COUNT := 2
+const SPECTRUM_SLOT_COUNT := WaveCascadeParameters.SPECTRUM_SLOT_COUNT
 
 var map_size : int
 var context : RenderingContext
@@ -22,11 +22,10 @@ var write_output_index := 1
 # Generator state per invocation of `update()`.
 var pass_parameters : Array[WaveCascadeParameters]
 var pass_num_cascades_remaining : int
-var pass_external_wind_speed := 0.0
-var pass_use_external_wind := false
 var pending_update_delta := 0.0
 
 func init_gpu(num_cascades : int) -> void:
+	assert(context == null, "WaveGenerator.init_gpu() must only be called once.")
 	cascade_capacity = num_cascades
 	spectrum_layer_capacity = num_cascades * SPECTRUM_SLOT_COUNT
 	current_output_index = 0
@@ -35,7 +34,7 @@ func init_gpu(num_cascades : int) -> void:
 	pending_update_delta = 0.0
 
 	# --- DEVICE/SHADER CREATION ---
-	if not context: context = RenderingContext.create(RenderingServer.get_rendering_device())
+	context = RenderingContext.create(RenderingServer.get_rendering_device())
 	var spectrum_compute_shader := context.load_shader('res://addons/ocean_system/shaders/compute/spectrum_compute.glsl')
 	var fft_butterfly_shader := context.load_shader('res://addons/ocean_system/shaders/compute/fft_butterfly.glsl')
 	var spectrum_modulate_shader := context.load_shader('res://addons/ocean_system/shaders/compute/spectrum_modulate.glsl')
@@ -87,8 +86,8 @@ func init_gpu(num_cascades : int) -> void:
 	pipelines[&'fft_butterfly'].call(context, compute_list)
 	context.compute_list_end()
 
-func _process(delta: float) -> void:
-	# Update one cascade each frame for load balancing.
+func _process(_delta: float) -> void:
+	# Update one cascade each frame for load balancing; idle between passes.
 	if pass_num_cascades_remaining == 0: return
 	pass_num_cascades_remaining -= 1
 
@@ -100,21 +99,19 @@ func _process(delta: float) -> void:
 
 func _update(compute_list : int, cascade_index : int, parameters : Array[WaveCascadeParameters]) -> void:
 	var params := parameters[cascade_index]
-	var wind_speed := params.get_effective_wind_speed(pass_external_wind_speed, pass_use_external_wind)
-	_update_spectrum_slot(compute_list, cascade_index, params.active_spectrum_slot, params, wind_speed)
-	if params.is_blending_spectrum or params.is_spectrum_slot_dirty(params.pending_spectrum_slot):
-		_update_spectrum_slot(compute_list, cascade_index, params.pending_spectrum_slot, params, wind_speed)
+	for slot in params.get_slots_to_update():
+		_update_spectrum_slot(compute_list, cascade_index, slot, params)
 
-func _update_spectrum_slot(compute_list : int, cascade_index : int, slot : int, params : WaveCascadeParameters, wind_speed : float) -> void:
+func _update_spectrum_slot(compute_list : int, cascade_index : int, slot : int, params : WaveCascadeParameters) -> void:
 	var spectrum_layer := cascade_index * SPECTRUM_SLOT_COUNT + slot
-	var wind_direction := params.get_spectrum_direction_for_slot(slot)
+	var inputs := params.get_slot_inputs(slot)
 	## --- WAVE SPECTRA UPDATE ---
 	if params.is_spectrum_slot_dirty(slot):
-		var alpha := JONSWAP_alpha(wind_speed, params.fetch_length*1e3)
-		var omega := JONSWAP_peak_angular_frequency(wind_speed, params.fetch_length*1e3)
-		pipelines[&'spectrum_compute'].call(context, compute_list, RenderingContext.create_push_constant([params.spectrum_seed.x, params.spectrum_seed.y, params.tile_length.x, params.tile_length.y, alpha, omega, wind_speed, deg_to_rad(wind_direction), params.water_depth_meters, params.swell, params.detail, params.spread, spectrum_layer]))
+		var alpha := JONSWAP_alpha(inputs.wind_speed, inputs.fetch_length*1e3)
+		var omega := JONSWAP_peak_angular_frequency(inputs.wind_speed, inputs.fetch_length*1e3)
+		pipelines[&'spectrum_compute'].call(context, compute_list, RenderingContext.create_push_constant([params.spectrum_seed.x, params.spectrum_seed.y, params.tile_length.x, params.tile_length.y, alpha, omega, inputs.wind_speed, deg_to_rad(inputs.wind_direction), inputs.water_depth_meters, inputs.swell, inputs.detail, inputs.spread, spectrum_layer]))
 		params.mark_spectrum_slot_clean(slot)
-	pipelines[&'spectrum_modulate'].call(context, compute_list, RenderingContext.create_push_constant([params.tile_length.x, params.tile_length.y, params.water_depth_meters, params.time, spectrum_layer]))
+	pipelines[&'spectrum_modulate'].call(context, compute_list, RenderingContext.create_push_constant([params.tile_length.x, params.tile_length.y, inputs.water_depth_meters, params.time, spectrum_layer]))
 
 	## --- WAVE SPECTRA INVERSE FOURIER TRANSFORM ---
 	var fft_push_constant := RenderingContext.create_push_constant([spectrum_layer])
@@ -131,32 +128,21 @@ func _update_spectrum_slot(compute_list : int, cascade_index : int, slot : int, 
 ## Begins updating wave cascades based on the provided parameters. To balance stutter,
 ## the generator schedules one cascade update per frame. If the previous pass is still
 ## running, the elapsed time is accumulated and used by the next accepted pass.
-func update(delta : float, parameters : Array[WaveCascadeParameters], external_wind_speed := 0.0, external_wind_direction := 0.0, use_external_wind := false) -> bool:
-	assert(parameters.size() != 0)
-	if not context:
-		init_gpu(maxi(2, len(parameters)))
-	elif pass_num_cascades_remaining != 0:
+func update(delta : float, parameters : Array[WaveCascadeParameters], external_wind_speed : float, external_wind_direction : float, use_external_wind : bool) -> bool:
+	assert(context != null, "WaveGenerator.update() called before init_gpu().")
+	assert(parameters.size() <= cascade_capacity, "More cascades than the generator was initialized for.")
+	if pass_num_cascades_remaining != 0:
 		pending_update_delta += delta
 		return false
 
 	delta += pending_update_delta
 	pending_update_delta = 0.0
 
-	var pass_cascade_count := mini(len(parameters), cascade_capacity)
-
-	# Update each cascade's parameters that rely on time delta
-	for i in pass_cascade_count:
-		var params := parameters[i]
-		params.time += delta
-		params.advance_direction_state(delta, external_wind_direction, use_external_wind)
-		# Note: The constants are used to normalize parameters between 0 and 10.
-		params.foam_grow_rate = delta * params.foam_amount*7.5
-		params.foam_decay_rate = delta * maxf(0.5, 10.0 - params.foam_amount)*1.15
+	for params in parameters:
+		params.advance(delta, external_wind_speed, external_wind_direction, use_external_wind)
 
 	pass_parameters = parameters
-	pass_external_wind_speed = external_wind_speed
-	pass_use_external_wind = use_external_wind
-	pass_num_cascades_remaining = pass_cascade_count
+	pass_num_cascades_remaining = parameters.size()
 	return true
 
 func _complete_output_pass() -> void:
@@ -178,8 +164,8 @@ func _sync_output_descriptors() -> void:
 	descriptors[&'previous_normal_map'] = output_descriptors[write_output_index][&'normal_map']
 
 func _notification(what):
-	if what == NOTIFICATION_PREDELETE:
-		if context: context.free()
+	if what == NOTIFICATION_PREDELETE and context != null:
+		context.free()
 
 # Source: https://wikiwaves.org/Ocean-Wave_Spectra#JONSWAP_Spectrum
 static func JONSWAP_alpha(wind_speed:=20.0, fetch_length:=550e3) -> float:

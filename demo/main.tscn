@@ -158,9 +158,11 @@ script = ExtResource("14_compass")
 [node name="FloatingBox" parent="." unique_id=1766651400 instance=ExtResource("13_floating_box")]
 transform = Transform3D(0.69116926, 0, -0.72269297, 0, 1, 0, 0.72269297, 0, 0.69116926, 0, 0, 0)
 player_controlled = true
+debug_enabled = true
 
 [node name="Buoy" parent="." unique_id=2077650632 instance=ExtResource("13_fdg1k")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 146.46655, 2.0000153, -97.32648)
 
 [node name="FloatingBox2" parent="." unique_id=1779372444 instance=ExtResource("13_floating_box")]
 transform = Transform3D(0.63730067, 0, -0.7706152, 0, 1, 0, 0.7706152, 0, 0.63730067, -13.774445, 0, -15.14146)
+debug_enabled = true
