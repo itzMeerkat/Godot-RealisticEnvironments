@@ -438,16 +438,12 @@ const WATER_DEBUG_VIEW_NORMAL := 0
 	set(value):
 		interaction_gravity_scale = value
 		_apply_interaction_settings()
-## Fixed simulation steps per second.
-@export_range(15.0, 240.0, 1.0) var interaction_step_rate := 60.0 :
+## Viscosity of simulated waves, in m^2/s. Damps short waves far more than long
+## ones (rate ~ viscosity * k^2), smoothing grid-scale ripples while leaving
+## wakes intact. Above ~3 at 60 physics ticks per second the step is unstable.
+@export_range(0.0, 1.0, 0.005, "or_greater") var interaction_viscosity := 0.1 :
 	set(value):
-		interaction_step_rate = value
-		_apply_interaction_settings()
-## Steps allowed in one frame. Time beyond that is dropped (the simulation slows
-## down instead of stalling the frame further).
-@export_range(1, 16, 1) var interaction_max_steps_per_frame := 4 :
-	set(value):
-		interaction_max_steps_per_frame = value
+		interaction_viscosity = value
 		_apply_interaction_settings()
 ## Width, in cells, of the absorbing border at the window edge. Waves fade out
 ## there instead of wrapping around; rendering fades over the band inside it.
@@ -475,11 +471,11 @@ const WATER_DEBUG_VIEW_NORMAL := 0
 	set(value):
 		interaction_foam_slope_threshold = value
 		_apply_interaction_settings()
-## Foam from water being pushed by an advancing hull (bow foam), per m/s of
-## rising pressure head.
-@export_range(0.0, 10.0, 0.01, "or_greater") var interaction_foam_pressure_rate := 0.6 :
+## Bow foam: foam source per meter of bow-wave rise just outside advancing
+## hulls (see HullWaterFootprint.bow_wave_strength).
+@export_range(0.0, 20.0, 0.01, "or_greater") var interaction_foam_bow_rate := 0.5 :
 	set(value):
-		interaction_foam_pressure_rate = value
+		interaction_foam_bow_rate = value
 		_apply_interaction_settings()
 
 @export_group('External Wind')
@@ -720,8 +716,12 @@ func _process(delta : float) -> void:
 		_update_water(update_delta)
 	time += delta
 	_update_wave_blend_alpha()
-	_advance_interaction(delta)
 	_dispatch_surface_queries()
+
+## The interaction simulation steps with physics: one step per tick sees exactly
+## one new pose of every hull, so hull motion reaches it without stutter.
+func _physics_process(delta : float) -> void:
+	_step_interaction(delta)
 
 ## Pushes every shader parameter this node owns into the current water material.
 func _push_all_shader_parameters() -> void:
@@ -865,11 +865,6 @@ func add_water_impulse(position: Vector3, radius: float, amplitude: float) -> vo
 	assert(_interaction != null, "add_water_impulse() needs interaction_enabled and only works at runtime.")
 	_interaction.add_impulse(position, radius, amplitude)
 
-## Simulated seconds the interaction simulation skipped because frames needed
-## more than interaction_max_steps_per_frame steps.
-func get_interaction_dropped_time() -> float:
-	return _interaction.dropped_time if _interaction != null else 0.0
-
 func _setup_interaction() -> void:
 	if _interaction != null:
 		_interaction_texture.texture_rd_rid = RID()
@@ -889,15 +884,14 @@ func _apply_interaction_settings() -> void:
 	if _interaction == null:
 		return
 	_interaction.damping = interaction_damping
+	_interaction.viscosity = interaction_viscosity
 	_interaction.gravity_scale = interaction_gravity_scale
-	_interaction.step_rate = interaction_step_rate
-	_interaction.max_steps_per_frame = interaction_max_steps_per_frame
 	_interaction.sponge_cells = interaction_sponge_cells
 	_interaction.sponge_damping = interaction_sponge_damping
 	_interaction.foam_grow = interaction_foam_grow
 	_interaction.foam_decay = interaction_foam_decay
 	_interaction.foam_slope_threshold = interaction_foam_slope_threshold
-	_interaction.foam_pressure_rate = interaction_foam_pressure_rate
+	_interaction.foam_bow_rate = interaction_foam_bow_rate
 	_set_water_shader_parameter(&'interaction_window', _get_interaction_window())
 
 func _push_interaction_shader_parameters() -> void:
@@ -918,7 +912,7 @@ func _get_interaction_window() -> Vector4:
 	var sponge_width := interaction_sponge_cells * interaction_cell_size
 	return Vector4(center.x, center.y, half_extent - 2.0 * sponge_width, half_extent - sponge_width)
 
-func _advance_interaction(delta : float) -> void:
+func _step_interaction(delta : float) -> void:
 	# Disabled, or nothing to sample the incident waves from before the first FFT output.
 	if _interaction == null or not _has_wave_output:
 		return
@@ -928,7 +922,7 @@ func _advance_interaction(delta : float) -> void:
 		return
 	var hull_data := _pack_interaction_hulls(camera.global_position)
 	var hull_profiles_rd := RenderingServer.texture_get_rd_texture(_hull_profiles.get_rid()) if _hull_profiles != null else RID()
-	_interaction.advance(
+	_interaction.step(
 		delta,
 		camera.global_position,
 		hull_data,
@@ -964,12 +958,16 @@ func _pack_interaction_hulls(camera_position : Vector3) -> PackedFloat32Array:
 		var footprint : HullWaterFootprint = candidates[i]["footprint"]
 		var sphere : Vector4 = candidates[i]["sphere"]
 		var profile := footprint.profile
+		var center := Vector3(sphere.x, sphere.y, sphere.z)
+		var center_velocity := footprint.get_point_velocity(center)
 		for row in _get_world_to_local_rows(footprint):
 			_append_vector4(data, row)
-		_append_vector4(data, Vector4(sphere.x, sphere.z, sphere.w, 0.0))
+		_append_vector4(data, Vector4(sphere.x, sphere.z, sphere.w, sphere.y))
 		_append_vector4(data, Vector4(profile.min_z, profile.min_y, 1.0 / (profile.max_z - profile.min_z), 1.0 / (profile.max_y - profile.min_y)))
 		_append_vector4(data, Vector4(float(_hull_profile_ids.find(profile.get_instance_id())), profile.center_x, 1.0 / profile.max_half_width, 0.0))
-		_append_vector4(data, Vector4(footprint.wake_strength, footprint.wake_edge_softness, 0.0, 0.0))
+		_append_vector4(data, Vector4(footprint.wake_strength, footprint.wake_edge_softness, footprint.bow_wave_strength, footprint.bow_wave_max_rise))
+		_append_vector4(data, Vector4(center_velocity.x, center_velocity.y, center_velocity.z, 0.0))
+		_append_vector4(data, Vector4(footprint.angular_velocity.x, footprint.angular_velocity.y, footprint.angular_velocity.z, 0.0))
 	return data
 
 ## Rows of the footprint's world-to-local affine transform: xyz = basis row, w = origin.
@@ -1034,6 +1032,10 @@ func _update_sky_lighting_shader_parameters() -> void:
 	_set_water_shader_parameter(&'sky_ground_horizon_color', _get_sky_color(&'get_sky_ground_horizon_color', &'sky_ground_horizon_color', manual_sky_horizon_color.darkened(0.25)))
 	_set_water_shader_parameter(&'sky_ground_bottom_color', _get_sky_color(&'get_sky_ground_bottom_color', &'sky_ground_bottom_color', manual_sky_top_color.darkened(0.55)))
 	_set_water_shader_parameter(&'sky_sun_visibility', _get_sky_float(&'get_sun_visibility', &'sun_visibility', manual_sun_visibility))
+	# Optional: a sky source without clouds simply lacks the method.
+	var cloud_cubemap : Texture = sky_source.call(&'get_cloud_cubemap') if sky_source != null and sky_source.has_method(&'get_cloud_cubemap') else null
+	_set_water_shader_parameter(&'sky_clouds_enabled', cloud_cubemap != null)
+	_set_water_shader_parameter(&'sky_cloud_cubemap', cloud_cubemap)
 
 # The sky source is duck-typed and may provide only some values; missing ones
 # fall back to the manual_* exports.
@@ -1286,12 +1288,14 @@ func _update_hull_cutouts() -> void:
 	var spheres := PackedVector4Array()
 	var rects := PackedVector4Array()
 	var params := PackedVector4Array()
+	var top_offsets := PackedFloat32Array()
 	rows_x.resize(MAX_NEAR_HULLS)
 	rows_y.resize(MAX_NEAR_HULLS)
 	rows_z.resize(MAX_NEAR_HULLS)
 	spheres.resize(MAX_NEAR_HULLS)
 	rects.resize(MAX_NEAR_HULLS)
 	params.resize(MAX_NEAR_HULLS)
+	top_offsets.resize(MAX_NEAR_HULLS)
 	for i in count:
 		var footprint : HullWaterFootprint = near[i]["footprint"]
 		var sphere : Vector4 = near[i]["sphere"]
@@ -1305,6 +1309,7 @@ func _update_hull_cutouts() -> void:
 		spheres[i] = Vector4(sphere.x, sphere.y, sphere.z, (sphere.w + feather) * (sphere.w + feather))
 		rects[i] = Vector4(profile.min_z, profile.min_y, 1.0 / (profile.max_z - profile.min_z), 1.0 / (profile.max_y - profile.min_y))
 		params[i] = Vector4(float(_hull_profile_ids.find(profile.get_instance_id())), profile.center_x, feather, footprint.cutout_edge_foam)
+		top_offsets[i] = footprint.cutout_height_offset / (profile.max_y - profile.min_y)
 	_set_water_shader_parameter(&'near_hull_count', count)
 	_set_water_shader_parameter(&'near_hull_world_to_local_x', rows_x)
 	_set_water_shader_parameter(&'near_hull_world_to_local_y', rows_y)
@@ -1312,6 +1317,7 @@ func _update_hull_cutouts() -> void:
 	_set_water_shader_parameter(&'near_hull_spheres', spheres)
 	_set_water_shader_parameter(&'near_hull_rects', rects)
 	_set_water_shader_parameter(&'near_hull_params', params)
+	_set_water_shader_parameter(&'near_hull_top_offsets', top_offsets)
 
 
 ## Keeps one texture-array layer per distinct HullProfile in use. Rebuilt only

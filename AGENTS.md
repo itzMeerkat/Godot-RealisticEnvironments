@@ -28,14 +28,18 @@ before touching its code; this file only records what is easy to get wrong.
 - Keep `res://` paths and `uid://` values intact when hand-editing `.tscn` /
   `.tres`. Every script has a committed `.gd.uid` sidecar; move/rename it with
   the script, and commit the new one when adding a script.
-- `demo/floating_box.tscn` inherits `addons/floating_boat_template/floating_boat.tscn`
-  and overrides nodes by path (e.g. `BuoyancyProbeVolume/GeneratedProbes/Probe_000`,
-  cannons under the imported `Sketchfab_Scene`). Renaming template nodes breaks
-  those overrides and the NodePaths in `BuoyantSinkingMonitor`,
-  `ProjectileFireInputController` and `ProjectileAimController`.
+- `demo/rowboat.tscn` (player boat) and `demo/floating_box.tscn` (caravel)
+  inherit `addons/floating_boat_template/floating_boat.tscn` and override its
+  nodes by path (`BuoyantBody`, `BuoyancyProbeVolume/GeneratedProbes`,
+  `Hitboxes`, `Weapons`, `HullWaterFootprint`, `CameraTargets/*`), with
+  `index` attributes matching the template's child order. Renaming or
+  reordering template nodes breaks those overrides, `BuoyantBody.sinking_probe_paths`
+  and `demo/main.gd` (`BuoyantBody`, `CameraTargets/*`).
 - Buoyancy probes are generated **in the editor** and saved into the scene.
   Runtime generation is refused on purpose; a volume with no saved probes only
-  warns.
+  warns. The template has no probes; each boat generates its own.
+- Debug helpers (probe debug draw, position trail, aim marker, health panel)
+  are internal child nodes created at runtime. Never save them into a scene.
 
 ## Addon boundaries
 - `ocean_system`, `sky_system`, `wind_system`, `hitbox_damage_system` and
@@ -44,7 +48,7 @@ before touching its code; this file only records what is easy to get wrong.
 - `buoyancy_system` depends only on `ocean_system` (`OceanSystem`,
   `WaterSurfaceSample`). Damage-driven sinking is wired by connecting
   `HitboxHealthManager.group_destroyed` to
-  `BuoyantSinkingMonitor._on_hitbox_group_destroyed` in the scene — do not add
+  `BuoyantBody._on_hitbox_group_destroyed` in the scene — do not add
   hitbox/projectile imports to buoyancy code.
 - `floating_boat_template` is the only place allowed to compose all systems.
 - Cross-system contracts (change both sides together):
@@ -55,19 +59,29 @@ before touching its code; this file only records what is easy to get wrong.
     same names as properties; missing values fall back to `manual_*` exports.
     A source with a `lighting_changed` signal is read only when it fires, so it
     must emit it after every lighting change; one without it is read every
-    frame.
+    frame. Optional `get_cloud_cubemap()` returns a cubemap (rgb premultiplied
+    cloud radiance, a opacity; `null` = no clouds) that the water composites
+    into its sky reflection as `sky * (1 - a) + rgb`.
   - Hull cutouts: `HullWaterFootprint` nodes (group `ocean_hull`) with a baked
     `HullProfile`. Profiles are editor-baked and saved as `.tres`; never
     hand-edit their image. At most 8 hulls near the camera are cut out.
     The same profile drives wakes: up to 32 footprints with `wake_enabled`
-    inside the interaction window push water in the iWave simulation.
+    inside the interaction window push water in the iWave simulation. A
+    footprint tracks its own velocity and angular velocity from its transform
+    (physics ticks) for the bow wave; its SimHull record is 36 floats
+    (`WaterInteractionSim.FLOATS_PER_HULL`, `iwave_pressure.glsl`), change both
+    together.
   - Splashes: `OceanSystem.add_water_impulse(position, radius, amplitude)`
     (runtime only, at most 64 per simulation step).
-  - Recoil receivers: `apply_recoil(fire_direction, shot_data)`.
+  - Recoil receivers: `apply_recoil(fire_direction, shot_data)`, called by a
+    launcher for each of its `recoil_receiver_paths` (e.g. `CannonSlideRecoil`).
+    Body recoil is applied by `ProjectileWeaponController` from the launchers'
+    `fired` signal.
   - Projectiles are recognised by group `projectile` or a `launch()` method and
     carry `source_rigid_body_instance_id` metadata for own-shot filtering.
-  - `FloatingDebugBody.player_controlled` toggles `enabled` on descendants in
-    group `boat_controller`.
+  - `FloatingBoat.player_controlled` gates the boat's drive input;
+    `ProjectileWeaponController` aims and fires only while the nearest ancestor
+    with `player_controlled` has it set (duck-typed, `controlled_property`).
 - Direction convention everywhere: degrees, 0 = +Z, 90 = +X. The FFT works in a
   rotated frame; only `WaveCascadeParameters._world_wind_direction_to_spectrum_direction`
   converts between them.
@@ -110,13 +124,42 @@ before touching its code; this file only records what is easy to get wrong.
 - The interaction simulation (`WaterInteractionSim`) runs at runtime only, on
   its own `RenderingContext` on the main `RenderingDevice`. It simulates
   `η = h + p` (wave deviation from the hull-conforming rest state), not the raw
-  height `h`. Its render texture is `(h, η, foam)`: the water shader adds `h`
-  and foam, surface queries add `η` so a hull does not sink into its own
-  depression. Its operator is an exact FFT of `g·|k|`; `interaction_grid_size`
-  must stay a power of two (the FFT pass holds one 1024-wide line in shared
-  memory).
+  height `h`. Its render texture is `(h, η, foam, hull coverage)`: the water
+  shader adds `h` and foam; surface queries add `η · (1 − coverage)`. Never
+  feed a hull's own `η` back into its buoyancy: with the readback delay it
+  makes boats oscillate by themselves on still water. It steps once per
+  physics tick (`OceanSystem._physics_process`). Its operator is an exact FFT
+  of `g·|k|`; `interaction_grid_size` must stay a power of two (the FFT pass
+  holds one 1024-wide line in shared memory).
+- `HullProfile` images are RGB16F (half-width, keel, station top). Changing the
+  channels means re-baking every profile: all layers of the profile texture
+  array must share one format.
 - Planar reflections force the water mesh onto render layer 20
   (`reflection_water_layer`); keep that layer reserved for water.
+
+## Sky and cloud invariants
+- Clouds are rendered by `CloudRenderer` (owned by `SkySystem`, editor and
+  runtime) into the upper half of a cubemap around the camera. Its consumers
+  (sky shader, starfield, water) all composite `sky * (1 - a) + rgb`; change
+  the encoding in all of them together.
+- The sky and starfield cloud uniforms (`clouds_enabled`, `cloud_cubemap`)
+  are set only through `RenderingServer.material_set_param`, never
+  `set_shader_parameter`, so the runtime texture is never saved into
+  `materials/*.tres`. `SkySystem` re-sends them once per full cloud refresh,
+  which is also what re-renders the sky radiance map.
+- The cloud weather map (r coverage, g type, b density) is written only by
+  `cloud_weather.glsl` and only read by `cloud_raymarch.glsl`. Cloud motion
+  and evolution belong in the producer; keep the raymarcher a pure reader.
+- The baked noise is stretched to a uniform 0–1 range with percentile
+  constants in `cloud_noise_bake.glsl`; recompute them when the noise changes,
+  or coverage stops meaning "share of sky covered".
+- `CloudPreset` fields must interpolate and be listed in
+  `CloudPreset.BLENDED_PROPERTIES`.
+- `CloudRenderer` push constants and its Params buffer follow the same exact
+  packing rule as the ocean's; edit GLSL and GDScript packing together.
+- Clouds assume the camera is below the cloud base (`CloudRenderer` clamps
+  its altitude). After editing `cloud_noise.glslinc` reimport
+  `cloud_noise_bake.glsl` and `cloud_weather.glsl`.
 
 ## Physics layers
 - Layer 2 `Projectile`, layer 3 `Hitbox` (bit values 2 and 4). Launchers put
@@ -125,9 +168,11 @@ before touching its code; this file only records what is easy to get wrong.
 
 ## Known quirks (don't "fix" silently)
 - `Projectile` treats a flat `waterline_y` plane as the sea surface, and
-  `ProjectileAimController` aims at a flat `aim_plane_y` plane; neither uses
+  `ProjectileWeaponController` aims at a flat `aim_plane_y` plane; neither uses
   wave height.
 - In the input map, F is both `toggle_fullscreen` and `camera_move_down`, and C
   is both `cycle_camera_mode` and `toggle_camera_follow`.
-- Unused but kept: `demo/player/camera.gd`, `systems/input/demo_input_actions.gd`,
-  `demo/assets/low_poly_boat/`.
+- Unused but kept: `demo/player/camera.gd`, `systems/input/demo_input_actions.gd`.
+- The rowboat's physical probes were raised by hand after generation (column
+  top at y = 0.4, 0.85 m tall) to give reserve buoyancy up to the gunwale;
+  regenerating them puts them back at `design_waterline_y`.

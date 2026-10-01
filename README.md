@@ -28,7 +28,7 @@ shading without the ships.
 | --- | --- |
 | W / S | Ship throttle forward / reverse |
 | A / D | Ship turn left / right |
-| Space | Fire all four cannons at the aim marker (0.5 s cooldown) |
+| Space | Fire the boat's guns at the aim marker (0.5 s cooldown) |
 | Right mouse (hold) | Mouse look; the aim marker follows the screen center |
 | C | Cycle camera: third person → first person → free look |
 | Free look: W/A/S/D, R / F, Shift, mouse wheel | Fly, up / down, boost, change fly speed |
@@ -36,8 +36,8 @@ shading without the ships.
 | F | Toggle fullscreen (also "down" in free look) |
 | Esc | Leave fullscreen, release the mouse |
 
-The scene contains the player caravel (`FloatingBox`), a second caravel
-(`FloatingBox2`) you can shoot and sink, a buoy that shows its distance to the
+The scene contains the player's rowboat (`Rowboat`, one bow swivel gun), a
+caravel (`Caravel`) you can shoot and sink, a buoy that shows its distance to the
 player, a compass HUD (ship heading + wind), and a hidden debug panel exposing
 most ocean, sky, wind, buoyancy and cascade parameters live.
 
@@ -47,7 +47,7 @@ most ocean, sky, wind, buoyancy and cascade parameters live.
 project.godot            Godot manifest (main scene, input map, physics layer names)
 addons/                  Reusable systems, each self-contained with its own README
   ocean_system/          FFT ocean: compute pipeline, water shader, mesh, reflections, queries
-  sky_system/            Day/night sky, sun + moon lights, starfield, astronomy
+  sky_system/            Day/night sky, sun + moon lights, starfield, astronomy, volumetric clouds
   wind_system/           Wind provider node with procedural gusts
   buoyancy_system/       Probe-based buoyancy, probe generation, sinking monitor
   hitbox_damage_system/  Projectile hitboxes, grouped health, hit effects
@@ -64,20 +64,18 @@ holds the working rules for anyone (human or agent) changing the code.
 ## How the pieces fit
 
 ```
-WindSystem ──wind speed/dir──▶ OceanSystem ◀──sun/sky colors── SkySystem
+WindSystem ──wind speed/dir──▶ OceanSystem ◀──sun/sky colors, clouds── SkySystem ◀── wind (cloud drift)
                                    │  compute: spectrum → FFT → displacement/normal maps
                                    │  shader:  displacement, foam, reflections, cutouts
                                    │  iWave:   wakes and foam from HullWaterFootprint
                                    ▼
         submit_surface_query / get_surface_query_result   (GPU point query, async readback)
                                    ▼
-                            BuoyantBody ── forces ──▶ RigidBody3D (FloatingBoat)
-                                   │ probe wet/dry states
-                          ┌────────┴─────────┐
-               BuoyantSinkingMonitor   (your gameplay)
-                          ▲
-                          │ group_destroyed
- ProjectileLauncher ──projectile──▶ ProjectileHitbox ──▶ HitboxHealthManager
+                     BuoyantBody (buoyancy + sinking) ── forces ──▶ RigidBody3D (FloatingBoat)
+                                   ▲            │ probe wet/dry states → your gameplay
+                                   │ group_destroyed
+ ProjectileWeaponController        │
+   └─ ProjectileLauncher ──projectile──▶ ProjectileHitbox ──▶ HitboxHealthManager
 ```
 
 Systems talk through duck-typed methods, node groups and signals rather than

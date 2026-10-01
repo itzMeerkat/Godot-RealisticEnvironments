@@ -2,13 +2,15 @@ class_name OceanDebugPanel
 extends CanvasLayer
 
 const RESOLUTIONS := [128, 256, 512, 1024]
+const CLOUD_PRESET_DIR := "res://addons/sky_system/cloud_presets/"
+const CLOUD_PRESET_NAMES : Array[String] = ["clear", "fair", "cloudy", "overcast", "rain", "storm"]
 const PANEL_SIZE := Vector2(420, 560)
 
 var water : OceanSystem
 var wind_source : Node
 var sky_system : Node
 var buoyant_body : BuoyantBody
-var player_body : FloatingDebugBody
+var player_body : FloatingBoat
 
 var _panel : PanelContainer
 var _fps_label : Label
@@ -26,7 +28,7 @@ func setup(
 	active_wind_source : Node = null,
 	active_sky_system : Node = null,
 	active_buoyant_body : BuoyantBody = null,
-	active_player_body : FloatingDebugBody = null
+	active_player_body : FloatingBoat = null
 ) -> void:
 	water = ocean_system
 	wind_source = active_wind_source if active_wind_source != null else water.get_wind_source()
@@ -594,6 +596,29 @@ func _add_sky_controls(parent : VBoxContainer) -> void:
 			sky_system.star_brightness = value
 	)
 
+	var clouds_enabled := _add_check_row(parent, "Clouds", "Renders volumetric clouds.")
+	clouds_enabled.name = "SkyCloudsEnabled"
+	clouds_enabled.toggled.connect(func(is_pressed : bool) -> void:
+		if not _is_syncing and sky_system:
+			sky_system.clouds_enabled = is_pressed
+	)
+
+	var cloud_preset := _add_option_row(parent, "Cloud Weather", "Cloud preset; blends in over Cloud Transition seconds.")
+	cloud_preset.name = "SkyCloudPreset"
+	for i in CLOUD_PRESET_NAMES.size():
+		cloud_preset.add_item(CLOUD_PRESET_NAMES[i].capitalize(), i)
+	cloud_preset.item_selected.connect(func(index : int) -> void:
+		if not _is_syncing and sky_system:
+			sky_system.cloud_preset = load(CLOUD_PRESET_DIR + CLOUD_PRESET_NAMES[cloud_preset.get_item_id(index)] + ".tres")
+	)
+
+	var cloud_transition := _add_float_row(parent, "Cloud Transition", "Seconds a new cloud preset takes to blend in.", 0.0, 600.0, 0.5, true)
+	cloud_transition.name = "SkyCloudTransition"
+	cloud_transition.value_changed.connect(func(value : float) -> void:
+		if not _is_syncing and sky_system:
+			sky_system.cloud_transition_seconds = value
+	)
+
 
 func _add_cascade_tabs(parent : VBoxContainer) -> void:
 	var tabs := TabContainer.new()
@@ -708,6 +733,10 @@ func _populate_values() -> void:
 		_set_named_spin("SkySunEnergy", sky_system.sun_energy_multiplier)
 		_set_named_spin("SkyMoonEnergy", sky_system.moon_energy_multiplier)
 		_set_named_spin("SkyStarBrightness", sky_system.star_brightness)
+		_set_named_check("SkyCloudsEnabled", sky_system.clouds_enabled)
+		_set_named_spin("SkyCloudTransition", sky_system.cloud_transition_seconds)
+		if sky_system.cloud_preset:
+			_set_named_option("SkyCloudPreset", CLOUD_PRESET_NAMES.find(sky_system.cloud_preset.resource_path.get_file().get_basename()))
 	if player_body:
 		_set_named_check("PlayerPositionHistory", player_body.debug_enabled)
 	_is_syncing = false

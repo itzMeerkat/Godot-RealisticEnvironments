@@ -29,6 +29,10 @@ uniform vec4 sky_ground_bottom_color : source_color = vec4(0.01, 0.02, 0.03, 1.0
 uniform vec3 sky_sun_direction = vec3(0.0, 0.2, -1.0);
 uniform vec4 sky_sun_color : source_color = vec4(1.0, 0.92, 0.72, 1.0);
 uniform float sky_sun_visibility : hint_range(0.0, 1.0) = 1.0;
+// Clouds from the sky source (SkySystem.get_cloud_cubemap()): rgb premultiplied
+// radiance, a opacity. Set at runtime by OceanSystem.
+uniform bool sky_clouds_enabled = false;
+uniform samplerCube sky_cloud_cubemap : filter_linear;
 uniform bool sky_reflection_enabled = true;
 uniform float sky_reflection_strength : hint_range(0.0, 2.0) = 0.55;
 uniform float sky_reflection_fresnel_power : hint_range(0.25, 8.0) = 5.0;
@@ -84,7 +88,8 @@ uniform vec4 near_hull_world_to_local_z[MAX_NEAR_HULLS];
 uniform vec4 near_hull_spheres[MAX_NEAR_HULLS]; // world center xyz, (radius + feather)^2
 uniform vec4 near_hull_rects[MAX_NEAR_HULLS];   // profile min z, min y, 1 / length, 1 / height
 uniform vec4 near_hull_params[MAX_NEAR_HULLS];  // profile layer, center x, feather (m), edge foam
-uniform sampler2DArray hull_profiles : filter_linear, repeat_disable; // R = inner half-width over (z, y)
+uniform float near_hull_top_offsets[MAX_NEAR_HULLS]; // cutout reach above the station top, in profile heights
+uniform sampler2DArray hull_profiles : filter_linear, repeat_disable; // R = inner half-width over (z, y), B = station top
 
 // Interaction simulation (WaterInteractionSim): rgba16f h, eta, foam, wrap-around addressed.
 uniform bool interaction_enabled = false;
@@ -241,7 +246,12 @@ vec3 sample_procedural_environment(vec3 direction) {
 	vec3 lower_sky = mix(sky_ground_horizon_color.rgb, sky_ground_bottom_color.rgb, lower_blend);
 
 	float horizon_blend = smoothstep(-0.035, 0.055, direction.y);
-	return mix(lower_sky, upper_sky, horizon_blend);
+	vec3 sky = mix(lower_sky, upper_sky, horizon_blend);
+	if (sky_clouds_enabled) {
+		vec4 cloud = texture(sky_cloud_cubemap, direction);
+		sky = sky * (1.0 - cloud.a) + cloud.rgb;
+	}
+	return sky;
 }
 
 vec3 sample_rough_procedural_environment(vec3 direction, float roughness) {
@@ -282,11 +292,16 @@ void fragment() {
 		vec4 world_position = vec4(water_world_position, 1.0);
 		vec3 local = vec3(dot(near_hull_world_to_local_x[i], world_position), dot(near_hull_world_to_local_y[i], world_position), dot(near_hull_world_to_local_z[i], world_position));
 		vec2 profile_uv = (local.zy - near_hull_rects[i].xy) * near_hull_rects[i].zw;
-		if (any(lessThan(profile_uv, vec2(0.0))) || any(greaterThan(profile_uv, vec2(1.0))))
-			continue; // Beyond the bow/stern, above the hull or below the keel.
+		if (profile_uv.x < 0.0 || profile_uv.x > 1.0 || profile_uv.y < 0.0)
+			continue; // Beyond the bow/stern or below the keel.
 		vec4 params = near_hull_params[i];
-		// Explicit LOD: this lookup sits in divergent control flow, where implicit derivatives are undefined.
-		float half_width = textureLod(hull_profiles, vec3(profile_uv, params.x), 0.0).r;
+		// Explicit LOD: these lookups sit in divergent control flow, where implicit derivatives are undefined.
+		// Above this station's top (plus the offset) there is no hull; up to there,
+		// heights above the top use the width at the top.
+		float station_top = textureLod(hull_profiles, vec3(profile_uv.x, 0.5, params.x), 0.0).b;
+		if (profile_uv.y > station_top + 0.5 / float(textureSize(hull_profiles, 0).y) + near_hull_top_offsets[i])
+			continue;
+		float half_width = textureLod(hull_profiles, vec3(profile_uv.x, min(profile_uv.y, station_top), params.x), 0.0).r;
 		float hull_sdf = abs(local.x - params.y) - half_width; // < 0 inside the hull
 		if (hull_sdf < 0.0) {
 			discard;

@@ -618,6 +618,31 @@ wake-enabled footprint now makes foam, not only the player's.
 - The gravity setting is read once in `_ready`; forward/right axes once per
   tick instead of per probe.
 
+## Follow-up fixes (2026-09-30)
+
+- **Self-excited heave.** On still water, boats oscillated with growing
+  amplitude with interaction on (rowboat heave range 0.14 → 0.48 m in 30 s) and
+  settled with it off. Cause: surface queries added `η` under the querying
+  hull, i.e. its own radiated water, which returns a few frames late through
+  the async readback and acts as a lagging spring (negative damping). The
+  pressure pass now writes hull coverage (1 inside the waterline and one
+  `wake_edge_softness` beyond it, since generated probes sit on the waterline
+  edge; fading out by two), the step shader stores it in render `.w`, and
+  queries weight `η` by `1 − coverage`. Both demo boats now settle as with
+  interaction off. Hulls no longer feel other hulls' wakes under them; bodies
+  without a footprint still feel wakes and splashes.
+- **Spiky wakes.** Three sources of grid-scale forcing noise: the pressure had a
+  hard cut at the bow and stern ends (transoms), now tapered over
+  `wake_edge_softness`; the simulation stepped at a fixed rate from `_process`,
+  so steps saw hull poses in a stutter of zero or two physics ticks, now one
+  step per physics tick (`interaction_step_rate`, `interaction_max_steps_per_frame`
+  and `get_interaction_dropped_time()` removed); and grid-scale modes were
+  barely damped, now a viscous term `ν·∇²(η_n − η_{n−1})`
+  (`interaction_viscosity`, default 0.1 m²/s).
+- **Cutout height.** `HullProfile` gained a B channel (station top) and
+  `HullWaterFootprint.cutout_height_offset` extends the cutout above each
+  station's top with the width at the top. All profiles were re-baked.
+
 ---
 
 ## API and file changes summary

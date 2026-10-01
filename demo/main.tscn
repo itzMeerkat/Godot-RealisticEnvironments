@@ -11,6 +11,7 @@
 [ext_resource type="PackedScene" uid="uid://ckdc57htjsaad" path="res://addons/sky_system/sky_system.tscn" id="11_sky"]
 [ext_resource type="PackedScene" uid="uid://cr5sv0avc8dug" path="res://demo/buoy.tscn" id="13_fdg1k"]
 [ext_resource type="PackedScene" uid="uid://b2pleaxvcdai8" path="res://demo/floating_box.tscn" id="13_floating_box"]
+[ext_resource type="PackedScene" uid="uid://cu6jvrb4ikqbo" path="res://demo/rowboat.tscn" id="15_rowboat"]
 [ext_resource type="Script" uid="uid://b372vvbghwlxx" path="res://systems/hud/compass_hud.gd" id="14_compass"]
 
 [sub_resource type="Curve" id="Curve_fdg1k"]
@@ -107,12 +108,13 @@ time_of_day = 0.3
 cycle_enabled = false
 cycle_duration_seconds = 30.0
 profile = SubResource("Resource_msmub")
+cloud_wind_source_path = NodePath("../WindSystem")
 
 [node name="PlayerCameraRig" parent="." unique_id=436407652 instance=ExtResource("4_camera_rig")]
 active_mode = 0
-follow_target_path = NodePath("../FloatingBox")
-first_person_anchor_path = NodePath("../FloatingBox/CameraTargets/FirstPersonSeat")
-third_person_focus_path = NodePath("../FloatingBox/CameraTargets/ThirdPersonFocus")
+follow_target_path = NodePath("../Rowboat")
+first_person_anchor_path = NodePath("../Rowboat/CameraTargets/FirstPersonSeat")
+third_person_focus_path = NodePath("../Rowboat/CameraTargets/ThirdPersonFocus")
 cycle_mode_action = &"cycle_camera_mode"
 first_person_anchor_rotation_smoothing = 3.0
 
@@ -155,7 +157,7 @@ offset_bottom = 156.0
 grow_horizontal = 0
 script = ExtResource("14_compass")
 
-[node name="FloatingBox" parent="." unique_id=1766651400 instance=ExtResource("13_floating_box")]
+[node name="Rowboat" parent="." unique_id=1766651400 instance=ExtResource("15_rowboat")]
 transform = Transform3D(0.69116926, 0, -0.72269297, 0, 1, 0, 0.72269297, 0, 0.69116926, 0, 0, 0)
 player_controlled = true
 debug_enabled = true
@@ -163,6 +165,6 @@ debug_enabled = true
 [node name="Buoy" parent="." unique_id=2077650632 instance=ExtResource("13_fdg1k")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 146.46655, 2.0000153, -97.32648)
 
-[node name="FloatingBox2" parent="." unique_id=1779372444 instance=ExtResource("13_floating_box")]
+[node name="Caravel" parent="." unique_id=1779372444 instance=ExtResource("13_floating_box")]
 transform = Transform3D(0.63730067, 0, -0.7706152, 0, 1, 0, 0.7706152, 0, 0.63730067, -13.774445, 0, -15.14146)
 debug_enabled = true

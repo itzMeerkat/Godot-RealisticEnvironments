@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="CloudPreset" format=3]
+
+[ext_resource type="Script" path="res://addons/sky_system/cloud_preset.gd" id="1_cloud_preset"]
+
+[resource]
+script = ExtResource("1_cloud_preset")
+coverage = 0.86
+coverage_variation = 0.2
+weather_scale = 30000.0
+cloud_type = 0.22
+type_variation = 0.1
+base_altitude = 900.0
+thickness = 2500.0
+shape_scale = 12000.0
+detail_scale = 1800.0
+detail_erosion = 0.25
+density = 1.4
+density_variation = 0.25
+scattering_albedo = 0.9
+evolution_speed = 0.003
+sun_light_scale = 0.3
+ambient_light_scale = 0.8

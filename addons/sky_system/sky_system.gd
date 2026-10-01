@@ -14,6 +14,11 @@ const SUNSET_PROFILE_TIME := 0.75
 const SUNRISE_PROFILE_TIME := 0.25
 const NOON_PROFILE_TIME := 0.5
 const MIDNIGHT_PROFILE_TIME := 0.0
+## Below this sun height the moon lights the clouds instead of the sun.
+const CLOUD_MOONLIGHT_SUN_HEIGHT := -0.12
+## Share of the horizon colour that lights cloud bases from below (sea and
+## horizon glow). Dimmed further by CloudPreset.ambient_light_scale.
+const CLOUD_BASE_AMBIENT := 0.4
 
 ## Normalized day time. 0 is midnight, 0.25 sunrise, 0.5 noon, 0.75 sunset.
 @export_range(0.0, 1.0, 0.001) var time_of_day := 0.35 :
@@ -103,6 +108,62 @@ const MIDNIGHT_PROFILE_TIME := 0.0
 		radiance_sun_halo_strength = value
 		_update_sky()
 
+@export_group("Clouds")
+## Renders volumetric clouds into the sky, the starfield and (through
+## get_cloud_cubemap()) the ocean's sky reflection. Needs a RenderingDevice
+## (Forward+ or Mobile renderer) and a cloud_preset.
+@export var clouds_enabled := true :
+	set(value):
+		clouds_enabled = value
+		if is_node_ready():
+			_setup_clouds()
+## Cloud weather. In the editor a new preset applies at once; at runtime it
+## blends in over cloud_transition_seconds (see also transition_clouds_to()).
+@export var cloud_preset : CloudPreset :
+	set(value):
+		cloud_preset = value
+		if is_node_ready():
+			_start_cloud_transition()
+## Seconds a new cloud_preset takes to blend in at runtime.
+@export_range(0.0, 600.0, 0.1, "or_greater") var cloud_transition_seconds := 30.0
+## Optional wind source the clouds drift with: get_wind_speed() and
+## get_wind_direction_degrees(), or wind_speed / wind_direction properties.
+## Empty uses cloud_wind_speed and cloud_wind_direction.
+@export var cloud_wind_source_path : NodePath :
+	set(value):
+		cloud_wind_source_path = value
+		if is_node_ready():
+			_resolve_cloud_wind_source()
+## Multiplies the wind source's speed: wind at cloud height is stronger than at the surface.
+@export_range(0.0, 10.0, 0.01) var cloud_wind_speed_multiplier := 2.0
+## Cloud drift speed in m/s when cloud_wind_source_path is empty.
+@export_range(0.0, 100.0, 0.1, "or_greater") var cloud_wind_speed := 15.0
+## Cloud drift heading in degrees when cloud_wind_source_path is empty. 0 = +Z, 90 = +X.
+@export_range(-360.0, 360.0, 1.0) var cloud_wind_direction := 0.0
+@export_subgroup("Cloud Lighting")
+## Brightness of cloud lit by the sun or moon.
+@export_range(0.0, 8.0, 0.01) var cloud_light_intensity := 1.0
+## Brightness of the sky light that fills cloud shadows.
+@export_range(0.0, 8.0, 0.01) var cloud_ambient_intensity := 1.0
+@export_subgroup("Cloud Quality")
+## Edge length in texels of the cloud cubemap faces.
+@export_range(256, 2048, 128) var cloud_cubemap_size := 1024 :
+	set(value):
+		cloud_cubemap_size = value
+		if is_node_ready():
+			_setup_clouds()
+## Each frame re-renders one cloud texel in every stride x stride block. Higher
+## is cheaper; the clouds then take stride^2 frames to fully update.
+@export_enum("1:1", "2:2", "4:4") var cloud_update_stride := 4
+## Raymarch steps along each view ray.
+@export_range(8, 256, 1) var cloud_view_steps := 64
+## Raymarch steps from each cloud sample toward the sun or moon.
+@export_range(1, 16, 1) var cloud_light_steps := 6
+## Clouds farther than this (m) are not drawn.
+@export_range(10000.0, 400000.0, 1000.0, "or_greater") var cloud_max_distance := 120000.0
+## Distance (m) over which aerial perspective fades clouds into the sky to 1/e.
+@export_range(1000.0, 400000.0, 1000.0, "or_greater") var cloud_fade_distance := 40000.0
+
 @onready var _world_environment := $WorldEnvironment as WorldEnvironment
 @onready var _sun_light := $SunLight as DirectionalLight3D
 @onready var _moon_light := $MoonLight as DirectionalLight3D
@@ -130,6 +191,22 @@ var _sun_color := Color.WHITE
 var _sky_top_color := Color.WHITE
 var _sky_horizon_color := Color.WHITE
 
+## Null while clouds are disabled or unavailable.
+var _cloud_renderer : CloudRenderer
+## The cloud weather on screen: cloud_preset, or a blend toward it.
+var _cloud_state : CloudPreset
+var _cloud_transition_from : CloudPreset
+var _cloud_transition_elapsed := 0.0
+## 0 when no transition is running.
+var _cloud_transition_duration := 0.0
+## Duration of the next transition, set by transition_clouds_to(); < 0 uses cloud_transition_seconds.
+var _next_cloud_transition_seconds := -1.0
+var _cloud_wind_source : Node
+## World XZ distance the wind has carried the clouds.
+var _cloud_wind_offset := Vector2.ZERO
+var _cloud_evolution_time := 0.0
+var _cloud_frames_until_material_push := 0
+
 
 func _init() -> void:
 	_update_lighting_state()
@@ -140,7 +217,19 @@ func _ready() -> void:
 		_ensure_unique_runtime_resources()
 	if profile == null:
 		profile = SkyProfileResource.new()
-	_update_sky()
+	if cloud_preset:
+		_cloud_state = cloud_preset.duplicate()
+	_resolve_cloud_wind_source()
+	_setup_clouds()
+
+
+func _enter_tree() -> void:
+	if is_node_ready():
+		_setup_clouds()
+
+
+func _exit_tree() -> void:
+	_release_clouds()
 
 
 func _process(delta : float) -> void:
@@ -156,6 +245,8 @@ func _process(delta : float) -> void:
 	_elapsed_time += delta
 	_update_visual_positions()
 	_update_starfield_time()
+	if _cloud_renderer:
+		_process_clouds(delta)
 
 
 func _ensure_unique_runtime_resources() -> void:
@@ -188,8 +279,9 @@ func get_moon_direction() -> Vector3:
 	return _moon_direction
 
 
+## How much of the sun reaches the scene: horizon fade times cloud cover.
 func get_sun_visibility() -> float:
-	return _sun_visibility
+	return _sun_visibility * _get_cloud_sun_light_scale()
 
 
 func get_sun_color() -> Color:
@@ -228,6 +320,25 @@ func get_star_visibility() -> float:
 	return _star_visibility
 
 
+## The cloud cubemap (rgb: premultiplied cloud radiance, a: opacity, upper
+## hemisphere only), or null while clouds are off. The object changes when the
+## clouds are rebuilt; lighting_changed fires then.
+func get_cloud_cubemap() -> Texture:
+	return _cloud_renderer.cubemap if _cloud_renderer else null
+
+
+## The cloud weather on screen (a blend while a transition runs), or null while
+## clouds are off. Read-only.
+func get_cloud_state() -> CloudPreset:
+	return _cloud_state if _cloud_renderer else null
+
+
+## Makes preset the cloud_preset, blending to it over seconds (0 = at once).
+func transition_clouds_to(preset : CloudPreset, seconds : float) -> void:
+	_next_cloud_transition_seconds = seconds
+	cloud_preset = preset
+
+
 ## Recomputes the astronomy and profile colors behind the public getters.
 func _update_lighting_state() -> void:
 	var active_profile = _get_profile()
@@ -254,8 +365,9 @@ func _update_sky() -> void:
 	if not is_inside_tree():
 		return
 	var active_profile = _get_profile()
-	_update_light(_sun_light, _sun_direction, _sun_color, active_profile.sample_sun_energy(_profile_sample_time) * _solar_energy_from_height(_sun_direction.y) * sun_energy_multiplier)
-	_update_light(_moon_light, _moon_direction, active_profile.sample_moon_color(_profile_sample_time), active_profile.sample_moon_energy(_profile_sample_time) * _moon_visibility * _moon_phase * _night_factor * moon_energy_multiplier)
+	var cloud_light_scale := _get_cloud_sun_light_scale()
+	_update_light(_sun_light, _sun_direction, _sun_color, active_profile.sample_sun_energy(_profile_sample_time) * _solar_energy_from_height(_sun_direction.y) * sun_energy_multiplier * cloud_light_scale)
+	_update_light(_moon_light, _moon_direction, active_profile.sample_moon_color(_profile_sample_time), active_profile.sample_moon_energy(_profile_sample_time) * _moon_visibility * _moon_phase * _night_factor * moon_energy_multiplier * cloud_light_scale)
 	_update_environment(active_profile, _sun_direction, _moon_direction, _sun_visibility, _moon_visibility)
 	_update_starfield_visibility(active_profile.sample_star_visibility(_star_visibility) * star_brightness)
 	_update_visual_colors(active_profile, _sun_visibility, _moon_visibility)
@@ -281,7 +393,8 @@ func _update_environment(active_profile, sun_direction : Vector3, moon_direction
 	var sun_color : Color = active_profile.sample_sun_color(_profile_sample_time)
 	var moon_color : Color = active_profile.sample_moon_color(_profile_sample_time)
 	environment.ambient_light_color = top_color.lerp(horizon_color, 0.35)
-	environment.ambient_light_energy = active_profile.sample_ambient_energy(_profile_sample_time) * lerpf(0.35, 1.0, smoothstep(-0.08, 0.35, sun_direction.y))
+	var cloud_ambient_scale := _cloud_state.ambient_light_scale if _cloud_renderer else 1.0
+	environment.ambient_light_energy = active_profile.sample_ambient_energy(_profile_sample_time) * lerpf(0.35, 1.0, smoothstep(-0.08, 0.35, sun_direction.y)) * cloud_ambient_scale
 	if environment.sky and environment.sky.sky_material:
 		var material := environment.sky.sky_material
 		if material is ShaderMaterial:
@@ -482,3 +595,126 @@ func _get_profile():
 	if profile == null:
 		profile = SkyProfileResource.new()
 	return profile
+
+
+func _setup_clouds() -> void:
+	_release_clouds()
+	if clouds_enabled:
+		var device := RenderingServer.get_rendering_device()
+		if cloud_preset == null:
+			push_error("SkySystem.clouds_enabled needs a cloud_preset; clouds are off: %s" % get_path())
+		elif device == null:
+			push_error("SkySystem clouds need a RenderingDevice (Forward+ or Mobile renderer); clouds are off.")
+		else:
+			if _cloud_state == null:
+				_cloud_state = cloud_preset.duplicate()
+			_cloud_renderer = CloudRenderer.new(device, cloud_cubemap_size)
+	_push_cloud_material_parameters()
+	_update_sky()
+
+
+func _release_clouds() -> void:
+	if _cloud_renderer == null:
+		return
+	_cloud_renderer.release()
+	_cloud_renderer = null
+	_push_cloud_material_parameters()
+
+
+func _start_cloud_transition() -> void:
+	var seconds := cloud_transition_seconds if _next_cloud_transition_seconds < 0.0 else _next_cloud_transition_seconds
+	_next_cloud_transition_seconds = -1.0
+	if cloud_preset == null:
+		_cloud_state = null
+		_setup_clouds()
+		return
+	if Engine.is_editor_hint() or seconds <= 0.0 or _cloud_state == null:
+		_cloud_state = cloud_preset.duplicate()
+		_cloud_transition_duration = 0.0
+		if _cloud_renderer:
+			_cloud_renderer.restart_history()
+			_update_sky()
+		else:
+			_setup_clouds()
+		return
+	_cloud_transition_from = _cloud_state.duplicate()
+	_cloud_transition_elapsed = 0.0
+	_cloud_transition_duration = seconds
+
+
+func _process_clouds(delta : float) -> void:
+	if _cloud_transition_duration > 0.0:
+		_cloud_transition_elapsed += delta
+		var weight := clampf(_cloud_transition_elapsed / _cloud_transition_duration, 0.0, 1.0)
+		_cloud_state.blend(_cloud_transition_from, cloud_preset, smoothstep(0.0, 1.0, weight))
+		if weight >= 1.0:
+			_cloud_transition_duration = 0.0
+		_update_sky()
+	_cloud_wind_offset += _get_cloud_wind_velocity() * delta
+	_cloud_evolution_time += _cloud_state.evolution_speed * delta
+
+	var active_profile = _get_profile()
+	var light_direction := _sun_direction
+	var light_color : Color = _sun_color * (active_profile.sample_sun_energy(_profile_sample_time) * sun_energy_multiplier * cloud_light_intensity)
+	if _sun_direction.y < CLOUD_MOONLIGHT_SUN_HEIGHT:
+		light_direction = _moon_direction
+		light_color = active_profile.sample_moon_color(_profile_sample_time) * (active_profile.sample_moon_energy(_profile_sample_time) * _moon_phase * _moon_visibility * moon_energy_multiplier * cloud_light_intensity)
+
+	_cloud_renderer.update_stride = cloud_update_stride
+	_cloud_renderer.view_steps = cloud_view_steps
+	_cloud_renderer.light_steps = cloud_light_steps
+	_cloud_renderer.max_distance = cloud_max_distance
+	_cloud_renderer.fade_distance = cloud_fade_distance
+	_cloud_renderer.render(_get_cloud_camera_position(), _cloud_state, _cloud_wind_offset, _cloud_evolution_time,
+		light_direction, light_color, _sky_top_color * cloud_ambient_intensity,
+		_sky_horizon_color * (CLOUD_BASE_AMBIENT * cloud_ambient_intensity * _cloud_state.ambient_light_scale))
+
+	# Re-sending the parameters once per full refresh also makes the sky
+	# re-render its radiance map, so ambient light and reflections follow the clouds.
+	_cloud_frames_until_material_push -= 1
+	if _cloud_frames_until_material_push <= 0:
+		_cloud_frames_until_material_push = _cloud_renderer.get_refresh_frames()
+		_push_cloud_material_parameters()
+
+
+## Cloud uniforms go through the RenderingServer so the runtime texture is never
+## stored in (and saved with) the sky or starfield material resources.
+func _push_cloud_material_parameters() -> void:
+	var enabled := _cloud_renderer != null
+	var texture_rid = _cloud_renderer.cubemap.get_rid() if enabled else null
+	for material : Material in [_world_environment.environment.sky.sky_material, _starfield.material_override]:
+		RenderingServer.material_set_param(material.get_rid(), &"clouds_enabled", enabled)
+		RenderingServer.material_set_param(material.get_rid(), &"cloud_cubemap", texture_rid)
+
+
+func _get_cloud_sun_light_scale() -> float:
+	return _cloud_state.sun_light_scale if _cloud_renderer else 1.0
+
+
+func _resolve_cloud_wind_source() -> void:
+	_cloud_wind_source = null if cloud_wind_source_path.is_empty() else get_node(cloud_wind_source_path)
+
+
+func _get_cloud_wind_velocity() -> Vector2:
+	var speed := cloud_wind_speed
+	var direction := cloud_wind_direction
+	if _cloud_wind_source:
+		speed = _read_wind_value(&"get_wind_speed", &"wind_speed") * cloud_wind_speed_multiplier
+		direction = _read_wind_value(&"get_wind_direction_degrees", &"wind_direction")
+	var radians := deg_to_rad(direction)
+	return Vector2(sin(radians), cos(radians)) * speed
+
+
+func _read_wind_value(method : StringName, property : StringName) -> float:
+	if _cloud_wind_source.has_method(method):
+		return float(_cloud_wind_source.call(method))
+	return float(_cloud_wind_source.get(property))
+
+
+func _get_cloud_camera_position() -> Vector3:
+	var camera : Camera3D
+	if Engine.is_editor_hint():
+		camera = Engine.get_singleton(&"EditorInterface").get_editor_viewport_3d(0).get_camera_3d()
+	else:
+		camera = _get_active_camera()
+	return camera.global_position if camera else global_position

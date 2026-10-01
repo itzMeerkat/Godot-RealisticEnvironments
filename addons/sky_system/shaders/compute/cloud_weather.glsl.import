@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://bn140qme7o8c"
+path="res://.godot/imported/cloud_weather.glsl-fe461226bfa8801d130a8eea09b260c9.res"
+
+[deps]
+
+source_file="res://addons/sky_system/shaders/compute/cloud_weather.glsl"
+dest_files=["res://.godot/imported/cloud_weather.glsl-fe461226bfa8801d130a8eea09b260c9.res"]
+
+[params]
+

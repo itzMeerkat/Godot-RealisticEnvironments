@@ -10,9 +10,7 @@ effects. No dependency on other addons.
 | --- | --- |
 | `ProjectileLauncher` (`projectile_launcher.tscn`) | Spawns projectiles and muzzle flashes, notifies recoil receivers, emits `fired`. |
 | `Projectile` (`default_projectile.tscn`) | `RigidBody3D` with quadratic drag, lifetime, and water-plane cleanup. |
-| `ProjectileAimController` | Center-screen aim point, per-launcher ballistic pitch solve, yaw turning, aim marker. |
-| `ProjectileFireInputController` | Input bridge: fires a set of launchers on an action with cooldown. |
-| `PhysicsRecoil` | Applies an opposite impulse to a `RigidBody3D`. |
+| `ProjectileWeaponController` | Drives a set of launchers: center-screen aim, ballistic pitch solve, yaw turning, aim marker, fire input with cooldown, and recoil on the carrying body. |
 | `CannonSlideRecoil` | Visual spring-damper slide of a barrel/carriage. |
 | `ProjectileMuzzleFlash`, `ProjectileWaterImpactEffect` | One-shot particle effects built in code. |
 
@@ -48,13 +46,26 @@ Applies `-v̂ · |v|² · drag_coefficient` each physics tick, frees itself afte
 below `waterline_y`, spawning `water_impact_effect_scene` there. The water
 check is a flat plane, not the wave surface.
 
-## `ProjectileAimController`
+`yaw_target_path` names the node a weapon controller turns toward its aim
+point (e.g. the gun carriage); empty turns the launcher itself.
 
-Every frame, when enabled:
+## `ProjectileWeaponController`
+
+In `_ready` it resolves its carrying body (`body_path`, or the nearest
+`RigidBody3D` ancestor; none is allowed) and its launchers: every
+`ProjectileLauncher` under the body (or under its parent without a body) when
+`auto_collect_launchers` is on, plus `launcher_paths`. Call `refresh_launchers()`
+after adding or removing launchers at runtime.
+
+With `require_controlled_owner`, it does nothing (no aim, no marker, no input)
+unless the nearest ancestor exposing `controlled_property` (default
+`player_controlled`) has it set to true, so AI boats keep their guns still.
+
+Every frame, when enabled and controlled:
 
 1. Casts a ray from the center of the camera (`camera_path` or the active
    viewport camera) to the horizontal plane `aim_plane_y`.
-2. For each launcher in `launcher_paths`, if `solve_ballistics` is on, searches
+2. For each launcher, if `solve_ballistics` is on, searches
    pitch between `min_pitch_degrees` and `max_pitch_degrees`
    (`pitch_search_steps` coarse samples, `pitch_refine_steps` bisection),
    simulating the shot with the launcher's speed, drag, mass, inherited velocity
@@ -63,27 +74,23 @@ Every frame, when enabled:
    sign and bisects it; with no sign change it accepts the closest sample only
    if it is within `impact_height_tolerance`. Unreachable launchers keep their
    last valid direction.
-3. Yaws each `yaw_target_paths` entry (or the launcher) toward the aim point
-   around the yaw reference's up axis, with `yaw_smoothing`.
-4. Draws a ring marker coloured by reachability.
+3. Yaws each launcher's yaw target toward the aim point around the body's up
+   axis, with `yaw_smoothing`.
+4. Draws a ring marker coloured by reachability (an internal node).
 
-`get_launch_direction_for_launcher(launcher)` is what the fire input controller
-asks for.
-
-## `ProjectileFireInputController`
-
-On `fire_action` (default `fire_projectile`) in `_unhandled_input`, fires every
-launcher in `launcher_paths` using directions from `aim_controller_path` if set,
-then waits `cooldown`. With `require_controlled_owner`, it only fires when the
-nearest ancestor exposing `controlled_property` (default `player_controlled`)
-has it set to true.
+On `fire_action` (default `fire_projectile`) in `_unhandled_input` it calls
+`fire()`: every launcher fires along `get_launch_direction_for_launcher()` (this
+frame's solution, else the last one, else the muzzle's −Z), then it waits
+`cooldown`. A boat with low guns needs a negative `min_pitch_degrees` to hit
+water close by (the rowboat uses −10°).
 
 ## Recoil
 
-- `PhysicsRecoil.apply_recoil()` applies an impulse opposite the fire direction
-  to `rigid_body_path` (or the nearest ancestor body), sized by
+- `ProjectileWeaponController` listens to each launcher's `fired` signal and,
+  with `body_recoil_enabled`, applies an impulse opposite the fire direction to
+  its body at the muzzle, sized by
   `projectile_mass × initial_speed × recoil_strength × impulse_multiplier`
-  (or `fallback_impulse`), at the shot's muzzle position when available.
+  (or `fallback_impulse` when `use_projectile_momentum` is off).
 - `CannonSlideRecoil.apply_recoil()` kicks a spring along a local
   `recoil_axis`, clamped to `max_recoil_distance`, moving `target_path` (or its
   parent) back to rest.

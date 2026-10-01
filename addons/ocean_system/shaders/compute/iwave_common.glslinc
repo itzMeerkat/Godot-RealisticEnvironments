@@ -9,7 +9,8 @@
  * State texture (rgba32f): x = eta_n, y = eta_{n-1}, z = p_n, w = p_{n-1}
  *   eta = h + p is the wave deviation from the hull-conforming rest state,
  *   h the visible surface offset and p the hull pressure head (m).
- * Render texture (rgba16f): x = h, y = eta, z = foam, w = unused
+ * Render texture (rgba16f): x = h, y = eta, z = foam, w = hull coverage
+ *   (1 where a hull sits in the water; surface queries leave eta out there)
  *
  * Godot does not track include dependencies: reimport every iwave_*.glsl
  * after editing this file.

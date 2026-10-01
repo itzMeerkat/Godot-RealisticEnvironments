@@ -5,13 +5,16 @@ extends Resource
 ## HullWaterFootprint that baked it. The hull is treated as mirror-symmetric
 ## about x = center_x. Created by HullWaterFootprint.bake_profile().
 ##
-## image is LENGTH_SAMPLES x PROFILE_SAMPLES, FORMAT_RGH. Column i is the length
+## image is LENGTH_SAMPLES x PROFILE_SAMPLES, FORMAT_RGBH. Column i is the length
 ## station z = min_z + (i + 0.5) / LENGTH_SAMPLES * (max_z - min_z).
 ## - R, row j: inner half-width at height y = min_y + (j + 0.5) / PROFILE_SAMPLES
 ##   * (max_y - min_y). 0 above the hull or below the keel.
 ## - G, row j: lowest height inside the hull at lateral offset
 ##   |x - center_x| = (j + 0.5) / PROFILE_SAMPLES * max_half_width, or max_y
 ##   where the hull does not reach that far out (no draft).
+## - B, every row: top of the hull at this station, as the height coordinate
+##   (0..1 over min_y..max_y) of its highest row with a non-zero half-width.
+##   The cutout clamps heights above it to it (HullWaterFootprint.cutout_height_offset).
 
 const LENGTH_SAMPLES := 64
 const PROFILE_SAMPLES := 32
@@ -54,12 +57,16 @@ static func build(triangles : PackedVector3Array, inset : float) -> HullProfile:
 		profile.max_half_width = maxf(profile.max_half_width, width)
 	assert(profile.max_half_width > 0.0, "Hull profile is empty after the inset; reduce bake_inset.")
 
-	profile.image = Image.create_empty(LENGTH_SAMPLES, PROFILE_SAMPLES, false, Image.FORMAT_RGH)
+	profile.image = Image.create_empty(LENGTH_SAMPLES, PROFILE_SAMPLES, false, Image.FORMAT_RGBH)
 	for column in LENGTH_SAMPLES:
+		var top := 0.0
+		for row in PROFILE_SAMPLES:
+			if half_widths[row * LENGTH_SAMPLES + column] > 0.0:
+				top = (float(row) + 0.5) / float(PROFILE_SAMPLES)
 		for row in PROFILE_SAMPLES:
 			var half_width := half_widths[row * LENGTH_SAMPLES + column]
 			var keel := profile._find_keel(half_widths, column, profile.get_row_offset(row))
-			profile.image.set_pixel(column, row, Color(half_width, keel, 0.0, 1.0))
+			profile.image.set_pixel(column, row, Color(half_width, keel, top, 1.0))
 	return profile
 
 

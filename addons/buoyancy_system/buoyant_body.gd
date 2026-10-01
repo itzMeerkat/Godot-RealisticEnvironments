@@ -2,7 +2,8 @@ class_name BuoyantBody
 extends Node
 ## Applies probe-based buoyancy forces to a parent RigidBody3D using OceanSystem's
 ## batched GPU water-surface query. FX probes are queried in the same batch but
-## never apply forces.
+## never apply forces. With sinking enabled it also sinks the body when it rolls
+## over, floods (all sinking probes deep under water) or loses a hitbox group.
 ##
 ## Probe data is cached when volumes are collected and whenever a volume reports
 ## probes_changed. Probes must stay rigid relative to the body: each tick only
@@ -10,6 +11,7 @@ extends Node
 
 signal probe_entered_water(state: BuoyancyProbeState)
 signal probe_exited_water(state: BuoyancyProbeState)
+signal sinking_started(reason: StringName, data: Dictionary)
 
 ## Optional rigid body target. Leave empty to use the parent or nearest ancestor RigidBody3D.
 @export var rigid_body_path : NodePath
@@ -34,6 +36,26 @@ signal probe_exited_water(state: BuoyancyProbeState)
 ## Enables applying forces. Disable to keep query/contact state without affecting physics.
 @export var apply_forces := true
 
+@export_group("Sinking")
+## Enables roll, draft and damage-triggered sinking. start_sinking() works either way.
+@export var sinking_enabled := false
+## Starts sinking when absolute roll reaches this angle. Set 0 to disable roll sinking.
+@export_range(0.0, 180.0, 0.1, "degrees") var max_roll_degrees := 70.0
+## Probes that must all be deeper than sink_probe_depth_threshold to start
+## sinking. Each must be an enabled probe of this body. Empty disables it.
+@export var sinking_probe_paths : Array[NodePath] = []
+## Water depth above each sinking probe that counts as flooded.
+@export_range(-10.0, 10.0, 0.01) var sink_probe_depth_threshold := 0.5
+## Hitbox groups whose destruction starts sinking, reported through
+## _on_hitbox_group_destroyed (connect a damage system's signal to it).
+@export var sink_on_destroyed_groups : Array[StringName] = [&"hull"]
+## buoyancy_strength is multiplied by this once sinking starts.
+@export_range(0.0, 1.0, 0.01) var sink_buoyancy_multiplier := 0.3
+## Seconds after sinking starts before delete_root_path is freed. 0 frees immediately.
+@export_range(0.0, 60.0, 0.01, "or_greater") var delete_delay := 5.0
+## Node freed after delete_delay. Empty frees the rigid body.
+@export var delete_root_path : NodePath
+
 var rigid_body : RigidBody3D
 var ocean : OceanSystem
 var probe_volumes : Array[BuoyancyProbeVolume] = []
@@ -57,6 +79,8 @@ var _lateral_drag := PackedFloat32Array()
 ## OceanSystem.time when the probe set last changed. Results dispatched before
 ## then answer the old point set.
 var _probe_set_time := -INF
+var _sinking_probes : Array[Node] = []
+var _is_sinking := false
 
 
 func _ready() -> void:
@@ -66,6 +90,8 @@ func _ready() -> void:
 	_collect_volumes()
 	if probe_volumes.is_empty():
 		push_error("BuoyantBody found no probe volumes: %s" % get_path())
+	for path in sinking_probe_paths:
+		_sinking_probes.push_back(get_node(path))
 	# The first surface query result arrives several frames after the first submit,
 	# and much later in physics time when startup frames hitch. Hold the body still
 	# until then instead of letting it free-fall through the water.
@@ -145,6 +171,32 @@ func _physics_process(_delta : float) -> void:
 
 	total_external_force += _apply_heave_damping(clampf(heave_submersion, 0.0, 1.0))
 	_update_volume_debug(total_external_force)
+	if sinking_enabled and not _is_sinking:
+		_check_sinking()
+
+
+## Lowers buoyancy, emits sinking_started and frees delete_root_path after
+## delete_delay. Only the first call has an effect.
+func start_sinking(reason : StringName = &"manual", data : Dictionary = {}) -> void:
+	if _is_sinking:
+		return
+	_is_sinking = true
+	buoyancy_strength *= sink_buoyancy_multiplier
+	sinking_started.emit(reason, data)
+	var delete_root := get_node(delete_root_path) if not delete_root_path.is_empty() else rigid_body
+	if delete_delay <= 0.0:
+		delete_root.queue_free()
+	else:
+		get_tree().create_timer(delete_delay).timeout.connect(delete_root.queue_free)
+
+
+func is_sinking() -> bool:
+	return _is_sinking
+
+
+func _on_hitbox_group_destroyed(hitbox_group : StringName, hit_data : Dictionary) -> void:
+	if sinking_enabled and sink_on_destroyed_groups.has(hitbox_group):
+		start_sinking(&"hitbox_group_destroyed", {"hitbox_group": hitbox_group, "hit_data": hit_data})
 
 
 ## Re-collects probe volumes (after adding or removing volumes at runtime).
@@ -292,6 +344,33 @@ func _update_state(state : BuoyancyProbeState, position : Vector3, sample : Wate
 		probe_entered_water.emit(state)
 	elif state.exited:
 		probe_exited_water.emit(state)
+
+
+func _check_sinking() -> void:
+	var roll_degrees := _get_abs_roll_degrees()
+	if max_roll_degrees > 0.0 and roll_degrees >= max_roll_degrees:
+		start_sinking(&"roll", {"roll_degrees": roll_degrees})
+		return
+	if _sinking_probes.is_empty():
+		return
+	var deepest_depth := -INF
+	for probe in _sinking_probes:
+		var state := get_probe_state(probe)
+		assert(state != null, "BuoyantBody %s: sinking probe %s is not an enabled probe of this body." % [get_path(), probe.get_path()])
+		if state.depth < sink_probe_depth_threshold:
+			return
+		deepest_depth = maxf(deepest_depth, state.depth)
+	start_sinking(&"draft", {"probe_count": _sinking_probes.size(), "deepest_depth": deepest_depth})
+
+
+func _get_abs_roll_degrees() -> float:
+	var basis := rigid_body.global_transform.basis.orthonormalized()
+	var roll_axis := basis.z
+	var target_up := Vector3.UP - roll_axis * Vector3.UP.dot(roll_axis)
+	# Bow pointing straight up or down: roll is undefined.
+	if target_up.length_squared() <= 0.0001:
+		return 0.0
+	return absf(rad_to_deg(basis.y.signed_angle_to(target_up.normalized(), roll_axis)))
 
 
 func _apply_heave_damping(submersion: float) -> Vector3:

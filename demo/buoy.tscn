@@ -100,8 +100,6 @@ albedo_color = Color(0.1, 0.8, 1, 0.32)
 radius = 0.16
 height = 0.32
 
-[sub_resource type="ImmediateMesh" id="ImmediateMesh_gpwpt"]
-
 [node name="Buoy" type="Node3D" unique_id=2077650632]
 
 [node name="RigidBody3D" type="RigidBody3D" parent="." unique_id=597638399]
@@ -204,12 +202,6 @@ mesh = SubResource("SphereMesh_67ip0")
 script = ExtResource("4_54211")
 max_submerged_volume_cubic_meters = 1.2809
 buoyancy_height = 1.6078372
-
-[node name="DebugDraw" type="MeshInstance3D" parent="RigidBody3D/Node3D" unique_id=679927406]
-visible = false
-cast_shadow = 0
-extra_cull_margin = 10000.0
-mesh = SubResource("ImmediateMesh_gpwpt")
 
 [node name="Sketchfab_Scene" parent="RigidBody3D" unique_id=660243005 instance=ExtResource("1_lq5a0")]
 transform = Transform3D(0.3, 0, 0, 0, 0.3, 0, 0, 0, 0.3, 0, 0, 0)

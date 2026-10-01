@@ -19,6 +19,12 @@ uniform float moon_visibility : hint_range(0.0, 1.0) = 0.0;
 uniform float moon_disk_size : hint_range(0.001, 0.05) = 0.00465;
 uniform float moon_phase : hint_range(0.0, 1.0) = 1.0;
 
+// Volumetric clouds rendered by CloudRenderer: rgb is premultiplied radiance,
+// a is opacity. SkySystem sets both through the RenderingServer so the runtime
+// texture is never saved into the material.
+uniform bool clouds_enabled = false;
+uniform samplerCube cloud_cubemap : filter_linear;
+
 float body_disk(vec3 view_direction, vec3 body_direction, float disk_size) {
 	float alignment = dot(normalize(view_direction), normalize(body_direction));
 	float angular_distance = acos(clamp(alignment, -1.0, 1.0));
@@ -79,5 +85,9 @@ void sky() {
 
 	sky_color += sun_color.rgb * (sun_disk * sun_disk_strength + sun_halo * sun_halo_strength) * sun_visibility;
 	sky_color += moon_color.rgb * (moon_disk * moon_lit * 0.9 + moon_halo * moon_phase) * moon_visibility;
+	if (clouds_enabled) {
+		vec4 cloud = texture(cloud_cubemap, EYEDIR);
+		sky_color = sky_color * (1.0 - cloud.a) + cloud.rgb;
+	}
 	COLOR = sky_color;
 }

@@ -29,7 +29,6 @@ an error and disables itself.
 | `release_surface_query(owner: Object)` | Forget an owner (call from `_exit_tree`). |
 | `get_skipped_surface_query_dispatch_count()` | Frames whose dispatch waited because all readback slots were busy. |
 | `add_water_impulse(position, radius, amplitude)` | Queue a splash in the interaction simulation (runtime, `interaction_enabled` only). |
-| `get_interaction_dropped_time()` | Simulated seconds skipped because frames needed more than `interaction_max_steps_per_frame` steps. |
 | `time` | Ocean clock in seconds; compare with `WaterSurfaceQueryResult.dispatch_time`. |
 | `water_level` | Still-water height used by the shader, queries, reflections and buoyancy. |
 | `water_material` | Template material. The ocean renders with a private duplicate (`get_water_material()`), applied through the `RenderingServer` and never saved into the scene. |
@@ -74,9 +73,10 @@ Heights match the rendered mesh:
   the source point whose displaced vertex lands on the query point.
 - Normals come from central differences of the resulting height field (0.25 m
   step).
-- The interaction simulation's `η` is added (see
-  [Interaction simulation](#interaction-simulation-wakes)). Wakes and splashes
-  lift bodies, but a hull's own rest depression does not.
+- The interaction simulation's `η` is added outside hulls (see
+  [Interaction simulation](#interaction-simulation-wakes)): wakes and splashes
+  lift bodies without a hull footprint, while hulls feel only the incident
+  (FFT) waves.
 
 ## Inspector groups
 
@@ -87,7 +87,8 @@ Heights match the rendered mesh:
   threshold / softness.
 - **Sky Reflection** — procedural sky reflection, sun glitter, sun scatter;
   `manual_*` values are used when no sky source is set or the source lacks a
-  value.
+  value. A sky source with `get_cloud_cubemap()` (SkySystem) also puts its
+  clouds into the reflection.
 - **Crest Glow** — low-sun, back-lit tint on tall steep crests (artistic).
 - **Planar Reflections** — mirrored-camera reflection of scene geometry,
   resolution, strength, distortion, and clipping of submerged pixels.
@@ -158,12 +159,18 @@ A footprint without a profile contributes nothing: it shows a configuration
 warning in the editor and reports an error at runtime.
 
 **`HullProfile`** stores the hull's inside in the footprint's local space as a
-small `64 × 32` RG16F image, treating the hull as mirror-symmetric about
+small `64 × 32` RGB16F image, treating the hull as mirror-symmetric about
 `center_x`:
 
 - **R:** inner half-width over (length station, height).
 - **G:** keel height over (length station, lateral offset). Used by the
   interaction simulation for hull draft.
+- **B:** the station's top (its highest row with a non-zero width), as a
+  height coordinate. Used by the cutout's height offset and the simulation's
+  waterline width.
+
+Profiles baked before the B channel existed must be re-baked (all layers of the
+profile texture array share one format).
 
 **Baking.** `HullSlicer` slices the hull triangles with 32 horizontal planes and
 records the widest crossing at each of 64 length stations, minus `bake_inset`.
@@ -189,26 +196,34 @@ Farther hulls get no cutout: the water inside them is too small to see.
 4. Add `cutout_edge_foam` in a `cutout_feather`-wide band just outside.
 
 The test runs on the water-surface point itself, so it is view-independent and
-handles pitch and roll. Above the hull, or where the profile width is 0, water
-stays visible (e.g. waves over the deck).
+handles pitch and roll. Above a station's top (e.g. the gunwale) plus the
+footprint's `cutout_height_offset`, water stays visible. Within the offset, the
+width at the station's top is used, so a positive offset hides waves cresting
+over a low hull (the rowboat uses 0.3 m); a negative one lets water in lower.
 
 ## Interaction simulation (wakes)
 
 At runtime `OceanSystem` runs `WaterInteractionSim`, an iWave simulation
 (Tessendorf, *Interactive Water Surfaces*, 2004), on a window around the
 camera. By default the window is 512 × 512 cells of 0.5 m, so 256 m across.
+1024 × 0.25 m keeps the window size and resolves small hulls (e.g. a
+rowboat's bow) more smoothly, at about 4× the GPU time per step (measured
+~0.1 ms vs ~0.26 ms per step on an RTX 4070 Ti) and 64 MB instead of 16 MB of
+textures; the bow-wave height is the same.
 
 What it produces:
 - Hulls with a `HullWaterFootprint` push water, and moving, heaving or rolling
   hulls radiate Kelvin wakes and bow waves.
 - `add_water_impulse(position, radius, amplitude)` queues a splash.
 - The water shader adds the simulated height, slope and foam.
-- Surface queries include it, so buoyancy feels other ships' wakes.
+- Surface queries include it outside hulls, so bodies without a hull footprint
+  feel wakes and splashes.
 - It does not run in the editor.
 
 Settings: the **Interaction** export group (grid size, cell size, damping,
-gravity scale, step rate, absorbing border, foam) and each footprint's
-**Wake** group (`wake_enabled`, `wake_strength`, `wake_edge_softness`).
+viscosity, gravity scale, absorbing border, foam) and each footprint's
+**Wake** group (`wake_enabled`, `wake_strength`, `wake_edge_softness`,
+`bow_wave_strength`, `bow_wave_max_rise`).
 
 How it works:
 
@@ -219,21 +234,48 @@ How it works:
   - A hull at rest sits in equilibrium (`h = −p`, water pushed down to the hull
     bottom), so it makes no waves. Only *changes* of `p` radiate.
   - Ships entering the window or present at startup cause no transient.
-  - Queries use `η` (not `h`), so a ship never loses buoyancy to its own rest
-    depression.
-- **Step** (fixed rate, several per frame if needed):
+- **Bow wave.** A pressure patch alone depresses the water under itself and
+  radiates its first crest behind it; it cannot make a bow wave (see
+  `docs/bow-wave-plan.md`). So `p` also carries the stagnation head: where the
+  waterline wall moves into the water at normal speed `v_n`, water piles up by
+  `bow_wave_strength · v_n² / 2g` (capped at `bow_wave_max_rise`). It enters
+  `p` with a negative sign in a band two `wake_edge_softness` wide on both
+  sides of the waterline, and the step turns its motion into the bow crest and
+  divergent waves. `v_n` comes from the footprint's own velocity and angular
+  velocity (tracked from its transform every physics tick, smoothed over
+  0.1 s) and the waterline normal (the profile's half-width slope, or the
+  bow/stern direction at the ends). Measured on still water: caravel at
+  8 m/s +0.36 m at the stem (was −0.02), rowboat at 4 m/s +0.28 m (was 0.01).
+- **Hull coverage.** Under a hull, `η` is mostly the water that hull radiated
+  itself. Fed back into its own buoyancy after the query readback delay, it
+  acts as a lagging spring and pumps energy into heave: boats on still water
+  oscillated with growing amplitude. So the pressure pass also writes hull
+  coverage (1 inside the waterline and up to one `wake_edge_softness` outside
+  it, where edge probes sit, fading out by two), and queries weight `η` by
+  `1 − coverage`. Hulls feel the incident waves; their own radiation is
+  approximated by `BuoyantBody.heave_damping`.
+- **Step** (once per physics tick, from `OceanSystem._physics_process`, so each
+  step sees exactly one new pose of every hull; stepping per frame made hull
+  motion stutter into the forcing and ring at grid scale):
   1. `iwave_pressure` computes `p` for every cell covered by up to 32 nearby
-     hulls, tapered to 0 at the waterline, and packs `η` for the FFT.
+     hulls, tapered to 0 at the waterline and over `wake_edge_softness` at the
+     bow and stern (a hard end switched cells on and off as the hull crossed
+     the grid), minus the bow-wave rise, plus hull coverage and the bow rise
+     outside hulls (the bow-foam source), and packs `η` for the FFT.
   2. `iwave_fft` → `iwave_operator` → inverse `iwave_fft` applies iWave's
      vertical-derivative operator exactly in frequency space. Every wavenumber
      is multiplied by `g·|k|`, which is deep-water dispersion `ω² = g|k|`, the
      property that gives the ~19.5° Kelvin wedge. The 13×13 kernel from the
      paper cannot reproduce that at wake wavelengths (see the plan's Phase 3
      notes).
-  3. `iwave_step` integrates with velocity damping, adds an absorbing border
-     (`interaction_sponge_*`) so waves leaving the window are absorbed rather
-     than wrapped, accumulates foam (steep waves, rising pressure at the bow),
-     and writes the render texture `(h, η, foam)`.
+  3. `iwave_step` integrates with velocity damping and viscosity
+     (`interaction_viscosity`, `ν·∇²` of the per-step change: damping ~ `νk²`,
+     so grid-scale ripples die in a fraction of a second while wakes barely
+     change), adds an absorbing border (`interaction_sponge_*`) so waves
+     leaving the window are absorbed rather than wrapped, accumulates foam
+     (steep waves, and `interaction_foam_bow_rate` × the bow rise outside
+     hulls, where the cutout does not hide it), and writes the render texture
+     `(h, η, foam, coverage)`.
 - **Moving window.** The window follows the camera with wrap-around addressing:
   world cell `c` lives at texel `c mod N`. Moving never copies data;
   `iwave_scroll` only clears cells that entered. The FFT's periodicity matches
@@ -259,8 +301,9 @@ Known limits:
    frame for a source without that signal);
 4. every `1 / updates_per_second` seconds, calls `WaveGenerator.update()` with
    the external wind;
-5. advances `wave_blend_alpha`, steps the interaction simulation and
-   dispatches the queued surface queries.
+5. advances `wave_blend_alpha` and dispatches the queued surface queries.
+
+`_physics_process` steps the interaction simulation once per physics tick.
 
 Dependencies (wind and sky source, RenderingDevice) are resolved once in
 `_ready` and again only when their exports change. Exports set during scene

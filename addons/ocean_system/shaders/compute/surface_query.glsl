@@ -6,8 +6,12 @@
  * would be far too expensive.
  *
  * Heights include the interaction simulation's eta = h + p rather than the
- * visible h: a hull's own rest depression (h = -p) is excluded, so bodies do not
- * lose buoyancy to it, while radiated waves (wakes, splashes) are included.
+ * visible h, so a hull's own rest depression (h = -p) never costs buoyancy, and
+ * only outside hulls (render .w = hull coverage). Under a hull, eta is mostly
+ * the water that hull radiated itself; fed back into its buoyancy after the
+ * readback delay it acts as a lagging spring and pumps energy into heave. Hulls
+ * feel the incident (FFT) waves; bodies without a hull footprint also feel
+ * wakes and splashes.
  */
 
 #define WORKGROUP_SIZE 64U
@@ -51,6 +55,7 @@ layout(std430, set = 0, binding = 2) restrict writeonly buffer SampleBuffer {
 // Interaction render texture (rgba16f: h, eta, foam), wrap-around addressed.
 layout(rgba16f, set = 0, binding = 5) restrict readonly uniform image2D interaction_render;
 
+// Bilinear eta weighted by (1 - hull coverage) of each texel.
 float sample_interaction_eta(vec2 p) {
 	if (interaction_enabled == 0U) {
 		return 0.0;
@@ -66,10 +71,14 @@ float sample_interaction_eta(vec2 p) {
 	vec2 f = q - vec2(base);
 	ivec2 p0 = base & (dims - 1);
 	ivec2 p1 = (p0 + 1) & (dims - 1);
-	float e00 = imageLoad(interaction_render, p0).y;
-	float e10 = imageLoad(interaction_render, ivec2(p1.x, p0.y)).y;
-	float e01 = imageLoad(interaction_render, ivec2(p0.x, p1.y)).y;
-	float e11 = imageLoad(interaction_render, p1).y;
+	vec4 t00 = imageLoad(interaction_render, p0);
+	vec4 t10 = imageLoad(interaction_render, ivec2(p1.x, p0.y));
+	vec4 t01 = imageLoad(interaction_render, ivec2(p0.x, p1.y));
+	vec4 t11 = imageLoad(interaction_render, p1);
+	float e00 = t00.y * (1.0 - t00.w);
+	float e10 = t10.y * (1.0 - t10.w);
+	float e01 = t01.y * (1.0 - t01.w);
+	float e11 = t11.y * (1.0 - t11.w);
 	return mix(mix(e00, e10, f.x), mix(e01, e11, f.x), f.y) * fade;
 }
 

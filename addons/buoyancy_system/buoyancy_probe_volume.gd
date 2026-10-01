@@ -158,9 +158,6 @@ func _ready() -> void:
 	_connect_probe_signals()
 	if debug_enabled:
 		_ensure_debug_nodes()
-	else:
-		_debug_mesh_instance = get_node_or_null(DEBUG_NODE_NAME) as MeshInstance3D
-		_update_debug_visibility()
 	_queue_debug_rebuild()
 
 
@@ -663,8 +660,6 @@ func _rebuild_probe_cache() -> void:
 
 func _collect_probes(root: Node) -> void:
 	for child in root.get_children():
-		if child == _debug_mesh_instance:
-			continue
 		if _is_physical_probe(child):
 			_physical_cache.push_back(child)
 		elif _is_fx_probe(child):
@@ -730,14 +725,12 @@ func _rebuild_queued_debug_mesh() -> void:
 
 
 func _ensure_debug_nodes() -> void:
-	if _debug_mesh_instance != null and is_instance_valid(_debug_mesh_instance):
+	if _debug_mesh_instance != null:
 		return
-	_debug_mesh_instance = get_node_or_null(DEBUG_NODE_NAME) as MeshInstance3D
-	if _debug_mesh_instance == null:
-		_debug_mesh_instance = MeshInstance3D.new()
-		_debug_mesh_instance.name = DEBUG_NODE_NAME
-		add_child(_debug_mesh_instance)
-		_debug_mesh_instance.owner = owner
+	# Internal and unowned: debug geometry is never saved into the scene.
+	_debug_mesh_instance = MeshInstance3D.new()
+	_debug_mesh_instance.name = DEBUG_NODE_NAME
+	add_child(_debug_mesh_instance, false, INTERNAL_MODE_BACK)
 	_debug_mesh_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_debug_mesh_instance.extra_cull_margin = 10000.0
 	_debug_mesh_instance.mesh = _debug_mesh
@@ -746,8 +739,6 @@ func _ensure_debug_nodes() -> void:
 
 
 func _update_debug_visibility() -> void:
-	if _debug_mesh_instance == null and is_inside_tree():
-		_debug_mesh_instance = get_node_or_null(DEBUG_NODE_NAME) as MeshInstance3D
 	if _debug_mesh_instance != null:
 		_debug_mesh_instance.visible = debug_enabled
 

@@ -5,6 +5,7 @@
 [ext_resource type="Material" path="res://addons/sky_system/materials/sky.tres" id="2_sky"]
 [ext_resource type="Shader" uid="uid://c06rajf110qna" path="res://addons/sky_system/shaders/celestial_disk.gdshader" id="3_disk_shader"]
 [ext_resource type="Material" path="res://addons/sky_system/materials/starfield.tres" id="4_starfield"]
+[ext_resource type="Resource" path="res://addons/sky_system/cloud_presets/fair.tres" id="5_cloud_preset"]
 
 [sub_resource type="Curve" id="Curve_2q5k3"]
 _limits = [0.0, 2.0, 0.0, 1.0]
@@ -100,6 +101,7 @@ rings = 48
 [node name="SkySystem" type="Node3D" unique_id=356109582]
 script = ExtResource("1_sky_system")
 profile = SubResource("Resource_oebik")
+cloud_preset = ExtResource("5_cloud_preset")
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=1481807339]
 environment = SubResource("Environment_dynamic")

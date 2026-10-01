@@ -5,40 +5,39 @@ extends RefCounted
 ##
 ## Simulates eta = h + p, the wave deviation from the hull-conforming rest
 ## state, on a grid_size x grid_size window of cell_size meters that follows the
-## camera with wrap-around addressing. Each step:
-##   1. pressure: hull pressure head p from HullProfiles, and eta packed for the FFT
+## camera with wrap-around addressing. OceanSystem calls step() once per physics
+## tick, so every step sees a new hull pose. Each step:
+##   1. pressure: hull pressure head p (draft, minus the bow-wave rise), hull
+##      coverage and bow rise from HullProfiles, and eta packed for the FFT
 ##   2. FFT -> multiply by g|k| (exact deep-water dispersion) -> inverse FFT
-##   3. step: time integration, absorbing border, foam, render texture
-## render_texture (rgba16f: h, eta, foam) is sampled by the water material and
-## the surface query shader.
+##   3. step: time integration, viscosity, absorbing border, foam, render texture
+## render_texture (rgba16f: h, eta, foam, hull coverage) is sampled by the water
+## material and the surface query shader.
 
 const SHADER_DIR := 'res://addons/ocean_system/shaders/compute/'
 const WORKGROUP_SIZE := 16
 const MAX_HULLS := 32
 const MAX_IMPULSES := 64
-const FLOATS_PER_HULL := 28
+const FLOATS_PER_HULL := 36
 const GRAVITY := 9.81
 
 ## Simulation tunables, set by OceanSystem.
 var gravity_scale := 1.0
 var damping := 0.2
-var step_rate := 60.0
-var max_steps_per_frame := 4
+var viscosity := 0.1
 var sponge_cells := 24.0
 var sponge_damping := 12.0
 var foam_grow := 1.5
 var foam_decay := 0.35
 var foam_slope_threshold := 0.15
-var foam_pressure_rate := 0.6
+var foam_bow_rate := 0.5
 
 var grid_size : int
 var cell_size : float
-## rgba16f: x = visible offset h, y = eta (h + p), z = foam.
+## rgba16f: x = visible offset h, y = eta (h + p), z = foam, w = hull coverage.
 var render_texture : RID
 ## Integer cell coordinate of the window's first cell.
 var window_origin := Vector2i.ZERO
-## Simulated seconds skipped because a frame needed more than max_steps_per_frame steps.
-var dropped_time := 0.0
 
 var _context : RenderingContext
 var _device : RenderingDevice
@@ -63,7 +62,6 @@ var _operator_set : RID
 ## those textures; they are kept out of the deletion queue.
 var _pressure_sets := {}
 var _current := 0
-var _time_accumulator := 0.0
 var _has_window := false
 var _pending_impulses := PackedVector4Array()
 
@@ -91,7 +89,7 @@ func _init(device : RenderingDevice, size : int, meters_per_cell : float) -> voi
 		empty_state[i + 1] = -1.0e30
 	for i in 2:
 		_states.push_back(_context.create_texture(dims, RenderingDevice.DATA_FORMAT_R32G32B32A32_SFLOAT, storage, 0, RDTextureView.new(), [empty_state.to_byte_array()]).rid)
-	_pressure = _context.create_texture(dims, RenderingDevice.DATA_FORMAT_R32_SFLOAT, storage).rid
+	_pressure = _context.create_texture(dims, RenderingDevice.DATA_FORMAT_R32G32B32A32_SFLOAT, storage).rid
 	_spectrum = _context.create_texture(dims, RenderingDevice.DATA_FORMAT_R32G32_SFLOAT, storage).rid
 	var empty_render := PackedByteArray()
 	empty_render.resize(size * size * 8)
@@ -153,25 +151,15 @@ func clear_uniform_set_cache() -> void:
 	_pressure_sets.clear()
 
 
-## Moves the window to the camera and runs every whole step due this frame.
-## hull_data holds hull_count SimHull records (FLOATS_PER_HULL floats each).
-func advance(delta : float, camera_position : Vector3, hull_data : PackedFloat32Array, hull_count : int, cascade_data : PackedByteArray, cascade_count : int, water_level : float, wave_blend_alpha : float, current_displacement : RID, previous_displacement : RID, hull_profiles : RID) -> void:
+## Moves the window to the camera and advances the simulation by one step of
+## dt seconds. hull_data holds hull_count SimHull records (FLOATS_PER_HULL floats each).
+func step(dt : float, camera_position : Vector3, hull_data : PackedFloat32Array, hull_count : int, cascade_data : PackedByteArray, cascade_count : int, water_level : float, wave_blend_alpha : float, current_displacement : RID, previous_displacement : RID, hull_profiles : RID) -> void:
 	assert(hull_count <= MAX_HULLS, "At most %d hulls can force the interaction simulation." % MAX_HULLS)
-	var step_dt := 1.0 / step_rate
-	_time_accumulator += delta
-	var steps := int(_time_accumulator / step_dt)
-	_time_accumulator -= float(steps) * step_dt
-	if steps > max_steps_per_frame:
-		dropped_time += float(steps - max_steps_per_frame) * step_dt
-		steps = max_steps_per_frame
-
 	var new_origin := Vector2i(floori(camera_position.x / cell_size), floori(camera_position.z / cell_size)) - Vector2i.ONE * (grid_size / 2)
 	var scroll := _has_window and new_origin != window_origin
 	var old_origin := window_origin
 	window_origin = new_origin
 	_has_window = true
-	if steps == 0 and not scroll:
-		return
 
 	if hull_count > 0:
 		var hull_bytes := hull_data.to_byte_array()
@@ -188,28 +176,26 @@ func advance(delta : float, camera_position : Vector3, hull_data : PackedFloat32
 	if scroll:
 		_dispatch(compute_list, 'iwave_scroll', _scroll_sets[_current], [old_origin.x, old_origin.y, window_origin.x, window_origin.y, grid_size], Vector3i(groups, groups, 1))
 		_device.compute_list_add_barrier(compute_list)
-	for step in steps:
-		if step == 0 and impulse_count > 0:
-			_dispatch(compute_list, 'iwave_impulse', _impulse_sets[_current], [window_origin.x, window_origin.y, grid_size, cell_size, impulse_count], Vector3i(groups, groups, 1))
-			_device.compute_list_add_barrier(compute_list)
-		_dispatch(compute_list, 'iwave_pressure', _get_pressure_set(_current, profiles, current_displacement, previous_displacement),
-			[window_origin.x, window_origin.y, grid_size, cell_size, hull_count, cascade_count, water_level, wave_blend_alpha], Vector3i(groups, groups, 1))
+	if impulse_count > 0:
+		_dispatch(compute_list, 'iwave_impulse', _impulse_sets[_current], [window_origin.x, window_origin.y, grid_size, cell_size, impulse_count], Vector3i(groups, groups, 1))
 		_device.compute_list_add_barrier(compute_list)
-		_dispatch_fft(compute_list, false, -1.0)
-		_dispatch_fft(compute_list, true, -1.0)
-		_dispatch(compute_list, 'iwave_operator', _operator_set, [grid_size, cell_size, GRAVITY * gravity_scale], Vector3i(groups, groups, 1))
-		_device.compute_list_add_barrier(compute_list)
-		_dispatch_fft(compute_list, true, 1.0)
-		_dispatch_fft(compute_list, false, 1.0)
-		_dispatch(compute_list, 'iwave_step', _step_sets[_current], [
-			window_origin.x, window_origin.y, grid_size, cell_size, step_dt,
-			damping, sponge_cells, sponge_damping, foam_grow, foam_decay, foam_slope_threshold, foam_pressure_rate,
-		], Vector3i(groups, groups, 1))
-		_device.compute_list_add_barrier(compute_list)
-		_current = 1 - _current
+	_dispatch(compute_list, 'iwave_pressure', _get_pressure_set(_current, profiles, current_displacement, previous_displacement),
+		[window_origin.x, window_origin.y, grid_size, cell_size, hull_count, cascade_count, water_level, wave_blend_alpha], Vector3i(groups, groups, 1))
+	_device.compute_list_add_barrier(compute_list)
+	_dispatch_fft(compute_list, false, -1.0)
+	_dispatch_fft(compute_list, true, -1.0)
+	_dispatch(compute_list, 'iwave_operator', _operator_set, [grid_size, cell_size, GRAVITY * gravity_scale], Vector3i(groups, groups, 1))
+	_device.compute_list_add_barrier(compute_list)
+	_dispatch_fft(compute_list, true, 1.0)
+	_dispatch_fft(compute_list, false, 1.0)
+	_dispatch(compute_list, 'iwave_step', _step_sets[_current], [
+		window_origin.x, window_origin.y, grid_size, cell_size, dt,
+		damping, viscosity, sponge_cells, sponge_damping, foam_grow, foam_decay, foam_slope_threshold, foam_bow_rate,
+	], Vector3i(groups, groups, 1))
+	_device.compute_list_add_barrier(compute_list)
+	_current = 1 - _current
 	_device.compute_list_end()
-	if steps > 0:
-		_pending_impulses.clear()
+	_pending_impulses.clear()
 
 
 func release() -> void:

@@ -3,20 +3,19 @@
 Probe-based buoyancy for `RigidBody3D`s floating on an `OceanSystem`. Probes are
 generated from a hull mesh in the editor, saved into the scene, and sampled
 every physics tick through the ocean's batched GPU query. Also includes water
-contact events, a sinking monitor, and a demo floating-body base class.
+contact events and sinking (roll, flooding or a destroyed hitbox group).
 
 Requires `ocean_system`.
 
 ## Setup
 
 ```
-RigidBody3D                (or FloatingDebugBody / FloatingBoat)
+RigidBody3D                (e.g. FloatingBoat)
 ├─ CollisionShape3D
 ├─ <hull model>
-├─ BuoyantBody             finds the parent body and the ocean
-├─ BuoyancyProbeVolume     source_paths → hull model
-│  └─ GeneratedProbes      BuoyancyProbeNode / BuoyancyFxProbeNode children
-└─ BuoyantSinkingMonitor   optional
+├─ BuoyantBody             finds the parent body and the ocean; optional sinking
+└─ BuoyancyProbeVolume     source_paths → hull model
+   └─ GeneratedProbes      BuoyancyProbeNode / BuoyancyFxProbeNode children
 ```
 
 1. Add `BuoyantBody` under the rigid body. It uses `rigid_body_path` or the
@@ -113,31 +112,25 @@ to the mesh bounds footprint), then:
 
 With `debug_enabled` it draws probes, the waterline intersection and hull,
 per-probe forces, gravity, net force and centre of mass. With it off, nothing
-is redrawn.
+is redrawn. The debug mesh is an internal child created at runtime (or when the
+volume is opened in the editor) and is never saved into the scene.
 
-## `BuoyantSinkingMonitor`
+## Sinking
 
-Resolves its rigid body, `BuoyantBody` and `sinking_probe_paths` once in
-`_ready` (a wrong path fails an assert). Starts sinking when roll exceeds
-`max_roll_degrees`, when every probe in `sinking_probe_paths` is deeper than
-`sink_probe_depth_threshold` (each must be an enabled probe of the body), or
-when
-`_on_hitbox_group_destroyed(group, hit_data)` is called for a group listed in
-`sink_on_destroyed_groups`. Sinking multiplies `BuoyantBody.buoyancy_strength`
-by `sink_buoyancy_multiplier`, emits `sinking_started(reason, data)`, and frees
-`delete_root_path` (default: the rigid body) after `delete_delay`, emitting
-`sinking_delete_timeout` first. `start_sinking()` can be called directly.
+`BuoyantBody`'s **Sinking** group is off by default (`sinking_enabled`). When
+on, after each tick's forces it starts sinking when roll exceeds
+`max_roll_degrees`, or when every probe in `sinking_probe_paths` (resolved once
+in `_ready`; each must be an enabled probe of the body) is deeper than
+`sink_probe_depth_threshold`. `_on_hitbox_group_destroyed(group, hit_data)`
+starts it for a group listed in `sink_on_destroyed_groups`.
+
+Sinking multiplies `buoyancy_strength` by `sink_buoyancy_multiplier`, emits
+`sinking_started(reason, data)` (`reason` is `roll`, `draft`,
+`hitbox_group_destroyed` or whatever `start_sinking()` was given), and frees
+`delete_root_path` (default: the rigid body) after `delete_delay`.
+`start_sinking()` works whether or not sinking is enabled; `is_sinking()` reports
+it.
 
 This addon does not know about hitboxes. Connect a damage system's signal to
 `_on_hitbox_group_destroyed` in the scene (the boat template does this with
 `HitboxHealthManager.group_destroyed`).
-
-## `FloatingDebugBody`
-
-A `RigidBody3D` base for demo boats (extended by `FloatingBoat`):
-
-- `player_controlled` enables/disables descendants in group `boat_controller`,
-  so only the player's boat reads input.
-- Optional per-axis local angular damping and a roll-righting spring with dead
-  zone and torque cap.
-- `debug_enabled` draws a world-space position trail for the player body.

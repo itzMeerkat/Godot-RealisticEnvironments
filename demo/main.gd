@@ -9,7 +9,7 @@ extends Node3D
 @onready var compass_hud : CompassHud = $CompassLayer/CompassHud
 @onready var buoy_distance_label : BuoyDistanceLabel = $Buoy/RigidBody3D/DistanceLabel
 
-var player_boat : FloatingDebugBody
+var player_boat : FloatingBoat
 var buoyant_body : BuoyantBody
 
 func _init() -> void:
@@ -51,12 +51,12 @@ func _input(event: InputEvent) -> void:
 func _configure_player_boat() -> void:
 	player_boat = _find_player_boat()
 	if player_boat == null:
-		push_warning("No player-controlled FloatingDebugBody found. Falling back to the first floating body in the scene.")
+		push_warning("No player-controlled FloatingBoat found. Falling back to the first boat in the scene.")
 		player_boat = _find_first_boat()
 		if player_boat != null:
 			player_boat.player_controlled = true
 	if player_boat == null:
-		push_warning("No FloatingDebugBody found. Camera and debug panel are not bound to a boat.")
+		push_warning("No FloatingBoat found. Camera and debug panel are not bound to a boat.")
 		return
 
 	for boat in _get_boats():
@@ -73,22 +73,22 @@ func _configure_player_boat() -> void:
 	)
 
 
-func _find_player_boat() -> FloatingDebugBody:
+func _find_player_boat() -> FloatingBoat:
 	for boat in _get_boats():
 		if boat.player_controlled:
 			return boat
 	return null
 
 
-func _find_first_boat() -> FloatingDebugBody:
+func _find_first_boat() -> FloatingBoat:
 	var boats := _get_boats()
 	return boats[0] if not boats.is_empty() else null
 
 
-func _get_boats() -> Array[FloatingDebugBody]:
-	var boats : Array[FloatingDebugBody] = []
+func _get_boats() -> Array[FloatingBoat]:
+	var boats : Array[FloatingBoat] = []
 	for child in get_children():
-		var boat := child as FloatingDebugBody
+		var boat := child as FloatingBoat
 		if boat != null:
 			boats.push_back(boat)
 	return boats

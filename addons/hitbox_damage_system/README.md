@@ -2,27 +2,25 @@
 
 `Area3D` hitboxes that detect projectiles, a manager that turns hits into
 grouped health (e.g. `hull`, `mast`) and emits signals, a smoke hit effect, and
-a small debug health UI. No dependency on the launcher or buoyancy addons.
+an optional debug health panel. No dependency on the launcher or buoyancy addons.
 
 ## Setup
 
 ```
 Ship (RigidBody3D)
-├─ HitboxHealthManager
-├─ HitboxHealthDebugUI        optional
-└─ ProjectileHitboxes
+└─ Hitboxes (HitboxHealthManager, Node3D)
    ├─ HullHitbox  (ProjectileHitbox, hitbox_group = "hull") + CollisionShape3D(s)
    └─ MastHitbox  (ProjectileHitbox, hitbox_group = "mast") + CollisionShape3D(s)
 ```
 
-- `HitboxHealthManager` scans `hitbox_root_path` (default: its parent) for
-  `ProjectileHitbox` nodes and registers itself with them. A hitbox without a
-  registered manager uses `manager_path` or searches up its ancestors for a node
-  with `handle_projectile_hit()`.
+- `HitboxHealthManager` is the hitbox container: in `_ready` (and on
+  `refresh_hitboxes()`) it registers itself with every `ProjectileHitbox`
+  below it. A hitbox without a registered manager uses `manager_path` or
+  searches up its ancestors for a node with `handle_projectile_hit()`.
 - `ProjectileHitbox` configures itself on physics layer 3 (bit 4, "Hitbox")
   with mask 2 (bit 2, "Projectile") unless `configure_collision_layers` is off.
 - Connect `group_destroyed` to whatever should react — e.g.
-  `BuoyantSinkingMonitor._on_hitbox_group_destroyed`.
+  `BuoyantBody._on_hitbox_group_destroyed`.
 
 ## Hit flow
 
@@ -57,5 +55,6 @@ Manager API: `handle_projectile_hit(hitbox, projectile, hit_data)`,
 - `ProjectileHitSmokeEffect` (`default_projectile_hit_smoke.tscn`) builds a
   one-shot `GPUParticles3D` smoke puff in code and frees itself. Any effect
   scene with `play()`, or a `GPUParticles3D`, works as `hit_effect_scene`.
-- `HitboxHealthDebugUI` is a `CanvasLayer` that builds health bars for every
-  group of its manager and refreshes a few times per second.
+- `debug_ui_enabled` on the manager shows a panel with a health bar per group
+  in `group_max_health`, updated on every health change. It is an internal
+  `CanvasLayer` built in `_ready`.
