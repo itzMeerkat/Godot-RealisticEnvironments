@@ -24,38 +24,17 @@ layout(std430, set = OCEAN_SAMPLING_SET, binding = OCEAN_CASCADE_BUFFER_BINDING)
 	OceanCascade ocean_cascades[];
 };
 
-layout(rgba16f, set = OCEAN_SAMPLING_SET, binding = OCEAN_CURRENT_DISPLACEMENT_BINDING) restrict readonly uniform image2DArray ocean_current_displacements;
-layout(rgba16f, set = OCEAN_SAMPLING_SET, binding = OCEAN_PREVIOUS_DISPLACEMENT_BINDING) restrict readonly uniform image2DArray ocean_previous_displacements;
+// Bound with a repeat, linear sampler (the maps have mip chains; this reads mip 0):
+// the same hardware bilinear filtering as the water material's vertex shader.
+layout(set = OCEAN_SAMPLING_SET, binding = OCEAN_CURRENT_DISPLACEMENT_BINDING) uniform sampler2DArray ocean_current_displacements;
+layout(set = OCEAN_SAMPLING_SET, binding = OCEAN_PREVIOUS_DISPLACEMENT_BINDING) uniform sampler2DArray ocean_previous_displacements;
 
-// Bilinear filtering with repeat wrapping and texel centers at (i + 0.5) / size,
-// the same convention as hardware filtering in the water material. Map sizes are
-// powers of two, so wrapping is a mask (GLSL % is undefined for negative values).
 vec3 ocean_load_current_bilinear(int layer, vec2 uv) {
-	ivec2 dims = imageSize(ocean_current_displacements).xy;
-	vec2 p = uv * vec2(dims) - 0.5;
-	ivec2 base = ivec2(floor(p));
-	vec2 f = p - vec2(base);
-	ivec2 p0 = base & (dims - 1);
-	ivec2 p1 = (p0 + 1) & (dims - 1);
-	vec3 c00 = imageLoad(ocean_current_displacements, ivec3(p0.x, p0.y, layer)).xyz;
-	vec3 c10 = imageLoad(ocean_current_displacements, ivec3(p1.x, p0.y, layer)).xyz;
-	vec3 c01 = imageLoad(ocean_current_displacements, ivec3(p0.x, p1.y, layer)).xyz;
-	vec3 c11 = imageLoad(ocean_current_displacements, ivec3(p1.x, p1.y, layer)).xyz;
-	return mix(mix(c00, c10, f.x), mix(c01, c11, f.x), f.y);
+	return textureLod(ocean_current_displacements, vec3(uv, float(layer)), 0.0).xyz;
 }
 
 vec3 ocean_load_previous_bilinear(int layer, vec2 uv) {
-	ivec2 dims = imageSize(ocean_previous_displacements).xy;
-	vec2 p = uv * vec2(dims) - 0.5;
-	ivec2 base = ivec2(floor(p));
-	vec2 f = p - vec2(base);
-	ivec2 p0 = base & (dims - 1);
-	ivec2 p1 = (p0 + 1) & (dims - 1);
-	vec3 c00 = imageLoad(ocean_previous_displacements, ivec3(p0.x, p0.y, layer)).xyz;
-	vec3 c10 = imageLoad(ocean_previous_displacements, ivec3(p1.x, p0.y, layer)).xyz;
-	vec3 c01 = imageLoad(ocean_previous_displacements, ivec3(p0.x, p1.y, layer)).xyz;
-	vec3 c11 = imageLoad(ocean_previous_displacements, ivec3(p1.x, p1.y, layer)).xyz;
-	return mix(mix(c00, c10, f.x), mix(c01, c11, f.x), f.y);
+	return textureLod(ocean_previous_displacements, vec3(uv, float(layer)), 0.0).xyz;
 }
 
 // Summed cascade displacement at the undisplaced (source) position xz, for the

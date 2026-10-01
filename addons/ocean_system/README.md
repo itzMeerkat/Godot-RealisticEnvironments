@@ -1,21 +1,22 @@
 # Ocean System
 
 FFT-simulated ocean surface for Godot 4 Forward+. It generates wave
-displacement/normal/foam maps with compute shaders, renders them on a
-camera-following clipmap mesh, and answers gameplay water-height queries on the
-GPU.
+displacement/normal/foam maps with compute shaders, renders them on a CDLOD
+quadtree mesh around the camera, and answers gameplay water-height queries on
+the GPU.
 
 ## Quick start
 
 1. Instance `ocean_system.tscn` (an `OceanSystem`, which is a `MeshInstance3D`).
    It ships with three cascades (128 m swell, 32 m waves, 8 m detail).
-2. Optional: point `sky_source_path` at a `SkySystem` so reflections and sun
-   glitter follow the time of day.
+2. Optional: point `sky_source_path` at a `SkySystem` so reflections follow the
+   time of day (the sun highlight follows the scene's DirectionalLight).
 3. Optional: enable `use_external_wind` and point `wind_source_path` at a
    `WindSystem` (or any node with the wind contract, see below). With
    `use_external_wind` on, a missing wind source is an error.
-4. Run with a `Camera3D` active. The mesh follows the camera in XZ; wave
-   sampling is world-space, so waves do not slide.
+4. Run with a `Camera3D` active. The mesh is built around it every frame from
+   world-fixed nodes, so neither the waves nor the vertices slide. Only the
+   node's height matters: don't rotate or scale the `OceanSystem`.
 
 Without a `RenderingDevice` (Compatibility renderer, headless) the ocean reports
 an error and disables itself.
@@ -33,7 +34,7 @@ an error and disables itself.
 | `water_level` | Still-water height used by the shader, queries, reflections and buoyancy. |
 | `water_material` | Template material. The ocean renders with a private duplicate (`get_water_material()`), applied through the `RenderingServer` and never saved into the scene. |
 | `get_wind_source()`, `get_external_wind_speed()`, `get_external_wind_direction()`, `should_use_external_wind()` | Resolved external wind. |
-| `get_sky_source()`, `get_ocean_radius()` | Resolved sky node; near-mesh radius. |
+| `get_sky_source()` | Resolved sky node. |
 | group `ocean_system` | Every instance joins it on entering the tree; `BuoyantBody` uses it for auto-discovery. |
 
 `WaterSurfaceQueryResult` (RefCounted): `points` (as submitted for that
@@ -82,10 +83,10 @@ Heights match the rendered mesh:
 
 - **Material** — `water_material` template.
 - **Wave Parameters / Surface Shading / Foam Shading** — water and foam colour,
-  roughness/specular, normal strength, bicubic normal filtering,
+  roughness, normal strength, bicubic normal filtering,
   `fragment_cascade_limit` (cascades sampled per pixel), foam intensity /
   threshold / softness.
-- **Sky Reflection** — procedural sky reflection, sun glitter, sun scatter;
+- **Sky Reflection** — procedural sky reflection, `sun_specular_strength`, sun scatter;
   `manual_*` values are used when no sky source is set or the source lacks a
   value. A sky source with `get_cloud_cubemap()` (SkySystem) also puts its
   clouds into the reflection.
@@ -94,12 +95,13 @@ Heights match the rendered mesh:
   resolution, strength, distortion, and clipping of submerged pixels.
 - **External Wind** — `use_external_wind`, `wind_source_path`.
 - **`parameters`** — the ordered `Array[WaveCascadeParameters]` (at most 8).
-- **Performance** — `simulation_map_size` (128–1024), `updates_per_second`
-  (FFT updates per second, default 20; 0 = every frame).
-- **Mesh** — `ocean_radius`, `mesh_inner_extent`, `mesh_base_cell_size`,
-  `mesh_ring_count`, camera following and snapping.
-- **Far Ocean LOD** — extra coarse rings out to `far_lod_radius` (default 7 km)
-  and distance fades for normals, foam and short-wavelength cascades.
+- **Performance** — `simulation_map_size` (128–1024, default 512),
+  `updates_per_second` (FFT updates per second, default 20; 0 = every frame).
+- **Mesh** — `mesh_base_cell_size` (vertex spacing nearest the camera) and
+  `mesh_extent` (radius of rendered water, default 7 km).
+- **Far Ocean LOD** — distance fades of foam, reflection and scatter shading
+  (`far_lod_start_distance`, blend distance, curve, far foam). Geometry and
+  normals are not faded: their mip chains filter them.
 
 ## Wave cascades (`WaveCascadeParameters`)
 
@@ -139,8 +141,9 @@ tiles for swell and short tiles for chop. Per cascade:
 - **Wake foam** — comes from the interaction simulation (see
   [Interaction simulation](#interaction-simulation-wakes)); there is no
   scripted foam API.
-- **Shading debug** — the shader uniform `water_debug_view` (1–13) shows single
-  terms (sky reflection, glitter, crest masks, scatter, roughness, …). The
+- **Shading debug** — the shader uniform `water_debug_view` (1–14) shows single
+  terms (sky reflection, sun specular, crest masks, scatter, roughness, slope
+  deviation, …). The
   ocean resets it to 0 on ready, so set it on the material at runtime.
 
 ## Hull cutouts
@@ -295,7 +298,7 @@ Known limits:
 
 `_process` (priority 100):
 
-1. follows the camera;
+1. selects the mesh's CDLOD nodes around the active camera (runtime only);
 2. gathers near-camera hull cutouts into shader arrays;
 3. pushes sky lighting when the sky source emitted `lighting_changed` (every
    frame for a source without that signal);
@@ -320,12 +323,26 @@ Per cascade, per spectrum slot:
 2. `spectrum_modulate` — advances the spectrum in time via the dispersion
    relation and writes the complex inputs of four IFFTs.
 3. `fft_compute` → `transpose` → `fft_compute` — Stockham IFFT on rows, then on
-   columns (butterfly factors are precomputed once by `fft_butterfly`).
+   columns (butterfly factors are precomputed once by `fft_butterfly`). One
+   workgroup transforms one row and is exactly one row wide: `fft_compute.glsl`
+   has a `#[versions]` entry per map size (`size_128` … `size_1024`).
 4. `fft_unpack` — writes the displacement map (xyz) and the normal map
-   (height gradient, `dhx/dx`, foam in alpha). Foam appears where the
-   displacement Jacobian drops below `whitecap`; it reads the previous normal
-   map so it accumulates (`foam_grow_rate`) and decays (`foam_decay_rate`)
-   across updates.
+   (height gradient, squared gradient, foam in alpha). The gradient is the slope of the
+   displaced surface with the cascade's `displacement_scale` as choppiness:
+   crests, where the surface is compressed, get steeper (at most 4×), troughs
+   flatter. Foam appears where the (unscaled) displacement Jacobian drops below
+   `whitecap`; it reads the previous normal map so it accumulates
+   (`foam_grow_rate`) and decays (`foam_decay_rate`) across updates.
+5. `mip_downsample` — builds the displacement and normal maps' mip chains
+   (2×2 box filter per level). All channels average linearly, so at any level
+   `z − |xy|²` of the normal map is the slope variance inside the texel.
+
+Each pass reads what the previous one wrote, and dispatches inside one compute
+list are not ordered, so every pass is followed by `compute_list_add_barrier`.
+The FFT buffer has one region per spectrum slot rather than per layer, since
+only one cascade is transformed per frame. Output maps are cleared to zero on
+creation: until the second pass completes, the "previous" maps sampled by the
+interaction simulation and surface queries have never been written.
 
 `update()` advances every cascade's clock, direction and crossfade state
 (`WaveCascadeParameters.advance()`), then schedules one cascade per frame to
@@ -350,21 +367,54 @@ everything on teardown, and exact-size push-constant packing.
 
 ### Mesh
 
-`_create_generated_clipmap_mesh()` builds concentric rings: a dense centre
-(`mesh_base_cell_size` spacing out to `mesh_inner_extent / 2`), then
-`mesh_ring_count` bands doubling the spacing, then coarse spacing to
-`ocean_radius`, then (with far LOD) `far_lod_ring_count` rings eased out to
-`far_lod_radius`. The vertex shader samples displacements in world space, and
-fades out short-wavelength cascades with distance.
+CDLOD (Strugar, *Continuous Distance-Dependent Level of Detail*, 2010). The
+ocean is a quadtree of nodes on a fixed world grid; every node is the same
+16 × 16 quad grid, `mesh_base_cell_size × 16 × 2^level` meters wide. Each frame
+`_update_lod_grid()` selects nodes around the active camera:
+
+- start from top-level nodes covering `mesh_extent`;
+- skip nodes outside `mesh_extent` or the camera frustum (bounds grown by
+  `LOD_WAVE_MARGIN` for displaced waves);
+- split a node while it comes within the next finer level's range
+  (`range(L) = 3 × node size(L)`, 3D distance), else draw it.
+
+All nodes are drawn as one multimesh (custom data: origin x, z, vertex spacing,
+level; identity transforms), set as the instance's base through the
+RenderingServer so nothing generated is saved. The editor keeps the preview
+plane.
+
+In the vertex shader, vertices morph with distance onto the next level's
+lattice (odd vertices slide onto even neighbours between `0.66` of the way to
+`range(L)` and `range(L)`), and on through up to two coarser levels. Positions
+then depend only on the world position, so nodes of different levels meet
+without cracks. The same continuous vertex spacing picks the displacement mip
+(texels as wide as the spacing): coarse vertices read prefiltered waves instead
+of aliasing them, and nothing slides because vertices never move with the
+camera.
 
 ### Water shader (`shaders/spatial/water.gdshader`)
 
-Uses Godot's built-in PBR lighting with `world_vertex_coords`. The fragment
-stage discards water inside near hulls, samples normals/foam for up to
-`fragment_cascade_limit` cascades (bicubic or bilinear), combines FFT foam,
-interaction foam and cutout edge foam, then adds emission terms: procedural sky
-reflection (Fresnel, roughness-broadened), planar reflection, GGX-shaped sun
-glitter, sun scatter and crest glow.
+Uses `world_vertex_coords`. The fragment stage discards water inside near
+hulls, then samples normals/foam for up to `fragment_cascade_limit` cascades
+with trilinear/anisotropic filtering over the pixel footprint (explicit
+gradients, taken before the discard; bicubic only under magnification).
+
+Filtering averages small waves away, and the slopes it removed come back as
+roughness: per cascade, `z − |xy|²` of the filtered sample is the unresolved
+slope variance, scaled by `normal_scale²`, and the GGX alpha is
+`sqrt(clear_roughness⁴ + Σ variance)` (Toksvig/LEAN). Up close the water is
+smooth and every resolved wave makes its own sharp glint; in the distance the
+waves merge into a rough surface with a broad sun path.
+
+Lighting:
+- `light()` replaces Godot's per-light shading: Lambert diffuse and a GGX
+  highlight with the water's Fresnel (`sky_reflection_f0`), times
+  `sun_specular_strength` and the clear-water mask. It uses the light's color,
+  energy and attenuation, so it follows the SkySystem's sun (altitude, clouds).
+- `SPECULAR` is 0, which turns off the engine's sky reflection; the shader
+  adds its own as `EMISSION`: procedural sky reflection (Fresnel, blurred by
+  the same roughness; the sky gradient over three directions, clouds along
+  one), planar reflection, sun scatter and crest glow.
 
 ### Planar reflections
 
@@ -394,14 +444,15 @@ The shader runs one thread per point and writes height, displacement, normal
 and velocity (48 bytes per sample). Displacement sampling lives in
 `shaders/compute/ocean_sampling.glslinc`, shared through `#include`. It covers:
 
-- the cascade buffer and displacement-image declarations;
-- bilinear filtering with the same texel-centre convention as the hardware
-  sampler;
+- the cascade buffer and displacement texture declarations (sampled through a
+  repeat, linear sampler at mip 0: the same hardware bilinear filtering as the
+  vertex shader);
 - previous/current and spectrum blending;
 - horizontal-displacement inversion.
 
-Godot doesn't track include dependencies: reimport `surface_query.glsl` after
-editing the include.
+Godot doesn't track include dependencies: reimport `surface_query.glsl` and
+`iwave_pressure.glsl` after editing the include (delete their
+`.godot/imported/<name>-*` files; the importer compares content, not dates).
 
 ## Files
 
@@ -417,7 +468,7 @@ editing the include.
 | `hull_water_footprint.gd`, `hull_profile.gd`, `hull_slicer.gd` | Hull footprints, baked profiles, and the triangle slicer (also used by `BuoyancyProbeVolume`) |
 | `water_interaction_sim.gd` | `WaterInteractionSim` iWave simulation around the camera |
 | `shaders/compute/iwave_*.glsl`, `iwave_common.glslinc` | Interaction passes: scroll, impulse, pressure, FFT, operator, step |
-| `shaders/compute/*.glsl` | Spectrum, FFT, unpack, transpose, surface query |
+| `shaders/compute/*.glsl` | Spectrum, FFT, unpack, normal mip chain, transpose, surface query |
 | `shaders/compute/ocean_sampling.glslinc` | Shared displacement sampling for compute shaders |
 | `shaders/spatial/water.gdshader`, `mat_water.tres` | Water shader and default material template (no runtime values stored) |
 | `editor_water_preview_mesh.tres` | Plane shown in the editor instead of the generated mesh |

@@ -12,7 +12,13 @@ var context : RenderingContext
 var pipelines : Dictionary = {}
 var descriptors : Dictionary = {}
 var output_descriptors : Array[Dictionary] = []
-var unpack_sets : Array[RID] = []
+## unpack_sets[output][layer]
+var unpack_sets : Array[Array] = []
+## mip_sets[output][layer][level - 1] = [displacement set, normal set]; each reads
+## level - 1 and writes level.
+var mip_sets : Array[Array] = []
+## Levels of the displacement and normal map mip chains (down to 1x1).
+var mip_count := 1
 var fft_buffer_set : RID
 var cascade_capacity := 0
 var spectrum_layer_capacity := 0
@@ -38,25 +44,44 @@ func init_gpu(num_cascades : int) -> void:
 	var spectrum_compute_shader := context.load_shader('res://addons/ocean_system/shaders/compute/spectrum_compute.glsl')
 	var fft_butterfly_shader := context.load_shader('res://addons/ocean_system/shaders/compute/fft_butterfly.glsl')
 	var spectrum_modulate_shader := context.load_shader('res://addons/ocean_system/shaders/compute/spectrum_modulate.glsl')
-	var fft_compute_shader := context.load_shader('res://addons/ocean_system/shaders/compute/fft_compute.glsl')
+	# One shader version per map size: the FFT workgroup is exactly one row wide.
+	var fft_compute_shader := context.load_shader('res://addons/ocean_system/shaders/compute/fft_compute.glsl', StringName('size_%d' % map_size))
 	var transpose_shader := context.load_shader('res://addons/ocean_system/shaders/compute/transpose.glsl')
 	var fft_unpack_shader := context.load_shader('res://addons/ocean_system/shaders/compute/fft_unpack.glsl')
+	var mip_downsample_shader := context.load_shader('res://addons/ocean_system/shaders/compute/mip_downsample.glsl')
 
 	# --- DESCRIPTOR PREPARATION ---
 	var dims := Vector2i(map_size, map_size)
 	var num_fft_stages := int(log(map_size) / log(2))
+	# Both output maps carry full mip chains (down to 1x1). Displacement mips let
+	# coarse mesh vertices sample prefiltered waves; normal mips hold mean slope,
+	# mean squared slope and foam, so distant water is filtered and its unresolved
+	# slope variance becomes roughness in the water shader.
+	mip_count = num_fft_stages + 1
 
 	descriptors[&'spectrum'] = context.create_texture(dims, RenderingDevice.DATA_FORMAT_R32G32B32A32_SFLOAT, RenderingDevice.TEXTURE_USAGE_STORAGE_BIT | RenderingDevice.TEXTURE_USAGE_CAN_COPY_FROM_BIT, spectrum_layer_capacity)
 	descriptors[&'butterfly_factors'] = context.create_storage_buffer(num_fft_stages*map_size * 4 * 4)         # Size: (#FFT stages * map size * sizeof(vec4))
-	descriptors[&'fft_buffer'] = context.create_storage_buffer(spectrum_layer_capacity * map_size*map_size * 4*2 * 2 * 4) # Size: (map size^2 * 4 FFTs * 2 temp buffers (for Stockham FFT) * sizeof(vec2))
+	# One region per spectrum slot, not per layer: only one cascade is transformed per frame.
+	descriptors[&'fft_buffer'] = context.create_storage_buffer(SPECTRUM_SLOT_COUNT * map_size*map_size * 4*2 * 2 * 4) # Size: (slots * map size^2 * 4 FFTs * 2 temp buffers (for Stockham FFT) * sizeof(vec2))
 	output_descriptors.clear()
 	unpack_sets.clear()
+	mip_sets.clear()
+	var output_usage := RenderingDevice.TEXTURE_USAGE_STORAGE_BIT | RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT | RenderingDevice.TEXTURE_USAGE_CAN_UPDATE_BIT | RenderingDevice.TEXTURE_USAGE_CAN_COPY_FROM_BIT | RenderingDevice.TEXTURE_USAGE_CAN_COPY_TO_BIT
 	for i in range(2):
-		var displacement_map := context.create_texture(dims, RenderingDevice.DATA_FORMAT_R16G16B16A16_SFLOAT, RenderingDevice.TEXTURE_USAGE_STORAGE_BIT | RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT | RenderingDevice.TEXTURE_USAGE_CAN_UPDATE_BIT | RenderingDevice.TEXTURE_USAGE_CAN_COPY_FROM_BIT, spectrum_layer_capacity)
-		var normal_map := context.create_texture(dims, RenderingDevice.DATA_FORMAT_R16G16B16A16_SFLOAT, RenderingDevice.TEXTURE_USAGE_STORAGE_BIT | RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT | RenderingDevice.TEXTURE_USAGE_CAN_UPDATE_BIT, spectrum_layer_capacity)
+		var displacement_map := context.create_texture(dims, RenderingDevice.DATA_FORMAT_R16G16B16A16_SFLOAT, output_usage, spectrum_layer_capacity, RDTextureView.new(), [], mip_count)
+		var normal_map := context.create_texture(dims, RenderingDevice.DATA_FORMAT_R16G16B16A16_SFLOAT, output_usage, spectrum_layer_capacity, RDTextureView.new(), [], mip_count)
+		# Start from zero: the first pass reads the other output's foam, and until the
+		# second pass completes, the "previous" maps (sampled by the interaction
+		# simulation and surface queries) have never been written. Uninitialized
+		# memory can hold NaN, which the interaction simulation never recovers from.
+		context.device.texture_clear(displacement_map.rid, Color(0, 0, 0, 0), 0, mip_count, 0, spectrum_layer_capacity)
+		context.device.texture_clear(normal_map.rid, Color(0, 0, 0, 0), 0, mip_count, 0, spectrum_layer_capacity)
 		output_descriptors.push_back({
 			&'displacement_map': displacement_map,
 			&'normal_map': normal_map,
+			# views[layer][mip]: storage bindings need single-level views.
+			&'displacement_views': _create_layer_mip_views(displacement_map),
+			&'normal_views': _create_layer_mip_views(normal_map),
 		})
 
 	var spectrum_compute_set := context.create_descriptor_set([descriptors[&'spectrum']], spectrum_compute_shader, 0)
@@ -68,7 +93,22 @@ func init_gpu(num_cascades : int) -> void:
 	for i in range(output_descriptors.size()):
 		var output := output_descriptors[i]
 		var previous_output := output_descriptors[(i + 1) % output_descriptors.size()]
-		unpack_sets.push_back(context.create_descriptor_set([output[&'displacement_map'], output[&'normal_map'], previous_output[&'normal_map']], fft_unpack_shader, 0))
+		var output_unpack_sets : Array[RID] = []
+		var output_mip_sets : Array[Array] = []
+		for layer in spectrum_layer_capacity:
+			var displacement_views : Array = output[&'displacement_views'][layer]
+			var normal_views : Array = output[&'normal_views'][layer]
+			var previous_normal_views : Array = previous_output[&'normal_views'][layer]
+			output_unpack_sets.push_back(context.create_descriptor_set([displacement_views[0], normal_views[0], previous_normal_views[0]], fft_unpack_shader, 0))
+			var layer_mip_sets : Array[Array] = []
+			for mip in range(1, mip_count):
+				layer_mip_sets.push_back([
+					context.create_descriptor_set([displacement_views[mip - 1], displacement_views[mip]], mip_downsample_shader, 0),
+					context.create_descriptor_set([normal_views[mip - 1], normal_views[mip]], mip_downsample_shader, 0),
+				])
+			output_mip_sets.push_back(layer_mip_sets)
+		unpack_sets.push_back(output_unpack_sets)
+		mip_sets.push_back(output_mip_sets)
 	_sync_output_descriptors()
 
 	# --- COMPUTE PIPELINE CREATION ---
@@ -79,7 +119,12 @@ func init_gpu(num_cascades : int) -> void:
 	pipelines[&'fft_butterfly'] = context.create_pipeline([butterfly_groups, num_fft_stages, 1], [fft_butterfly_set], fft_butterfly_shader)
 	pipelines[&'fft_compute'] = context.create_pipeline([1, map_size, 4], [fft_compute_set], fft_compute_shader)
 	pipelines[&'transpose'] = context.create_pipeline([int(map_size / 32), int(map_size / 32), 4], [transpose_set], transpose_shader)
-	pipelines[&'fft_unpack'] = context.create_pipeline([groups_16, groups_16, 1], [unpack_sets[write_output_index], fft_buffer_set], fft_unpack_shader)
+	pipelines[&'fft_unpack'] = context.create_pipeline([groups_16, groups_16, 1], [unpack_sets[write_output_index][0], fft_buffer_set], fft_unpack_shader)
+	var mip_pipelines : Array[Callable] = []
+	for mip in range(1, mip_count):
+		var groups := maxi(1, (map_size >> mip) / 8)
+		mip_pipelines.push_back(context.create_pipeline([groups, groups, 1], [mip_sets[write_output_index][0][mip - 1][0]], mip_downsample_shader))
+	pipelines[&'mip_downsample'] = mip_pipelines
 
 	# We only need to generate butterfly factors once for each map_size.
 	var compute_list := context.compute_list_begin()
@@ -105,25 +150,40 @@ func _update(compute_list : int, cascade_index : int, parameters : Array[WaveCas
 func _update_spectrum_slot(compute_list : int, cascade_index : int, slot : int, params : WaveCascadeParameters) -> void:
 	var spectrum_layer := cascade_index * SPECTRUM_SLOT_COUNT + slot
 	var inputs := params.get_slot_inputs(slot)
+	# Every pass reads what the previous one wrote. Dispatches inside one compute
+	# list are not ordered, so each dependency needs a barrier.
 	## --- WAVE SPECTRA UPDATE ---
 	if params.is_spectrum_slot_dirty(slot):
 		var alpha := JONSWAP_alpha(inputs.wind_speed, inputs.fetch_length*1e3)
 		var omega := JONSWAP_peak_angular_frequency(inputs.wind_speed, inputs.fetch_length*1e3)
 		pipelines[&'spectrum_compute'].call(context, compute_list, RenderingContext.create_push_constant([params.spectrum_seed.x, params.spectrum_seed.y, params.tile_length.x, params.tile_length.y, alpha, omega, inputs.wind_speed, deg_to_rad(inputs.wind_direction), inputs.water_depth_meters, inputs.swell, inputs.detail, inputs.spread, spectrum_layer]))
 		params.mark_spectrum_slot_clean(slot)
-	pipelines[&'spectrum_modulate'].call(context, compute_list, RenderingContext.create_push_constant([params.tile_length.x, params.tile_length.y, inputs.water_depth_meters, params.time, spectrum_layer]))
+		context.compute_list_add_barrier(compute_list)
+	pipelines[&'spectrum_modulate'].call(context, compute_list, RenderingContext.create_push_constant([params.tile_length.x, params.tile_length.y, inputs.water_depth_meters, params.time, spectrum_layer, slot]))
+	context.compute_list_add_barrier(compute_list)
 
 	## --- WAVE SPECTRA INVERSE FOURIER TRANSFORM ---
-	var fft_push_constant := RenderingContext.create_push_constant([spectrum_layer])
+	var fft_push_constant := RenderingContext.create_push_constant([slot])
 	# Note: We need not do a second transpose after computing FFT on rows since rotating the wave by
 	#       PI/2 doesn't affect it visually.
 	pipelines[&'fft_compute'].call(context, compute_list, fft_push_constant)
+	context.compute_list_add_barrier(compute_list)
 	pipelines[&'transpose'].call(context, compute_list, fft_push_constant)
 	context.compute_list_add_barrier(compute_list)
 	pipelines[&'fft_compute'].call(context, compute_list, fft_push_constant)
+	context.compute_list_add_barrier(compute_list)
 
 	## --- DISPLACEMENT/NORMAL MAP UPDATE ---
-	pipelines[&'fft_unpack'].call(context, compute_list, RenderingContext.create_push_constant([spectrum_layer, params.whitecap, params.foam_grow_rate, params.foam_decay_rate]), [unpack_sets[write_output_index], fft_buffer_set])
+	pipelines[&'fft_unpack'].call(context, compute_list, RenderingContext.create_push_constant([slot, params.whitecap, params.foam_grow_rate, params.foam_decay_rate, params.displacement_scale]), [unpack_sets[write_output_index][spectrum_layer], fft_buffer_set])
+
+	## --- MIP CHAINS (displacement and normal maps of this layer) ---
+	for mip in range(1, mip_count):
+		context.compute_list_add_barrier(compute_list)
+		var target_size := map_size >> mip
+		var level_push_constant := RenderingContext.create_push_constant([target_size, target_size])
+		var level_sets : Array = mip_sets[write_output_index][spectrum_layer][mip - 1]
+		pipelines[&'mip_downsample'][mip - 1].call(context, compute_list, level_push_constant, [level_sets[0]])
+		pipelines[&'mip_downsample'][mip - 1].call(context, compute_list, level_push_constant, [level_sets[1]])
 
 ## Begins updating wave cascades based on the provided parameters. To balance stutter,
 ## the generator schedules one cascade update per frame. If the previous pass is still
@@ -156,6 +216,16 @@ func _complete_output_pass() -> void:
 		descriptors[&'normal_map'].rid,
 		descriptors[&'previous_normal_map'].rid,
 	)
+
+## views[layer][mip] of a texture array, for storage bindings.
+func _create_layer_mip_views(texture : RenderingContext.Descriptor) -> Array[Array]:
+	var views : Array[Array] = []
+	for layer in spectrum_layer_capacity:
+		var layer_views : Array[RenderingContext.Descriptor] = []
+		for mip in mip_count:
+			layer_views.push_back(context.create_texture_slice_view(texture, layer, mip))
+		views.push_back(layer_views)
+	return views
 
 func _sync_output_descriptors() -> void:
 	descriptors[&'displacement_map'] = output_descriptors[current_output_index][&'displacement_map']

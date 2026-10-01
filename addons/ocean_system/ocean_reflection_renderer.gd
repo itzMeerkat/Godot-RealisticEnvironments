@@ -9,21 +9,14 @@ const PLANAR_REFLECTION_CLIP_EFFECT := preload("res://addons/ocean_system/planar
 ## Enables the offscreen mirrored camera pass. When disabled, the viewport stops
 ## rendering and the water material receives zero planar reflection strength.
 var enabled := true
-## Maximum side length of the planar reflection texture in pixels. Larger values
-## sharpen reflected objects but increase render cost and memory use.
+## Maximum side length of the planar reflection texture in pixels (the aspect
+## ratio is kept). Larger values sharpen reflected objects but cost more.
 var texture_size := 1024
 ## Multiplier applied to the main viewport size before clamping to texture_size.
 ## Lower values are cheaper and blurrier; higher values preserve detail.
 var resolution_scale := 0.5
-## Overall brightness of dynamic geometry reflections. This is multiplied by the
-## water Fresnel term, so grazing angles still appear stronger.
-var reflection_strength := 0.42
-## UV distortion amount from wave normals. Higher values make reflected objects
-## wobble and break up more; too high can make reflections hard to read.
-var reflection_distortion := 0.018
-## Fresnel falloff exponent for planar reflections. Higher values concentrate
-## reflections near grazing angles; lower values make them visible head-on.
-var fresnel_power := 4.0
+## How much reflected geometry covers the sky reflection behind it (1 = fully).
+var reflection_strength := 1.0
 ## Render layers visible to the reflection camera. The configured water layer is
 ## always removed so the ocean does not recursively reflect itself.
 var reflection_cull_mask := 0xFFFFF
@@ -103,14 +96,15 @@ func _process(_delta: float) -> void:
 	if source_camera == null:
 		return
 	_sync_camera(source_camera)
-	_update_water_material()
+	_update_view_projection()
 
 
 func _update_viewport_size() -> void:
+	# Scale both axes alike: a different aspect would narrow the reflection
+	# camera's field of view and cut off the sides of the reflection.
 	var scaled := Vector2(get_viewport().get_visible_rect().size) * resolution_scale
-	var width := clampi(int(roundf(scaled.x)), 128, texture_size)
-	var height := clampi(int(roundf(scaled.y)), 128, texture_size)
-	_viewport.size = Vector2i(width, height)
+	scaled *= minf(1.0, float(texture_size) / maxf(scaled.x, scaled.y))
+	_viewport.size = Vector2i(maxi(int(roundf(scaled.x)), 128), maxi(int(roundf(scaled.y)), 128))
 
 
 func _sync_camera(source_camera: Camera3D) -> void:
@@ -149,11 +143,14 @@ func _update_water_material() -> void:
 	material.set_shader_parameter(&"planar_reflection_enabled", enabled)
 	material.set_shader_parameter(&"planar_reflection_texture", get_reflection_texture())
 	material.set_shader_parameter(&"planar_reflection_strength", reflection_strength if enabled else 0.0)
-	material.set_shader_parameter(&"planar_reflection_distortion", reflection_distortion)
-	material.set_shader_parameter(&"planar_reflection_fresnel_power", fresnel_power)
 	material.set_shader_parameter(&"planar_reflection_plane_y", water_level)
+	_update_view_projection()
+
+
+## The only reflection parameter that changes every frame.
+func _update_view_projection() -> void:
 	var view_projection := _camera.get_camera_projection() * Projection(_camera.global_transform.affine_inverse())
-	material.set_shader_parameter(&"planar_reflection_view_projection", view_projection)
+	water.get_water_material().set_shader_parameter(&"planar_reflection_view_projection", view_projection)
 
 
 func _layer_bit(layer: int) -> int:

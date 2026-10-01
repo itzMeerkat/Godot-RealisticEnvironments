@@ -49,6 +49,8 @@ var _hull_buffer : RID
 var _cascade_buffer : RID
 var _impulse_buffer : RID
 var _profile_sampler : RID
+## Repeat, linear: the wave displacement maps tile (ocean_sampling.glslinc).
+var _displacement_sampler : RID
 var _empty_profiles : RID
 var _shaders := {}
 var _pipelines := {}
@@ -105,6 +107,7 @@ func _init(device : RenderingDevice, size : int, meters_per_cell : float) -> voi
 	sampler_state.repeat_u = RenderingDevice.SAMPLER_REPEAT_MODE_CLAMP_TO_EDGE
 	sampler_state.repeat_v = RenderingDevice.SAMPLER_REPEAT_MODE_CLAMP_TO_EDGE
 	_profile_sampler = _context.deletion_queue.push(_device.sampler_create(sampler_state))
+	_displacement_sampler = _context.deletion_queue.push(_device.sampler_create(OceanSurfaceQueries.create_displacement_sampler_state()))
 	# Bound when no hull profiles exist; never read then (hull count is 0).
 	_empty_profiles = _context.create_texture(Vector2i.ONE, RenderingDevice.DATA_FORMAT_R16G16_SFLOAT, RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT, 1, RDTextureView.new(), [PackedByteArray([0, 0, 0, 0])]).rid
 
@@ -234,8 +237,8 @@ func _get_pressure_set(state_index : int, hull_profiles : RID, current_displacem
 		_uniform(3, RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER, [_hull_buffer]),
 		_uniform(4, RenderingDevice.UNIFORM_TYPE_SAMPLER_WITH_TEXTURE, [_profile_sampler, hull_profiles]),
 		_uniform(5, RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER, [_cascade_buffer]),
-		_uniform(6, RenderingDevice.UNIFORM_TYPE_IMAGE, [current_displacement]),
-		_uniform(7, RenderingDevice.UNIFORM_TYPE_IMAGE, [previous_displacement]),
+		_uniform(6, RenderingDevice.UNIFORM_TYPE_SAMPLER_WITH_TEXTURE, [_displacement_sampler, current_displacement]),
+		_uniform(7, RenderingDevice.UNIFORM_TYPE_SAMPLER_WITH_TEXTURE, [_displacement_sampler, previous_displacement]),
 	], _shaders['iwave_pressure'], 0)
 	_pressure_sets[key] = uniform_set
 	return uniform_set

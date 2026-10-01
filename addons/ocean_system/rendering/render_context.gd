@@ -47,12 +47,15 @@ func compute_list_end() -> void: device.compute_list_end()
 func compute_list_add_barrier(compute_list : int) -> void: device.compute_list_add_barrier(compute_list)
 
 # --- HELPER FUNCTIONS ---
-func load_shader(path : String) -> RID:
-	if not shader_cache.has(path):
-		var shader_file := load(path)
-		var shader_spirv : RDShaderSPIRV = shader_file.get_spirv()
-		shader_cache[path] = deletion_queue.push(device.shader_create_from_spirv(shader_spirv))
-	return shader_cache[path]
+## version selects a `#[versions]` entry of the shader file (empty for files without one).
+func load_shader(path : String, version := &"") -> RID:
+	var key := "%s:%s" % [path, version]
+	if not shader_cache.has(key):
+		var shader_file : RDShaderFile = load(path)
+		var shader_spirv : RDShaderSPIRV = shader_file.get_spirv(version)
+		assert(shader_spirv.compile_error_compute == "", "%s [%s]: %s" % [path, version, shader_spirv.compile_error_compute])
+		shader_cache[key] = deletion_queue.push(device.shader_create_from_spirv(shader_spirv))
+	return shader_cache[key]
 
 func create_storage_buffer(size : int, data : PackedByteArray=[], usage:=0) -> Descriptor:
 	if size > len(data):
@@ -61,16 +64,22 @@ func create_storage_buffer(size : int, data : PackedByteArray=[], usage:=0) -> D
 	return Descriptor.new(deletion_queue.push(device.storage_buffer_create(max(size, len(data)), data, usage)), RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER)
 
 ## data holds one PackedByteArray per layer (or is empty for uninitialized contents).
-func create_texture(dimensions : Vector2i, format : RenderingDevice.DataFormat, usage:=0x18B, num_layers:=0, view:=RDTextureView.new(), data : Array=[]) -> Descriptor:
+func create_texture(dimensions : Vector2i, format : RenderingDevice.DataFormat, usage:=0x18B, num_layers:=0, view:=RDTextureView.new(), data : Array=[], mipmaps:=1) -> Descriptor:
 	assert(num_layers >= 0)
 	var texture_format := RDTextureFormat.new()
 	texture_format.array_layers = 1 if num_layers == 0 else num_layers
+	texture_format.mipmaps = mipmaps
 	texture_format.format = format
 	texture_format.width = dimensions.x
 	texture_format.height = dimensions.y
 	texture_format.texture_type = RenderingDevice.TEXTURE_TYPE_2D if num_layers == 0 else RenderingDevice.TEXTURE_TYPE_2D_ARRAY
 	texture_format.usage_bits = usage # Default: RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT | RenderingDevice.TEXTURE_USAGE_COLOR_ATTACHMENT_BIT | RenderingDevice.TEXTURE_USAGE_STORAGE_BIT | RenderingDevice.TEXTURE_USAGE_CAN_COPY_TO_BIT | RenderingDevice.TEXTURE_USAGE_CAN_COPY_FROM_BIT
 	return Descriptor.new(deletion_queue.push(device.texture_create(texture_format, view, data)), RenderingDevice.UNIFORM_TYPE_IMAGE)
+
+## A 2D view of one layer and mip level of a texture (array). Storage-image
+## bindings of a texture with mipmaps need a single-level view.
+func create_texture_slice_view(texture : Descriptor, layer : int, mip : int) -> Descriptor:
+	return Descriptor.new(deletion_queue.push(device.texture_create_shared_from_slice(RDTextureView.new(), texture.rid, layer, mip, 1, RenderingDevice.TEXTURE_SLICE_2D)), RenderingDevice.UNIFORM_TYPE_IMAGE)
 
 ## Creates a descriptor set. The ordering of the provided descriptors matches the binding ordering
 ## within the shader.

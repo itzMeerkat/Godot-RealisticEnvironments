@@ -9,6 +9,21 @@ const EDITOR_WATER_PREVIEW_MESH := preload('res://addons/ocean_system/editor_wat
 const OCEAN_REFLECTION_RENDERER := preload('res://addons/ocean_system/ocean_reflection_renderer.gd')
 const MAX_CASCADES := 8
 const MAX_NEAR_HULLS := 8
+## CDLOD mesh: every node is a LOD_GRID x LOD_GRID quad grid; a level-L node is
+## (mesh_base_cell_size * LOD_GRID * 2^L) meters wide.
+const LOD_GRID := 16
+## range(L) = LOD_RANGE_FACTOR * node size(L): level-L vertices morph onto the
+## level L + 1 lattice up to that camera distance. Above ~2.8 a node never
+## borders one two levels coarser, which the shader's morph relies on.
+const LOD_RANGE_FACTOR := 3.0
+## Morphing toward the next level starts this far between range(L - 1) and range(L).
+const LOD_MORPH_START := 0.66
+const MAX_LOD_LEVELS := 16
+const MAX_LOD_NODES := 1024
+## 3x4 transform + custom data per multimesh instance.
+const LOD_INSTANCE_FLOATS := 16
+## Room for displaced waves around a node, for frustum culling (m).
+const LOD_WAVE_MARGIN := 12.0
 const SURFACE_QUERY_BYTES_PER_CASCADE := OceanSurfaceQueries.BYTES_PER_CASCADE
 const WATER_DEBUG_VIEW_NORMAL := 0
 
@@ -56,8 +71,9 @@ const WATER_DEBUG_VIEW_NORMAL := 0
 	set(value):
 		water_scatter_color = value
 		_set_water_shader_parameter(&'water_scatter_color', water_scatter_color)
-## PBR roughness for clear water before slope and distance adjustments. Lower
-## values make sharper highlights and reflections; higher values look windier.
+## Roughness of ripples shorter than the smallest cascade. The shader widens it
+## by the wave slopes a pixel cannot resolve, so distant water gets rougher on
+## its own; this only sets how sharp the closest sun glints and reflections are.
 @export_range(0.0, 1.0, 0.01) var clear_roughness := 0.10 :
 	set(value):
 		clear_roughness = value
@@ -68,24 +84,6 @@ const WATER_DEBUG_VIEW_NORMAL := 0
 	set(value):
 		foam_roughness = value
 		_set_water_shader_parameter(&'foam_roughness', foam_roughness)
-## PBR specular strength for clear water. Raise for stronger direct highlights;
-## lower if reflections and glitter already make the surface too bright.
-@export_range(0.0, 1.0, 0.01) var clear_specular := 0.25 :
-	set(value):
-		clear_specular = value
-		_set_water_shader_parameter(&'clear_specular', clear_specular)
-## PBR specular strength for foam-covered areas. Foam generally needs less
-## specular than clear water to avoid a plastic look.
-@export_range(0.0, 1.0, 0.01) var foam_specular := 0.08 :
-	set(value):
-		foam_specular = value
-		_set_water_shader_parameter(&'foam_specular', foam_specular)
-## How strongly wave slope increases material roughness before foam appears.
-## Higher values make steep waves look broader and less mirror-smooth.
-@export_range(0.0, 4.0, 0.01) var slope_roughness_strength := 0.55 :
-	set(value):
-		slope_roughness_strength = value
-		_set_water_shader_parameter(&'slope_roughness_strength', slope_roughness_strength)
 ## Overall strength of normal-map lighting in the fragment shader. Lower values
 ## make the water calmer visually without changing mesh displacement or queries.
 @export_range(0.0, 1.0, 0.01) var normal_strength := 1.0 :
@@ -152,9 +150,9 @@ const WATER_DEBUG_VIEW_NORMAL := 0
 	set(value):
 		sky_reflection_enabled = value
 		_set_water_shader_parameter(&'sky_reflection_enabled', sky_reflection_enabled)
-## Overall strength of the procedural sky reflection. Increase for brighter open
-## ocean reflections; decrease if the water looks too emissive or glassy.
-@export_range(0.0, 2.0, 0.01) var sky_reflection_strength := 0.55 :
+## Overall strength of the water's reflection (sky and planar). It is already
+## weighted by Fresnel, so 1 is physical; the engine adds no sky reflection of its own.
+@export_range(0.0, 2.0, 0.01) var sky_reflection_strength := 1.0 :
 	set(value):
 		sky_reflection_strength = value
 		_set_water_shader_parameter(&'sky_reflection_strength', sky_reflection_strength)
@@ -176,36 +174,12 @@ const WATER_DEBUG_VIEW_NORMAL := 0
 	set(value):
 		sky_horizon_boost = value
 		_set_water_shader_parameter(&'sky_horizon_boost', sky_horizon_boost)
-## How much wave slope broadens the procedural reflection. Higher values make
-## rough seas blur sky reflection more strongly.
-@export_range(0.0, 2.0, 0.01) var sky_reflection_roughness_strength := 0.75 :
+## Multiplier on the sun's specular highlight (glints and the sun path). The
+## highlight is lit by the scene's lights (color, energy), so 1 is physical.
+@export_range(0.0, 4.0, 0.01) var sun_specular_strength := 1.0 :
 	set(value):
-		sky_reflection_roughness_strength = value
-		_set_water_shader_parameter(&'sky_reflection_roughness_strength', sky_reflection_roughness_strength)
-## Extra reflection roughness added by far-ocean LOD. This softens distant sky
-## reflection and helps hide high-frequency tiling near the horizon.
-@export_range(0.0, 1.0, 0.01) var sky_reflection_far_roughness := 0.35 :
-	set(value):
-		sky_reflection_far_roughness = value
-		_set_water_shader_parameter(&'sky_reflection_far_roughness', sky_reflection_far_roughness)
-## Strength of sun glitter generated from wave normals. Increase for sharper,
-## brighter sparkling highlights along the reflected sun path.
-@export_range(0.0, 4.0, 0.01) var sun_glitter_strength := 0.42 :
-	set(value):
-		sun_glitter_strength = value
-		_set_water_shader_parameter(&'sun_glitter_strength', sun_glitter_strength)
-## Sharpness of sun glitter. Higher values create smaller, tighter glints;
-## lower values create broader highlights.
-@export_range(8.0, 512.0, 1.0) var sun_glitter_power := 64.0 :
-	set(value):
-		sun_glitter_power = value
-		_set_water_shader_parameter(&'sun_glitter_power', sun_glitter_power)
-## Extra glitter multiplier when the sun is low. Use this to emphasize sunrise
-## and sunset sparkle without over-brightening midday water.
-@export_range(0.0, 4.0, 0.01) var sun_glitter_low_sun_boost := 1.4 :
-	set(value):
-		sun_glitter_low_sun_boost = value
-		_set_water_shader_parameter(&'sun_glitter_low_sun_boost', sun_glitter_low_sun_boost)
+		sun_specular_strength = value
+		_set_water_shader_parameter(&'sun_specular_strength', sun_specular_strength)
 ## Strength of broad sun-lit water scatter. This is a soft radiance term that
 ## helps backlit water read as translucent instead of only reflective.
 @export_range(0.0, 2.0, 0.01) var sun_scatter_strength := 0.24 :
@@ -356,23 +330,12 @@ const WATER_DEBUG_VIEW_NORMAL := 0
 	set(value):
 		reflection_resolution_scale = value
 		if is_node_ready(): _update_planar_reflection_settings()
-## Overall dynamic reflection contribution. The shader still applies Fresnel and
-## foam masking, so this controls maximum intensity rather than a flat opacity.
-@export_range(0.0, 1.0, 0.01) var reflection_strength := 0.42 :
+## How much reflected scene geometry covers the sky reflection behind it (1 =
+## fully, as in reality). Both share the water's Fresnel reflectance and
+## sky_reflection_strength.
+@export_range(0.0, 1.0, 0.01) var reflection_strength := 1.0 :
 	set(value):
 		reflection_strength = value
-		if is_node_ready(): _update_planar_reflection_settings()
-## UV perturbation from wave normals. Higher values make reflected objects wobble
-## and break up more; lower values keep reflections stable and mirror-like.
-@export_range(0.0, 0.08, 0.001) var reflection_distortion := 0.018 :
-	set(value):
-		reflection_distortion = value
-		if is_node_ready(): _update_planar_reflection_settings()
-## Fresnel exponent for planar reflections. Larger values keep reflections mostly
-## at grazing angles; smaller values show them more from top-down views.
-@export_range(0.25, 8.0, 0.05) var reflection_fresnel_power := 4.0 :
-	set(value):
-		reflection_fresnel_power = value
 		if is_node_ready(): _update_planar_reflection_settings()
 ## Visual layer assigned to the ocean while planar reflections are active. The
 ## reflection camera removes this layer to avoid recursive water reflections.
@@ -529,46 +492,20 @@ const WATER_DEBUG_VIEW_NORMAL := 0
 @export_group('Performance Parameters')
 ## Resolution for each displacement/normal texture layer and FFT simulation.
 ## Cost scales roughly with resolution squared; 512 is much cheaper than 1024.
-@export_enum('128x128:128', '256x256:256', '512x512:512', '1024x1024:1024') var simulation_map_size := 1024 :
+@export_enum('128x128:128', '256x256:256', '512x512:512', '1024x1024:1024') var simulation_map_size := 512 :
 	set(value):
 		simulation_map_size = value
 		if is_node_ready():
 			_setup_wave_generator()
 
 @export_group('Mesh')
-## Radius in meters for the high-detail near-ocean mesh before optional far LOD
-## rings begin. Increase for wider close water coverage; decrease for fewer verts.
-@export_range(32.0, 4096.0, 1.0, "or_greater") var ocean_radius := 256.0 :
-	set(value):
-		ocean_radius = value
-		if is_node_ready(): _update_water_mesh()
-## Full side length of the highest-density center patch, in meters. Larger values
-## keep fine tessellation farther from the camera but increase vertex count.
-@export_range(16.0, 512.0, 1.0) var mesh_inner_extent := 128.0 :
-	set(value):
-		mesh_inner_extent = value
-		if is_node_ready(): _update_water_mesh()
-## Vertex spacing in meters for the highest-density center patch. Smaller values
-## create smoother near displacement but can add many vertices.
-@export_range(0.5, 16.0, 0.5) var mesh_base_cell_size := 1.0 :
-	set(value):
-		mesh_base_cell_size = value
-		if is_node_ready(): _update_water_mesh()
-## Number of progressively coarser rings before the outer near-ocean radius.
-## More rings preserve detail over distance; fewer rings reduce mesh complexity.
-@export_range(0, 8, 1) var mesh_ring_count := 2 :
-	set(value):
-		mesh_ring_count = value
-		if is_node_ready(): _update_water_mesh()
-## Keeps the generated water mesh centered around the active camera in XZ space.
-## Wave sampling remains world-space stable, so this does not slide the waves.
-@export var follow_active_camera := true
-## Snaps camera-follow movement to this grid size in meters. Set to 0 for smooth
-## continuous following; use snapping only if you need less frequent mesh motion.
-@export_range(0.0, 64.0, 0.25) var follow_snap_size := 0.0
-## Allows camera-follow behavior while running inside the editor. Keep disabled
-## if editor camera movement should not reposition the water node.
-@export var follow_camera_in_editor := false
+## Vertex spacing in meters of the finest mesh level, nearest the camera. Every
+## level doubles it, about every 3 * 16 * spacing meters of distance. Smaller
+## values give smoother near displacement but more vertices.
+@export_range(0.25, 16.0, 0.25) var mesh_base_cell_size := 1.0
+## Radius of the rendered water around the camera in meters. The edge follows
+## the mesh's nodes, so it is only roughly circular.
+@export_range(256.0, 20000.0, 1.0, "or_greater") var mesh_extent := 7000.0
 
 ## Target number of accepted wave simulation updates per second. Lower values
 ## reduce GPU FFT work
@@ -587,26 +524,12 @@ const WATER_DEBUG_VIEW_NORMAL := 0
 		if is_node_ready(): _update_planar_reflection_settings()
 
 @export_group('Far Ocean LOD')
-## Adds lower-density far rings and fades high-frequency normals/foam with
-## distance. Disable for small contained water areas or debugging near mesh only.
-@export var enable_far_lod := true :
+## Distance in meters at which near shading starts fading into far-ocean shading
+## (foam coverage and softness, reflection, scatter).
+@export_range(0.0, 4000.0, 1.0) var far_lod_start_distance := 192.0 :
 	set(value):
-		enable_far_lod = value
-		if is_node_ready(): _update_water_mesh()
+		far_lod_start_distance = value
 		_update_far_lod_shader_parameters()
-## Maximum radius of generated far-ocean geometry in meters. Large values can
-## reach the horizon but increase mesh bounds and culling area.
-@export_range(256.0, 20000.0, 1.0, "or_greater") var far_lod_radius := 7000.0 :
-	set(value):
-		far_lod_radius = value
-		if is_node_ready(): _update_water_mesh()
-		_update_far_lod_shader_parameters()
-## Number of extra low-density rings between ocean_radius and far_lod_radius.
-## More rings improve horizon shape; fewer rings reduce vertex count.
-@export_range(4, 96, 1) var far_lod_ring_count := 36 :
-	set(value):
-		far_lod_ring_count = value
-		if is_node_ready(): _update_water_mesh()
 ## Distance over which near detail fades into far-ocean shading. Larger values
 ## make the transition gradual; smaller values make far simplification start fast.
 @export_range(1.0, 4000.0, 1.0) var far_lod_blend_distance := 1400.0 :
@@ -618,18 +541,6 @@ const WATER_DEBUG_VIEW_NORMAL := 0
 @export_range(0.25, 4.0, 0.01) var far_lod_curve := 1.8 :
 	set(value):
 		far_lod_curve = value
-		_update_far_lod_shader_parameters()
-## Tile length threshold used to decide which cascades count as low frequency in
-## far LOD. Cascades shorter than this fade out more strongly with distance.
-@export_range(1.0, 512.0, 1.0) var far_low_frequency_tile_length := 32.0 :
-	set(value):
-		far_low_frequency_tile_length = value
-		_update_far_lod_shader_parameters()
-## Minimum normal strength retained in far-ocean shading. Raise if distant water
-## looks too flat; lower if the horizon looks noisy or shimmery.
-@export_range(0.0, 2.0, 0.01) var far_normal_strength := 0.14 :
-	set(value):
-		far_normal_strength = value
 		_update_far_lod_shader_parameters()
 ## Foam multiplier retained in the far ocean. Lower values suppress noisy horizon
 ## foam; higher values keep distant whitecaps visible.
@@ -679,6 +590,20 @@ var _hull_profile_ids := PackedInt64Array()
 var _interaction : WaterInteractionSim
 var _interaction_texture := Texture2DRD.new()
 var _last_wave_blend_alpha_sent := -1.0
+## Runtime mesh (see _setup_water_mesh); unused in the editor.
+var _lod_grid_mesh : ArrayMesh
+var _lod_multimesh : RID
+var _lod_buffer := PackedFloat32Array()
+var _lod_uploaded_buffer := PackedFloat32Array()
+var _lod_node_count := 0
+## range(L) per level, and where morphing toward level L + 1 starts.
+var _lod_ranges := PackedFloat32Array()
+var _lod_morph_starts := PackedFloat32Array()
+var _lod_top_level := 0
+## mesh_base_cell_size and mesh_extent the ranges were built for.
+var _lod_ranges_key := Vector2.ZERO
+var _lod_camera_position := Vector3.ZERO
+var _lod_frustum : Array[Plane] = []
 
 func _init() -> void:
 	rng.set_seed(1234) # This seed gives big waves!
@@ -698,13 +623,14 @@ func _ready() -> void:
 	_apply_water_material()
 	_resolve_wind_source()
 	_resolve_sky_source()
-	_update_water_mesh()
+	_setup_water_mesh()
 	_setup_wave_generator()
 	_setup_interaction()
 	_push_all_shader_parameters()
 
 func _process(delta : float) -> void:
-	_update_follow_camera()
+	if not Engine.is_editor_hint():
+		_update_lod_grid()
 	_update_hull_cutouts()
 	if _sky_source_polled or _sky_lighting_dirty:
 		_update_sky_lighting_shader_parameters()
@@ -732,15 +658,14 @@ func _push_all_shader_parameters() -> void:
 	_set_water_shader_parameter(&'fragment_cascade_limit', fragment_cascade_limit)
 	_set_water_shader_parameter(&'clear_roughness', clear_roughness)
 	_set_water_shader_parameter(&'foam_roughness', foam_roughness)
-	_set_water_shader_parameter(&'clear_specular', clear_specular)
-	_set_water_shader_parameter(&'foam_specular', foam_specular)
-	_set_water_shader_parameter(&'slope_roughness_strength', slope_roughness_strength)
 	_set_water_shader_parameter(&'foam_intensity', foam_intensity)
 	_set_water_shader_parameter(&'foam_threshold', foam_threshold)
 	_set_water_shader_parameter(&'foam_softness', foam_softness)
 	_update_sky_shading_static_parameters()
 	_update_sky_lighting_shader_parameters()
 	_update_far_lod_shader_parameters()
+	_lod_ranges_key = Vector2.ZERO
+	_update_lod_ranges()
 	_update_scales_uniform()
 	_bind_wave_textures()
 	_last_wave_blend_alpha_sent = -1.0
@@ -995,11 +920,7 @@ func _update_sky_shading_static_parameters() -> void:
 	_set_water_shader_parameter(&'sky_reflection_fresnel_power', sky_reflection_fresnel_power)
 	_set_water_shader_parameter(&'sky_reflection_f0', sky_reflection_f0)
 	_set_water_shader_parameter(&'sky_horizon_boost', sky_horizon_boost)
-	_set_water_shader_parameter(&'sky_reflection_roughness_strength', sky_reflection_roughness_strength)
-	_set_water_shader_parameter(&'sky_reflection_far_roughness', sky_reflection_far_roughness)
-	_set_water_shader_parameter(&'sun_glitter_strength', sun_glitter_strength)
-	_set_water_shader_parameter(&'sun_glitter_power', sun_glitter_power)
-	_set_water_shader_parameter(&'sun_glitter_low_sun_boost', sun_glitter_low_sun_boost)
+	_set_water_shader_parameter(&'sun_specular_strength', sun_specular_strength)
 	_set_water_shader_parameter(&'sun_scatter_strength', sun_scatter_strength)
 	_set_water_shader_parameter(&'sun_scatter_base', sun_scatter_base)
 	_set_water_shader_parameter(&'sun_scatter_phase_power', sun_scatter_phase_power)
@@ -1081,155 +1002,150 @@ func _resolve_sky_source() -> void:
 func _on_sky_lighting_changed() -> void:
 	_sky_lighting_dirty = true
 
-func _update_water_mesh() -> void:
+## The editor shows the shared preview plane. At runtime the ocean is a CDLOD
+## quadtree of grid nodes drawn as one multimesh, set directly as this instance's
+## base through the RenderingServer, so no generated mesh is ever saved.
+func _setup_water_mesh() -> void:
 	if Engine.is_editor_hint():
 		mesh = EDITOR_WATER_PREVIEW_MESH
 		extra_cull_margin = maxf(256.0, EDITOR_WATER_PREVIEW_MESH.size.length() * 0.5)
-		_update_far_lod_shader_parameters()
 		return
+	_lod_grid_mesh = _create_lod_grid_mesh()
+	_lod_multimesh = RenderingServer.multimesh_create()
+	RenderingServer.multimesh_set_mesh(_lod_multimesh, _lod_grid_mesh.get_rid())
+	RenderingServer.multimesh_allocate_data(_lod_multimesh, MAX_LOD_NODES, RenderingServer.MULTIMESH_TRANSFORM_3D, false, true)
+	RenderingServer.multimesh_set_visible_instances(_lod_multimesh, 0)
+	RenderingServer.instance_set_base(get_instance(), _lod_multimesh)
+	_lod_buffer.resize(MAX_LOD_NODES * LOD_INSTANCE_FLOATS)
+	# Identity instance transforms (the shader places the vertices): 3x4 rows.
+	for i in MAX_LOD_NODES:
+		_lod_buffer[i * LOD_INSTANCE_FLOATS] = 1.0
+		_lod_buffer[i * LOD_INSTANCE_FLOATS + 5] = 1.0
+		_lod_buffer[i * LOD_INSTANCE_FLOATS + 10] = 1.0
 
-	mesh = _create_generated_clipmap_mesh()
-	extra_cull_margin = _get_generated_mesh_half_extent()
-	_update_far_lod_shader_parameters()
-
-func _update_follow_camera() -> void:
-	if not follow_active_camera:
-		return
-	if Engine.is_editor_hint() and not follow_camera_in_editor:
-		return
-	var camera := get_viewport().get_camera_3d()
-	# No active camera yet (e.g. while a scene is loading): keep the current position.
-	if camera == null:
-		return
-
-	var target_x := camera.global_position.x
-	var target_z := camera.global_position.z
-	if follow_snap_size > 0.0:
-		target_x = roundf(target_x / follow_snap_size) * follow_snap_size
-		target_z = roundf(target_z / follow_snap_size) * follow_snap_size
-
-	var target_position := global_position
-	target_position.x = target_x
-	target_position.z = target_z
-	global_position = target_position
-
-func _create_generated_clipmap_mesh() -> ArrayMesh:
-	var arrays := []
-	arrays.resize(Mesh.ARRAY_MAX)
-
+## LOD_GRID x LOD_GRID quads; UV holds the lattice coordinates (0..LOD_GRID).
+func _create_lod_grid_mesh() -> ArrayMesh:
 	var vertices := PackedVector3Array()
 	var normals := PackedVector3Array()
 	var uvs := PackedVector2Array()
 	var indices := PackedInt32Array()
-
-	var radii := _build_circular_clipmap_radii()
-	var radial_count := radii.size()
-	var segment_count := _get_circular_clipmap_segment_count()
-
-	vertices.push_back(Vector3.ZERO)
-	normals.push_back(Vector3.UP)
-	uvs.push_back(Vector2.ZERO)
-
-	for radius_index in range(1, radial_count):
-		var radius := radii[radius_index]
-		for segment in range(segment_count):
-			var angle := TAU * float(segment) / float(segment_count)
-			var position := Vector3(cos(angle) * radius, 0.0, sin(angle) * radius)
-			vertices.push_back(position)
+	for z in LOD_GRID + 1:
+		for x in LOD_GRID + 1:
+			vertices.push_back(Vector3(x, 0.0, z))
 			normals.push_back(Vector3.UP)
-			uvs.push_back(Vector2(position.x, position.z))
-
-	for segment in range(segment_count):
-		var next_segment := (segment + 1) % segment_count
-		indices.push_back(0)
-		indices.push_back(1 + next_segment)
-		indices.push_back(1 + segment)
-
-	for radius_index in range(1, radial_count - 1):
-		var row := 1 + (radius_index - 1) * segment_count
-		var next_row := row + segment_count
-		for segment in range(segment_count):
-			var next_segment := (segment + 1) % segment_count
-			var a := row + segment
-			var b := row + next_segment
-			var c := next_row + segment
-			var d := next_row + next_segment
-			indices.push_back(a)
-			indices.push_back(b)
-			indices.push_back(c)
-			indices.push_back(b)
-			indices.push_back(d)
-			indices.push_back(c)
-
+			uvs.push_back(Vector2(x, z))
+	for z in LOD_GRID:
+		for x in LOD_GRID:
+			var a := z * (LOD_GRID + 1) + x
+			var b := a + 1
+			var c := a + LOD_GRID + 1
+			var d := c + 1
+			indices.append_array([a, b, c, b, d, c])
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = vertices
 	arrays[Mesh.ARRAY_NORMAL] = normals
 	arrays[Mesh.ARRAY_TEX_UV] = uvs
 	arrays[Mesh.ARRAY_INDEX] = indices
+	var grid_mesh := ArrayMesh.new()
+	grid_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	return grid_mesh
 
-	var array_mesh := ArrayMesh.new()
-	array_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-	return array_mesh
+## Selects the CDLOD nodes around the active camera and uploads them as multimesh
+## instances (custom data: node origin x, z, vertex spacing, level).
+func _update_lod_grid() -> void:
+	var camera := get_viewport().get_camera_3d()
+	# No active camera yet (e.g. while a scene is loading): draw nothing.
+	if camera == null:
+		RenderingServer.multimesh_set_visible_instances(_lod_multimesh, 0)
+		return
+	_update_lod_ranges()
+	_lod_camera_position = camera.global_position
+	_lod_frustum = camera.get_frustum()
+	_lod_node_count = 0
+	var top_size := mesh_base_cell_size * LOD_GRID * float(1 << _lod_top_level)
+	var first := ((Vector2(_lod_camera_position.x, _lod_camera_position.z) - Vector2.ONE * mesh_extent) / top_size).floor()
+	var root_count := int(ceil(2.0 * mesh_extent / top_size)) + 1
+	for iz in root_count:
+		for ix in root_count:
+			_select_lod_node((first + Vector2(ix, iz)) * top_size, _lod_top_level)
+	if _lod_buffer != _lod_uploaded_buffer:
+		RenderingServer.multimesh_set_buffer(_lod_multimesh, _lod_buffer)
+		_lod_uploaded_buffer = _lod_buffer.duplicate()
+	RenderingServer.multimesh_set_visible_instances(_lod_multimesh, _lod_node_count)
+	# Instance transforms are identity, so culling needs explicit bounds (local space).
+	var center := to_local(_lod_camera_position)
+	RenderingServer.multimesh_set_custom_aabb(_lod_multimesh, AABB(Vector3(center.x - mesh_extent, -LOD_WAVE_MARGIN, center.z - mesh_extent), Vector3(2.0 * mesh_extent, 2.0 * LOD_WAVE_MARGIN, 2.0 * mesh_extent)))
 
-func _build_circular_clipmap_radii() -> PackedFloat32Array:
-	var radii := PackedFloat32Array()
-	radii.push_back(0.0)
+## Splits a node while it comes within the next finer level's range. A node may
+## end up drawn at a finer level than its distance needs; its vertices are then
+## fully morphed, which matches the coarser neighbours exactly.
+func _select_lod_node(origin : Vector2, level : int) -> void:
+	var size := mesh_base_cell_size * LOD_GRID * float(1 << level)
+	var camera_xz := Vector2(_lod_camera_position.x, _lod_camera_position.z)
+	var nearest := Vector2(clampf(camera_xz.x, origin.x, origin.x + size), clampf(camera_xz.y, origin.y, origin.y + size))
+	if nearest.distance_to(camera_xz) > mesh_extent:
+		return
+	var bounds := AABB(Vector3(origin.x - LOD_WAVE_MARGIN, global_position.y - LOD_WAVE_MARGIN, origin.y - LOD_WAVE_MARGIN), Vector3(size + 2.0 * LOD_WAVE_MARGIN, 2.0 * LOD_WAVE_MARGIN, size + 2.0 * LOD_WAVE_MARGIN))
+	if not _is_in_lod_frustum(bounds):
+		return
+	# The shader measures morph distances to the undisplaced vertex; this is the
+	# nearest such point of the node, so it never overestimates them.
+	var nearest_distance := _lod_camera_position.distance_to(Vector3(nearest.x, global_position.y, nearest.y))
+	if level > 0 and nearest_distance < _lod_ranges[level - 1]:
+		var half := size * 0.5
+		for child in 4:
+			_select_lod_node(origin + Vector2(child & 1, child >> 1) * half, level - 1)
+		return
+	assert(_lod_node_count < MAX_LOD_NODES, "Ocean LOD node budget exceeded; raise mesh_base_cell_size or lower mesh_extent.")
+	var offset := _lod_node_count * LOD_INSTANCE_FLOATS + 12
+	_lod_buffer[offset] = origin.x
+	_lod_buffer[offset + 1] = origin.y
+	_lod_buffer[offset + 2] = size / LOD_GRID
+	_lod_buffer[offset + 3] = level
+	_lod_node_count += 1
 
-	var base_cell := maxf(mesh_base_cell_size, 0.1)
-	var inner_radius := mesh_inner_extent * 0.5
-	var outer_radius := maxf(ocean_radius, inner_radius)
-	var current_radius := 0.0
+func _is_in_lod_frustum(bounds : AABB) -> bool:
+	for plane in _lod_frustum:
+		# The AABB corner farthest along the plane's normal (planes point outward).
+		var corner := bounds.position + Vector3(
+			bounds.size.x if plane.normal.x < 0.0 else 0.0,
+			bounds.size.y if plane.normal.y < 0.0 else 0.0,
+			bounds.size.z if plane.normal.z < 0.0 else 0.0)
+		if plane.is_point_over(corner):
+			return false
+	return true
 
-	for band in range(mesh_ring_count + 1):
-		var band_outer := minf(inner_radius * pow(2.0, band), outer_radius)
-		var cell_size := base_cell * pow(2.0, band)
-		while current_radius + cell_size < band_outer - 0.001:
-			current_radius += cell_size
-			radii.push_back(current_radius)
-		if radii[radii.size() - 1] < band_outer - 0.001:
-			current_radius = band_outer
-			radii.push_back(current_radius)
+## Rebuilds the level ranges when mesh_base_cell_size or mesh_extent changed.
+func _update_lod_ranges() -> void:
+	var key := Vector2(mesh_base_cell_size, mesh_extent)
+	if key == _lod_ranges_key:
+		return
+	_lod_ranges_key = key
+	var base_range := LOD_RANGE_FACTOR * mesh_base_cell_size * LOD_GRID
+	_lod_top_level = 0
+	while base_range * float(1 << _lod_top_level) < mesh_extent:
+		_lod_top_level += 1
+	assert(_lod_top_level < MAX_LOD_LEVELS, "Too many ocean LOD levels for mesh_extent / mesh_base_cell_size.")
+	_lod_ranges.resize(MAX_LOD_LEVELS)
+	_lod_morph_starts.resize(MAX_LOD_LEVELS)
+	for level in MAX_LOD_LEVELS:
+		var level_range := base_range * float(1 << level)
+		var previous_range := 0.0 if level == 0 else _lod_ranges[level - 1]
+		_lod_ranges[level] = level_range
+		_lod_morph_starts[level] = lerpf(previous_range, level_range, LOD_MORPH_START)
+	_push_lod_grid_shader_parameters()
 
-	var outer_cell_size := base_cell * pow(2.0, mesh_ring_count + 1)
-	while current_radius + outer_cell_size < outer_radius - 0.001:
-		current_radius += outer_cell_size
-		radii.push_back(current_radius)
-
-	if radii[radii.size() - 1] < outer_radius - 0.001:
-		radii.push_back(outer_radius)
-
-	if enable_far_lod:
-		var far_radius := maxf(far_lod_radius, outer_radius)
-		var far_ring_count := maxi(far_lod_ring_count, 1)
-		for i in range(1, far_ring_count + 1):
-			var t := float(i) / float(far_ring_count)
-			var eased_t := t * t
-			var radius := lerpf(outer_radius, far_radius, eased_t)
-			if radius > radii[radii.size() - 1] + 0.001:
-				radii.push_back(radius)
-
-	return radii
-
-func _get_circular_clipmap_segment_count() -> int:
-	var base_cell := maxf(mesh_base_cell_size, 0.1)
-	var inner_radius := maxf(mesh_inner_extent * 0.5, base_cell)
-	var target_count := int(ceil(TAU * inner_radius / base_cell))
-	return clampi(target_count, 32, 1024)
-
-func _get_generated_mesh_half_extent() -> float:
-	var near_extent := maxf(ocean_radius, mesh_inner_extent * 0.5)
-	return maxf(near_extent, far_lod_radius) if enable_far_lod else near_extent
-
-func get_ocean_radius() -> float:
-	return maxf(ocean_radius, mesh_inner_extent * 0.5)
+func _push_lod_grid_shader_parameters() -> void:
+	_set_water_shader_parameter(&'lod_grid_enabled', not Engine.is_editor_hint())
+	_set_water_shader_parameter(&'lod_ranges', _lod_ranges)
+	_set_water_shader_parameter(&'lod_morph_starts', _lod_morph_starts)
+	_set_water_shader_parameter(&'lod_top_level', _lod_top_level)
 
 func _update_far_lod_shader_parameters() -> void:
-	_set_water_shader_parameter(&'enable_far_lod', enable_far_lod)
-	_set_water_shader_parameter(&'near_ocean_radius', get_ocean_radius())
-	_set_water_shader_parameter(&'far_lod_radius', _get_generated_mesh_half_extent())
+	_set_water_shader_parameter(&'far_lod_start_distance', far_lod_start_distance)
 	_set_water_shader_parameter(&'far_lod_blend_distance', far_lod_blend_distance)
 	_set_water_shader_parameter(&'far_lod_curve', far_lod_curve)
-	_set_water_shader_parameter(&'far_low_frequency_tile_length', far_low_frequency_tile_length)
-	_set_water_shader_parameter(&'far_normal_strength', far_normal_strength)
 	_set_water_shader_parameter(&'far_foam_coverage', far_foam_coverage)
 	_set_water_shader_parameter(&'far_foam_threshold_boost', far_foam_threshold_boost)
 
@@ -1249,8 +1165,6 @@ func _update_planar_reflection_settings() -> void:
 	_reflection_renderer.texture_size = reflection_texture_size
 	_reflection_renderer.resolution_scale = reflection_resolution_scale
 	_reflection_renderer.reflection_strength = reflection_strength
-	_reflection_renderer.reflection_distortion = reflection_distortion
-	_reflection_renderer.fresnel_power = reflection_fresnel_power
 	_reflection_renderer.water_layer = reflection_water_layer
 	_reflection_renderer.reflection_cull_mask = reflection_cull_mask
 	_reflection_renderer.clip_below_water = reflection_clip_below_water
@@ -1435,3 +1349,6 @@ func _notification(what: int) -> void:
 		# Null when the ocean was disabled for lack of a RenderingDevice.
 		if _surface_queries != null:
 			_surface_queries.retire()
+		# Only created at runtime.
+		if _lod_multimesh.is_valid():
+			RenderingServer.free_rid(_lod_multimesh)

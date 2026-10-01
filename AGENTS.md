@@ -87,9 +87,13 @@ before touching its code; this file only records what is easy to get wrong.
   converts between them.
 
 ## Ocean system invariants
-- `OceanSystem` builds its mesh at runtime (circular clipmap `ArrayMesh`). In the
-  editor it shows the shared `editor_water_preview_mesh.tres` instead. Never save
-  a generated mesh into a scene.
+- `OceanSystem` renders a CDLOD quadtree at runtime: one multimesh of 16 × 16
+  grid nodes set as the instance base through the RenderingServer, selected
+  every frame around the active camera (`_update_lod_grid`). The vertex shader
+  morphs vertices onto coarser lattices; `LOD_RANGE_FACTOR` must stay above
+  ~2.8 or nodes two levels apart touch and crack. In the editor the ocean
+  shows the shared `editor_water_preview_mesh.tres` instead. Never save a
+  generated mesh into a scene, and don't rotate or scale the ocean node.
 - `OceanSystem` renders with a private duplicate of `water_material`, applied
   via `RenderingServer.instance_geometry_set_material_override` (not the
   `material_override` property), in the editor too. Never set
@@ -103,10 +107,32 @@ before touching its code; this file only records what is easy to get wrong.
   `wave_generator.gd` bind by array index, so the order passed to
   `create_descriptor_set()` must match the shader's binding numbers.
 - `simulation_map_size` must be a power of two in 128–1024 (dispatch sizes divide
-  by 16, 32 and 128; compute sampling wraps with a bit mask). At most 8
+  by 16, 32 and 128; compute sampling wraps with a bit mask; `fft_compute.glsl`
+  has one `#[versions]` entry per size, loaded with
+  `RenderingContext.load_shader(path, version)`). At most 8
   cascades; each cascade owns two spectrum slots (active + pending) and
   crossfades every spectrum-input change through them. Only `tile_length`,
   cascade count and map size regenerate without a crossfade.
+- Dispatches inside one compute list are not ordered: a pass that reads what an
+  earlier pass in the same list wrote needs `compute_list_add_barrier` between
+  them (`wave_generator.gd`, `water_interaction_sim.gd`). Every pass must set
+  its push constant: a barrier re-applies the last one to the bound pipeline.
+- Displacement and normal maps have full mip chains built by
+  `mip_downsample.glsl` after each unpack. Normal maps are `(slope x, slope z,
+  squared slope, foam)`; the water shader reads `z − |xy|²` as the unresolved
+  slope variance and turns it into roughness. Keep every channel linearly
+  averageable. Storage bindings use per-layer, single-mip 2D views
+  (`create_texture_slice_view`; Godot does not expose mip views of whole
+  arrays); compute shaders read displacement through samplers.
+- Water lighting: `light()` does diffuse and the sun's GGX highlight (lit by the
+  scene's lights); sky and planar reflections are `EMISSION`. The shader writes
+  `SPECULAR = 0`; don't reintroduce engine specular, it doubles the sky
+  reflection. `normal_scale` 1 gives the spectrum's physical slopes; steeper
+  normals make distant water look rough and dark.
+- The spectrum is normalized to the JONSWAP height variance
+  (`spectrum_compute.glsl`): `displacement_scale` 1 is the physical wave
+  height for the wind and fetch. The demo exaggerates swell with ~2.
+  Foam thresholds (`whitecap`) are Jacobians of that unscaled displacement.
 - Surface queries are asynchronous: `submit_surface_query(owner, points)` every
   tick, `get_surface_query_result(owner)` returns the latest completed result
   (`null` at first), `release_surface_query(owner)` in `_exit_tree`. Results lag
@@ -116,11 +142,14 @@ before touching its code; this file only records what is easy to get wrong.
   previous/current blend by `wave_blend_alpha`, spectrum blend by the weights
   in `spectrum_blend_states` (`.zw`), pending layer skipped when `.w == 0`.
   Compute shaders get this from `shaders/compute/ocean_sampling.glslinc`, and
-  surface heights also invert the horizontal displacement.
+  surface heights also invert the horizontal displacement. Queries read mip 0,
+  which matches the mesh where its vertices are at least as dense as the
+  texels; farther out the mesh shows prefiltered (smoothed) waves.
 - Shared includes are not tracked by the importer: after editing
   `ocean_sampling.glslinc` reimport `surface_query.glsl` and
   `iwave_pressure.glsl`; after editing `iwave_common.glslinc` reimport every
-  `iwave_*.glsl` that includes it.
+  `iwave_*.glsl` that includes it. Touching the file is not enough (the
+  importer compares content): delete its `.godot/imported/<name>-*` files.
 - The interaction simulation (`WaterInteractionSim`) runs at runtime only, on
   its own `RenderingContext` on the main `RenderingDevice`. It simulates
   `η = h + p` (wave deviation from the hull-conforming rest state), not the raw

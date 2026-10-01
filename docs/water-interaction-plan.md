@@ -679,6 +679,19 @@ New files: `docs/water-interaction-plan.md` (this plan),
   third person; distant AI ships outside the window have no waves (their
   pressure is skipped). Revisit with cascaded simulation windows only if that
   becomes visible.
+- **Spectrum amplitude (found and fixed 2026-10-01).** `spectrum_compute.glsl` draws
+  `h0 = ξ · sqrt(2 S Δk)` with `ξ` two unit normals (`E|ξ|² = 2`), and
+  `spectrum_modulate.glsl` adds `h0(k)` and `conj(h0(−k))`, so the height
+  variance is about 8× the JONSWAP variance (amplitude 2.8×). Measured: the
+  128 m cascade at 10 m/s, 12 km fetch has a height std of 0.44 m against
+  0.14 m predicted (Hs 1.74 m vs 0.56 m), and its RMS slope is 0.50. The demo
+  compensates with `displacement_scale` (geometry) and, since the shader
+  turns unresolved slope into roughness, with `normal_scale` ≈ 0.35 (normals).
+  Fixed with `h0 = ξ · sqrt(S Δk) / 2`. The scenes keep their look: every
+  `displacement_scale` × 2√2 (the demo now states its 2× exaggeration),
+  `normal_scale` back to 1 / 0.8 / 0.45 (physical), `whitecap` mapped by
+  `1 − (1 − w) / 2√2` (0.5 → 0.82, 0.45 → 0.8) and the foam growth constant
+  × 2√2, which leaves foam identical.
 
 ## Deferred verification
 

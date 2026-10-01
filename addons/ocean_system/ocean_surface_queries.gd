@@ -42,6 +42,18 @@ var _results := {}  # owner_id -> WaterSurfaceQueryResult
 var _retired := false
 ## Bound in place of the interaction render texture while the simulation is off.
 var _no_interaction_texture : RID
+var _displacement_sampler : RID
+
+
+## Sampler for the wave displacement maps in compute shaders (ocean_sampling.glslinc):
+## repeat wrapping and bilinear filtering, as the water material samples them.
+static func create_displacement_sampler_state() -> RDSamplerState:
+	var state := RDSamplerState.new()
+	state.min_filter = RenderingDevice.SAMPLER_FILTER_LINEAR
+	state.mag_filter = RenderingDevice.SAMPLER_FILTER_LINEAR
+	state.repeat_u = RenderingDevice.SAMPLER_REPEAT_MODE_REPEAT
+	state.repeat_v = RenderingDevice.SAMPLER_REPEAT_MODE_REPEAT
+	return state
 
 
 func _init(device : RenderingDevice) -> void:
@@ -57,6 +69,7 @@ func _init(device : RenderingDevice) -> void:
 	var empty_texel := PackedByteArray()
 	empty_texel.resize(8)
 	_no_interaction_texture = _device.texture_create(texture_format, RDTextureView.new(), [empty_texel])
+	_displacement_sampler = _device.sampler_create(create_displacement_sampler_state())
 
 
 func submit(owner_id : int, points : PackedVector3Array) -> void:
@@ -151,6 +164,7 @@ func retire() -> void:
 	for slot in _slots:
 		_free_slot_buffers(slot)
 	_device.free_rid(_no_interaction_texture)
+	_device.free_rid(_displacement_sampler)
 	_device.free_rid(_shader)
 	_owners.clear()
 	_queued.clear()
@@ -217,8 +231,8 @@ func _get_uniform_set(slot : QuerySlot, current_displacement : RID, previous_dis
 		_make_uniform(0, RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER, slot.point_buffer),
 		_make_uniform(1, RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER, slot.cascade_buffer),
 		_make_uniform(2, RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER, slot.sample_buffer),
-		_make_uniform(3, RenderingDevice.UNIFORM_TYPE_IMAGE, current_displacement),
-		_make_uniform(4, RenderingDevice.UNIFORM_TYPE_IMAGE, previous_displacement),
+		_make_sampled_uniform(3, current_displacement),
+		_make_sampled_uniform(4, previous_displacement),
 		_make_uniform(5, RenderingDevice.UNIFORM_TYPE_IMAGE, interaction),
 	]
 	var uniform_set := _device.uniform_set_create(uniforms, _shader, 0)
@@ -231,6 +245,15 @@ func _make_uniform(binding : int, uniform_type : RenderingDevice.UniformType, id
 	uniform.binding = binding
 	uniform.uniform_type = uniform_type
 	uniform.add_id(id)
+	return uniform
+
+
+func _make_sampled_uniform(binding : int, texture : RID) -> RDUniform:
+	var uniform := RDUniform.new()
+	uniform.binding = binding
+	uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_SAMPLER_WITH_TEXTURE
+	uniform.add_id(_displacement_sampler)
+	uniform.add_id(texture)
 	return uniform
 
 

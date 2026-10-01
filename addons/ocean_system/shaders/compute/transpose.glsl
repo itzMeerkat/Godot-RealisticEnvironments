@@ -11,11 +11,11 @@
 layout(local_size_x = TILE_SIZE, local_size_y = TILE_SIZE, local_size_z = 1) in;
 
 layout(std430, set = 0, binding = 0) restrict buffer FFTBuffer {
-	vec2 data[]; // map_size x map_size x num_spectra x 2 * num_cascades
+	vec2 data[]; // map_size x map_size x num_spectra x 2 * spectrum slots
 };
 
 layout(push_constant) restrict readonly uniform PushConstants {
-	uint cascade_index;
+	uint buffer_slot;
 };
 
 shared vec2 tile[TILE_SIZE][TILE_SIZE+1];
@@ -28,7 +28,7 @@ void main() {
 	const uvec2 id_local = gl_LocalInvocationID.xy;
 	const uint spectrum = gl_GlobalInvocationID.z;
 
-	uvec3 id = uvec3(gl_GlobalInvocationID.xy, cascade_index);
+	uvec3 id = uvec3(gl_GlobalInvocationID.xy, buffer_slot);
 	tile[id_local.y][id_local.x] = DATA_IN(id, spectrum);
 	barrier();
 

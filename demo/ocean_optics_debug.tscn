@@ -34,12 +34,9 @@ foam_softness = 2.0
 use_external_wind = true
 wind_source_path = NodePath("../WindSystem")
 simulation_map_size = 512
-ocean_radius = 512.0
-mesh_inner_extent = 192.0
-mesh_ring_count = 3
-far_lod_radius = 10000.0
+mesh_extent = 10000.0
+far_lod_start_distance = 384.0
 far_lod_blend_distance = 2200.0
-far_normal_strength = 0.18
 far_foam_coverage = 0.0
 
 [node name="Camera3D" type="Camera3D" parent="." unique_id=537177153]

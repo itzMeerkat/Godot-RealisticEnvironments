@@ -170,10 +170,10 @@ func _add_ocean_controls(parent : VBoxContainer) -> void:
 			water.updates_per_second = value
 	)
 
-	var ocean_radius := _add_float_row(parent, "Ocean Radius", "Radius of the high-detail FFT ocean mesh. Far Ocean can link to this value.", 32.0, 4096.0, 1.0, true)
-	ocean_radius.value_changed.connect(func(value : float) -> void:
+	var cell_size := _add_float_row(parent, "Mesh Cell Size", "Vertex spacing of the finest mesh level near the camera; each coarser level doubles it.", 0.25, 16.0, 0.25, false)
+	cell_size.value_changed.connect(func(value : float) -> void:
 		if not _is_syncing and water:
-			water.ocean_radius = value
+			water.mesh_base_cell_size = value
 	)
 
 	var water_color := _add_color_row(parent, "Water Color", "")
@@ -212,24 +212,6 @@ func _add_ocean_controls(parent : VBoxContainer) -> void:
 			water.foam_roughness = value
 	)
 
-	var clear_specular := _add_float_row(parent, "Clear Specular", "PBR specular strength for clear water.", 0.0, 1.0, 0.01, false)
-	clear_specular.value_changed.connect(func(value : float) -> void:
-		if not _is_syncing and water:
-			water.clear_specular = value
-	)
-
-	var foam_specular := _add_float_row(parent, "Foam Specular", "PBR specular strength for whitecaps and crest foam.", 0.0, 1.0, 0.01, false)
-	foam_specular.value_changed.connect(func(value : float) -> void:
-		if not _is_syncing and water:
-			water.foam_specular = value
-	)
-
-	var slope_roughness := _add_float_row(parent, "Slope Roughness", "How much wave slope increases PBR roughness before foam appears.", 0.0, 4.0, 0.01, false)
-	slope_roughness.value_changed.connect(func(value : float) -> void:
-		if not _is_syncing and water:
-			water.slope_roughness_strength = value
-	)
-
 	var foam_intensity := _add_float_row(parent, "Foam Intensity", "Scales the visible whitecap amount in the water shader.", 0.0, 4.0, 0.01, true)
 	foam_intensity.value_changed.connect(func(value : float) -> void:
 		if not _is_syncing and water:
@@ -249,16 +231,13 @@ func _add_ocean_controls(parent : VBoxContainer) -> void:
 	)
 
 	update_spin.name = "UpdatesPerSecond"
-	ocean_radius.name = "OceanRadius"
+	cell_size.name = "MeshBaseCellSize"
 	water_color.name = "WaterColor"
 	water_scatter_color.name = "WaterScatterColor"
 	diffuse_strength.name = "WaterDiffuseStrength"
 	foam_color.name = "FoamColor"
 	clear_roughness.name = "WaterClearRoughness"
 	foam_roughness.name = "WaterFoamRoughness"
-	clear_specular.name = "WaterClearSpecular"
-	foam_specular.name = "WaterFoamSpecular"
-	slope_roughness.name = "WaterSlopeRoughness"
 	foam_intensity.name = "FoamIntensity"
 	foam_threshold.name = "FoamThreshold"
 	foam_softness.name = "FoamSoftness"
@@ -291,32 +270,11 @@ func _add_sky_reflection_controls(parent : VBoxContainer) -> void:
 			water.sky_horizon_boost = value
 	)
 
-	var roughness_strength := _add_float_row(parent, "Reflection Roughness", "How strongly wave slope broadens procedural sky reflection.", 0.0, 2.0, 0.01, false)
-	roughness_strength.name = "SkyReflectionRoughnessStrength"
-	roughness_strength.value_changed.connect(func(value : float) -> void:
+	var sun_specular := _add_float_row(parent, "Sun Specular", "Multiplier on the sun's glints and sun path (1 = physical).", 0.0, 4.0, 0.01, false)
+	sun_specular.name = "SunSpecularStrength"
+	sun_specular.value_changed.connect(func(value : float) -> void:
 		if not _is_syncing and water:
-			water.sky_reflection_roughness_strength = value
-	)
-
-	var far_roughness := _add_float_row(parent, "Far Roughness", "Additional reflection roughness applied in the far ocean LOD range.", 0.0, 1.0, 0.01, false)
-	far_roughness.name = "SkyReflectionFarRoughness"
-	far_roughness.value_changed.connect(func(value : float) -> void:
-		if not _is_syncing and water:
-			water.sky_reflection_far_roughness = value
-	)
-
-	var glitter_strength := _add_float_row(parent, "Sun Glitter", "Strength of reflected sun sparkles from FFT normals.", 0.0, 4.0, 0.01, false)
-	glitter_strength.name = "SunGlitterStrength"
-	glitter_strength.value_changed.connect(func(value : float) -> void:
-		if not _is_syncing and water:
-			water.sun_glitter_strength = value
-	)
-
-	var glitter_power := _add_float_row(parent, "Glitter Power", "Higher values make the sun glints sharper and smaller.", 8.0, 512.0, 1.0, false)
-	glitter_power.name = "SunGlitterPower"
-	glitter_power.value_changed.connect(func(value : float) -> void:
-		if not _is_syncing and water:
-			water.sun_glitter_power = value
+			water.sun_specular_strength = value
 	)
 
 	var scatter_strength := _add_float_row(parent, "Sun Scatter", "Broad sun-lit water scattering visible when looking away from the sun.", 0.0, 2.0, 0.01, false)
@@ -419,28 +377,21 @@ func _add_far_lod_controls(parent : VBoxContainer) -> void:
 	title.add_theme_font_size_override("font_size", 15)
 	parent.add_child(title)
 
-	var enabled := _add_check_row(parent, "Enabled", "Extends the main ocean mesh with coarse far-distance LOD rings.")
-	enabled.name = "FarLodEnabled"
-	enabled.toggled.connect(func(is_pressed : bool) -> void:
+	var extent := _add_float_row(parent, "Mesh Extent", "Radius of the rendered water around the camera.", 256.0, 20000.0, 10.0, true)
+	extent.name = "MeshExtent"
+	extent.value_changed.connect(func(value : float) -> void:
 		if not _is_syncing and water:
-			water.enable_far_lod = is_pressed
+			water.mesh_extent = value
 	)
 
-	var radius := _add_float_row(parent, "Far Radius", "Outer radius of the integrated far ocean mesh.", 256.0, 20000.0, 10.0, true)
-	radius.name = "FarLodRadius"
-	radius.value_changed.connect(func(value : float) -> void:
+	var start := _add_float_row(parent, "LOD Start Distance", "Distance where near shading starts fading into far-ocean shading.", 0.0, 4000.0, 1.0, true)
+	start.name = "FarLodStartDistance"
+	start.value_changed.connect(func(value : float) -> void:
 		if not _is_syncing and water:
-			water.far_lod_radius = value
+			water.far_lod_start_distance = value
 	)
 
-	var rings := _add_float_row(parent, "Far Rings", "Number of coarse rings between Ocean Radius and Far Radius.", 4.0, 96.0, 1.0, false)
-	rings.name = "FarLodRings"
-	rings.value_changed.connect(func(value : float) -> void:
-		if not _is_syncing and water:
-			water.far_lod_ring_count = int(value)
-	)
-
-	var blend := _add_float_row(parent, "LOD Blend Distance", "Distance over which high-frequency cascades give way to far-ocean low-frequency waves.", 1.0, 4000.0, 10.0, true)
+	var blend := _add_float_row(parent, "LOD Blend Distance", "Distance over which near shading fades into far-ocean shading (foam, reflection, scatter).", 1.0, 4000.0, 10.0, true)
 	blend.name = "FarLodBlendDistance"
 	blend.value_changed.connect(func(value : float) -> void:
 		if not _is_syncing and water:
@@ -452,20 +403,6 @@ func _add_far_lod_controls(parent : VBoxContainer) -> void:
 	curve.value_changed.connect(func(value : float) -> void:
 		if not _is_syncing and water:
 			water.far_lod_curve = value
-	)
-
-	var low_frequency := _add_float_row(parent, "Low Freq Tile", "Cascade tile length that counts as low frequency for far-distance sampling.", 1.0, 512.0, 1.0, true)
-	low_frequency.name = "FarLodLowFrequencyTile"
-	low_frequency.value_changed.connect(func(value : float) -> void:
-		if not _is_syncing and water:
-			water.far_low_frequency_tile_length = value
-	)
-
-	var far_normal := _add_float_row(parent, "Far Normal", "Normal strength retained for low-frequency far waves.", 0.0, 2.0, 0.01, false)
-	far_normal.name = "FarNormalStrength"
-	far_normal.value_changed.connect(func(value : float) -> void:
-		if not _is_syncing and water:
-			water.far_normal_strength = value
 	)
 
 	var far_foam_coverage := _add_float_row(parent, "Far Foam Coverage", "Multiplier limiting foam coverage in the far LOD range.", 0.0, 1.0, 0.01, false)
@@ -678,26 +615,20 @@ func _populate_values() -> void:
 			break
 
 	_set_named_spin("UpdatesPerSecond", water.updates_per_second)
-	_set_named_spin("OceanRadius", water.ocean_radius)
+	_set_named_spin("MeshBaseCellSize", water.mesh_base_cell_size)
 	_set_named_color("WaterColor", water.water_color)
 	_set_named_color("WaterScatterColor", water.water_scatter_color)
 	_set_named_spin("WaterDiffuseStrength", water.water_diffuse_strength)
 	_set_named_color("FoamColor", water.foam_color)
 	_set_named_spin("WaterClearRoughness", water.clear_roughness)
 	_set_named_spin("WaterFoamRoughness", water.foam_roughness)
-	_set_named_spin("WaterClearSpecular", water.clear_specular)
-	_set_named_spin("WaterFoamSpecular", water.foam_specular)
-	_set_named_spin("WaterSlopeRoughness", water.slope_roughness_strength)
 	_set_named_spin("FoamIntensity", water.foam_intensity)
 	_set_named_spin("FoamThreshold", water.foam_threshold)
 	_set_named_spin("FoamSoftness", water.foam_softness)
 	_set_named_check("SkyReflectionEnabled", water.sky_reflection_enabled)
 	_set_named_spin("SkyReflectionStrength", water.sky_reflection_strength)
 	_set_named_spin("SkyHorizonBoost", water.sky_horizon_boost)
-	_set_named_spin("SkyReflectionRoughnessStrength", water.sky_reflection_roughness_strength)
-	_set_named_spin("SkyReflectionFarRoughness", water.sky_reflection_far_roughness)
-	_set_named_spin("SunGlitterStrength", water.sun_glitter_strength)
-	_set_named_spin("SunGlitterPower", water.sun_glitter_power)
+	_set_named_spin("SunSpecularStrength", water.sun_specular_strength)
 	_set_named_spin("SunScatterStrength", water.sun_scatter_strength)
 	_set_named_spin("SunScatterBase", water.sun_scatter_base)
 	_set_named_spin("SunScatterPhase", water.sun_scatter_phase_power)
@@ -708,13 +639,10 @@ func _populate_values() -> void:
 	_set_named_spin("CrestHeightEnd", water.crest_height_end)
 	_set_named_spin("CrestSlopeStart", water.crest_slope_start)
 	_set_named_spin("CrestSlopeEnd", water.crest_slope_end)
-	_set_named_check("FarLodEnabled", water.enable_far_lod)
-	_set_named_spin("FarLodRadius", water.far_lod_radius)
-	_set_named_spin("FarLodRings", water.far_lod_ring_count)
+	_set_named_spin("MeshExtent", water.mesh_extent)
+	_set_named_spin("FarLodStartDistance", water.far_lod_start_distance)
 	_set_named_spin("FarLodBlendDistance", water.far_lod_blend_distance)
 	_set_named_spin("FarLodCurve", water.far_lod_curve)
-	_set_named_spin("FarLodLowFrequencyTile", water.far_low_frequency_tile_length)
-	_set_named_spin("FarNormalStrength", water.far_normal_strength)
 	_set_named_spin("FarFoamCoverage", water.far_foam_coverage)
 	_set_named_spin("FarFoamThresholdBoost", water.far_foam_threshold_boost)
 	_set_named_check("UseExternalWind", water.use_external_wind)

@@ -28,12 +28,15 @@ class SpectrumInputs:
 ## Changing it regenerates the spectrum immediately (no crossfade).
 @export var tile_length := Vector2(50, 50) :
 	set(value): tile_length = Vector2(maxf(0.0001, value.x), maxf(0.0001, value.y)); request_spectrum_reset(); scale_changed.emit()
-## Multiplies vertex displacement contributed by this cascade. Lower this for
-## detail-only layers, raise it for visible swell, and use 0 to disable height.
+## Multiplies vertex displacement contributed by this cascade. 1 is the height
+## the wind and fetch produce (JONSWAP); lower it for detail-only layers, raise
+## it to exaggerate swell, and use 0 to disable height.
 @export_range(0, 2) var displacement_scale := 1.0 :
 	set(value): displacement_scale = value; scale_changed.emit()
 ## Multiplies normal and foam detail contributed by this cascade. This affects
 ## lighting and whitecap appearance without changing the mesh displacement.
+## 1 gives the physical slopes of the spectrum. The shader turns unresolved
+## slopes into roughness, so steeper slopes make distant water rough and dark.
 @export_range(0, 2) var normal_scale := 1.0 :
 	set(value): normal_scale = value; scale_changed.emit()
 
@@ -90,9 +93,10 @@ class SpectrumInputs:
 @export_range(0.01, 60.0, 0.01, "or_greater") var spectrum_blend_duration := 4.0
 
 @export_group("Foam")
-## Steepness threshold used by the compute pass before foam can accumulate.
-## Lower values create whitecaps sooner; higher values reserve foam for breakers.
-@export_range(0, 2) var whitecap := 0.5
+## Foam accumulates where the surface Jacobian (of the unscaled displacement)
+## drops below this value. Higher values create whitecaps sooner; lower values
+## reserve foam for breaking crests (below 0 the surface folds over).
+@export_range(0, 2) var whitecap := 0.82
 ## Foam persistence and growth strength for this cascade. Higher values create
 ## more visible foam that grows quickly and decays more slowly.
 @export_range(0, 10) var foam_amount := 5.0
@@ -138,7 +142,7 @@ func request_spectrum_reset() -> void:
 func advance(delta : float, external_wind_speed : float, external_wind_direction : float, use_external_wind : bool) -> void:
 	time += delta
 	# Constants normalize foam_amount (0-10) into per-update growth and decay.
-	foam_grow_rate = delta * foam_amount * 7.5
+	foam_grow_rate = delta * foam_amount * 21.2
 	foam_decay_rate = delta * maxf(0.5, 10.0 - foam_amount) * 1.15
 
 	var target_direction := _get_target_spectrum_direction(external_wind_direction, use_external_wind)

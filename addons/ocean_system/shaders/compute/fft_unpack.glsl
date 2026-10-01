@@ -10,19 +10,21 @@
 
 layout(local_size_x = TILE_SIZE, local_size_y = TILE_SIZE, local_size_z = 2) in;
 
-layout(rgba16f, set = 0, binding = 0) restrict writeonly uniform image2DArray displacement_map;
-layout(rgba16f, set = 0, binding = 1) restrict writeonly uniform image2DArray normal_map;
-layout(rgba16f, set = 0, binding = 2) restrict readonly uniform image2DArray previous_normal_map;
+// The output maps have mip chains: these are 2D views of this layer's mip 0.
+layout(rgba16f, set = 0, binding = 0) restrict writeonly uniform image2D displacement_map;
+layout(rgba16f, set = 0, binding = 1) restrict writeonly uniform image2D normal_map;
+layout(rgba16f, set = 0, binding = 2) restrict readonly uniform image2D previous_normal_map;
 
 layout(std430, set = 1, binding = 0) restrict buffer FFTBuffer {
-	vec2 data[]; // map_size x map_size x num_spectra x 2 * num_cascades
+	vec2 data[]; // map_size x map_size x num_spectra x 2 * spectrum slots
 };
 
 layout(push_constant) restrict readonly uniform PushConstants {
-	uint cascade_index;
+	uint buffer_slot;    // region of the FFT buffer (the spectrum slot)
 	float whitecap;
 	float foam_grow_rate;
 	float foam_decay_rate;
+	float choppiness;    // the cascade's displacement scale, as rendered by the vertex shader
 };
 
 // Tiling doesn't provide much of a benefit here (but it does a *little*)
@@ -30,11 +32,11 @@ shared vec2 tile[NUM_SPECTRA][TILE_SIZE][TILE_SIZE];
 
 // Note: There is an assumption that the FFT does not transpose a second time. Thus,
 //       we access the FFT buffer at an offset of NUM_LAYERS*map_size*map_size
-#define FFT_DATA(id, layer) (data[(id.z)*map_size*map_size*NUM_SPECTRA*2 + NUM_SPECTRA*map_size*map_size + (layer)*map_size*map_size + (id).y*map_size + (id).x])
+#define FFT_DATA(id, layer) (data[buffer_slot*map_size*map_size*NUM_SPECTRA*2 + NUM_SPECTRA*map_size*map_size + (layer)*map_size*map_size + (id).y*map_size + (id).x])
 void main() {
 	const uint map_size = gl_NumWorkGroups.x * gl_WorkGroupSize.x;
 	const uvec3 id_local = gl_LocalInvocationID;
-	const ivec3 id = ivec3(gl_GlobalInvocationID.xy, cascade_index);
+	const ivec2 id = ivec2(gl_GlobalInvocationID.xy);
 	// Multiplying output of inverse FFT by below factor is equivalent to ifftshift()
 	const float sign_shift = -2*((id.x & 1) ^ (id.y & 1)) + 1; // Equivalent: (-1^id.x)(-1^id.y)
 
@@ -64,8 +66,20 @@ void main() {
 			foam += foam_factor * foam_grow_rate;
 			foam = clamp(foam, 0.0, 1.0);
 
-			vec2 gradient = vec2(dhy_dx, dhy_dz) / (1.0 + abs(vec2(dhx_dx, dhz_dz)));
-			imageStore(normal_map, id, vec4(gradient, dhx_dx, foam));
+			// Slope of the displaced surface P = (x + c*Dx, Dy, z + c*Dz), c = choppiness:
+			// normal = dP/dz x dP/dx, gradient = -normal.xz / normal.y. Crests (horizontal
+			// compression, Jacobian < 1) get steeper, troughs flatter. The vertical part
+			// is left at unit scale; the water shader applies normal_scale to it.
+			// dDx/dz equals dDz/dx (the displacement field is irrotational).
+			float chop_dx_dx = choppiness * dhx_dx;
+			float chop_dz_dz = choppiness * dhz_dz;
+			float chop_dz_dx = choppiness * dhz_dx;
+			float chop_jacobian = (1.0 + chop_dx_dx) * (1.0 + chop_dz_dz) - chop_dz_dx*chop_dz_dx;
+			// Folded surface (Jacobian <= 0) has no single normal; cap the steepening at 4x.
+			vec2 gradient = vec2((1.0 + chop_dz_dz) * dhy_dx - chop_dz_dx * dhy_dz,
+			                     (1.0 + chop_dx_dx) * dhy_dz - chop_dz_dx * dhy_dx) / max(chop_jacobian, 0.25);
+			// z: squared slope, the second moment the mip chain averages (mip_downsample.glsl).
+			imageStore(normal_map, id, vec4(gradient, dot(gradient, gradient), foam));
 			break;
 	}
 }

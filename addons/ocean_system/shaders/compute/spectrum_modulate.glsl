@@ -15,17 +15,18 @@
 
 layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 
-layout(rgba16f, set = 0, binding = 0) restrict readonly uniform image2DArray spectrum;
+layout(rgba32f, set = 0, binding = 0) restrict readonly uniform image2DArray spectrum;
 
 layout(std430, set = 1, binding = 0) restrict writeonly buffer FFTBuffer {
-	vec2 data[]; // map_size x map_size x num_spectra x 2 * num_cascades
+	vec2 data[]; // map_size x map_size x num_spectra x 2 * spectrum slots
 };
 
 layout(push_constant) restrict readonly uniform PushConstants {
 	vec2 tile_length;
 	float depth;
 	float time;
-	uint cascade_index;
+	uint spectrum_layer; // layer of the spectrum texture
+	uint buffer_slot;    // region of the FFT buffer (the spectrum slot)
 };
 
 /** Returns exp(j*x) assuming x >= 0. */
@@ -53,7 +54,8 @@ float dispersion_relation(in float k) {
 void main() {
 	const uint map_size = gl_NumWorkGroups.x * gl_WorkGroupSize.x;
 	const ivec2 dims = imageSize(spectrum).xy;
-	const ivec3 id = ivec3(gl_GlobalInvocationID.xy, cascade_index);
+	const ivec3 id = ivec3(gl_GlobalInvocationID.xy, spectrum_layer);
+	const ivec3 buffer_id = ivec3(gl_GlobalInvocationID.xy, buffer_slot);
 
 	vec2 k_vec = (id.xy - dims*0.5)*2.0*PI / tile_length; // Wave direction
 	float k = length(k_vec) + 1e-6;
@@ -82,8 +84,8 @@ void main() {
 
 	// Because h respects the complex conjugation property (i.e., the output of IFFT will be a
 	// real signal), we can pack two waves into one.
-	FFT_DATA(id, 0) = vec2(    hx.x -     hy.y,     hx.y +     hy.x);
-	FFT_DATA(id, 1) = vec2(    hz.x - dhy_dx.y,     hz.y + dhy_dx.x);
-	FFT_DATA(id, 2) = vec2(dhy_dz.x - dhx_dx.y, dhy_dz.y + dhx_dx.x);
-	FFT_DATA(id, 3) = vec2(dhz_dz.x - dhz_dx.y, dhz_dz.y + dhz_dx.x);
+	FFT_DATA(buffer_id, 0) = vec2(    hx.x -     hy.y,     hx.y +     hy.x);
+	FFT_DATA(buffer_id, 1) = vec2(    hz.x - dhy_dx.y,     hz.y + dhy_dx.x);
+	FFT_DATA(buffer_id, 2) = vec2(dhy_dz.x - dhx_dx.y, dhy_dz.y + dhx_dx.x);
+	FFT_DATA(buffer_id, 3) = vec2(dhz_dz.x - dhz_dx.y, dhz_dz.y + dhz_dx.x);
 }
