@@ -121,7 +121,7 @@ func _build() -> void:
 	_add_sky_reflection_controls(content)
 
 	content.add_child(HSeparator.new())
-	_add_far_lod_controls(content)
+	_add_mesh_controls(content)
 
 	content.add_child(HSeparator.new())
 	_add_cascade_tabs(content)
@@ -176,22 +176,32 @@ func _add_ocean_controls(parent : VBoxContainer) -> void:
 			water.mesh_base_cell_size = value
 	)
 
-	var water_color := _add_color_row(parent, "Water Color", "")
-	water_color.color_changed.connect(func(value : Color) -> void:
+	# Water optical properties, one row per color channel (1/m).
+	for channel in 3:
+		var channel_name : String = ["R", "G", "B"][channel]
+		var absorption := _add_float_row(parent, "Absorption " + channel_name, "Light absorption of the water in this channel (1/m). Pure seawater: 0.30 / 0.056 / 0.012.", 0.0, 2.0, 0.001, true)
+		absorption.name = "WaterAbsorption" + channel_name
+		absorption.value_changed.connect(func(value : float) -> void:
+			if not _is_syncing and water:
+				var absorption_value := water.water_absorption
+				absorption_value[channel] = value
+				water.water_absorption = absorption_value
+		)
+	for channel in 3:
+		var channel_name : String = ["R", "G", "B"][channel]
+		var scattering := _add_float_row(parent, "Scattering " + channel_name, "Light scattering by particles in this channel (1/m). More is brighter and more turbid.", 0.0, 1.0, 0.001, true)
+		scattering.name = "WaterScattering" + channel_name
+		scattering.value_changed.connect(func(value : float) -> void:
+			if not _is_syncing and water:
+				var scattering_value := water.water_scattering
+				scattering_value[channel] = value
+				water.water_scattering = scattering_value
+		)
+	var anisotropy := _add_float_row(parent, "Forward Scattering", "Henyey-Greenstein g of particle scattering (ocean particles about 0.9); concentrates the crest glow toward the light.", 0.0, 0.99, 0.01, false)
+	anisotropy.name = "WaterScatteringAnisotropy"
+	anisotropy.value_changed.connect(func(value : float) -> void:
 		if not _is_syncing and water:
-			water.water_color = value
-	)
-
-	var water_scatter_color := _add_color_row(parent, "Water Scatter", "Tint used by sun-lit water body scattering.")
-	water_scatter_color.color_changed.connect(func(value : Color) -> void:
-		if not _is_syncing and water:
-			water.water_scatter_color = value
-	)
-
-	var diffuse_strength := _add_float_row(parent, "Diffuse Strength", "How much water_color contributes to diffuse albedo. Keep low for realistic water.", 0.0, 1.0, 0.01, false)
-	diffuse_strength.value_changed.connect(func(value : float) -> void:
-		if not _is_syncing and water:
-			water.water_diffuse_strength = value
+			water.water_scattering_anisotropy = value
 	)
 
 	var foam_color := _add_color_row(parent, "Foam Color", "")
@@ -220,9 +230,6 @@ func _add_ocean_controls(parent : VBoxContainer) -> void:
 
 	update_spin.name = "MaxWavePhaseStep"
 	cell_size.name = "MeshBaseCellSize"
-	water_color.name = "WaterColor"
-	water_scatter_color.name = "WaterScatterColor"
-	diffuse_strength.name = "WaterDiffuseStrength"
 	foam_color.name = "FoamColor"
 	clear_roughness.name = "WaterClearRoughness"
 	foam_roughness.name = "WaterFoamRoughness"
@@ -270,76 +277,6 @@ func _add_sky_reflection_controls(parent : VBoxContainer) -> void:
 			water.sun_glitter_density = value
 	)
 
-	var scatter_strength := _add_float_row(parent, "Sun Scatter", "Broad sun-lit water scattering visible when looking away from the sun.", 0.0, 2.0, 0.01, false)
-	scatter_strength.name = "SunScatterStrength"
-	scatter_strength.value_changed.connect(func(value : float) -> void:
-		if not _is_syncing and water:
-			water.sun_scatter_strength = value
-	)
-
-	var scatter_base := _add_float_row(parent, "Scatter Base", "Minimum sun scatter before view-sun alignment is added.", 0.0, 1.0, 0.01, false)
-	scatter_base.name = "SunScatterBase"
-	scatter_base.value_changed.connect(func(value : float) -> void:
-		if not _is_syncing and water:
-			water.sun_scatter_base = value
-	)
-
-	var scatter_phase := _add_float_row(parent, "Scatter Phase", "Higher values concentrate scatter when looking more directly away from the sun.", 0.25, 8.0, 0.05, false)
-	scatter_phase.name = "SunScatterPhase"
-	scatter_phase.value_changed.connect(func(value : float) -> void:
-		if not _is_syncing and water:
-			water.sun_scatter_phase_power = value
-	)
-
-	var crest_enabled := _add_check_row(parent, "Crest Glow", "Adds low-sun backlit color to high, steep wave crests.")
-	crest_enabled.name = "CrestGlowEnabled"
-	crest_enabled.toggled.connect(func(is_pressed : bool) -> void:
-		if not _is_syncing and water:
-			water.crest_glow_enabled = is_pressed
-	)
-
-	var crest_strength := _add_float_row(parent, "Crest Strength", "Albedo tint strength for backlit crests.", 0.0, 4.0, 0.01, false)
-	crest_strength.name = "CrestGlowStrength"
-	crest_strength.value_changed.connect(func(value : float) -> void:
-		if not _is_syncing and water:
-			water.crest_glow_strength = value
-	)
-
-	var crest_emission := _add_float_row(parent, "Crest Emission", "Small HDR emission boost for backlit crests.", 0.0, 2.0, 0.01, false)
-	crest_emission.name = "CrestGlowEmission"
-	crest_emission.value_changed.connect(func(value : float) -> void:
-		if not _is_syncing and water:
-			water.crest_glow_emission_strength = value
-	)
-
-	var crest_height_start := _add_float_row(parent, "Crest Height Start", "Water height where crest glow starts appearing.", -2.0, 4.0, 0.01, false)
-	crest_height_start.name = "CrestHeightStart"
-	crest_height_start.value_changed.connect(func(value : float) -> void:
-		if not _is_syncing and water:
-			water.crest_height_start = value
-	)
-
-	var crest_height_end := _add_float_row(parent, "Crest Height End", "Water height where crest glow reaches full height mask.", -2.0, 6.0, 0.01, false)
-	crest_height_end.name = "CrestHeightEnd"
-	crest_height_end.value_changed.connect(func(value : float) -> void:
-		if not _is_syncing and water:
-			water.crest_height_end = value
-	)
-
-	var crest_slope_start := _add_float_row(parent, "Crest Slope Start", "Wave slope where crest glow starts appearing.", 0.0, 4.0, 0.01, false)
-	crest_slope_start.name = "CrestSlopeStart"
-	crest_slope_start.value_changed.connect(func(value : float) -> void:
-		if not _is_syncing and water:
-			water.crest_slope_start = value
-	)
-
-	var crest_slope_end := _add_float_row(parent, "Crest Slope End", "Wave slope where crest glow reaches full slope mask.", 0.0, 8.0, 0.01, false)
-	crest_slope_end.name = "CrestSlopeEnd"
-	crest_slope_end.value_changed.connect(func(value : float) -> void:
-		if not _is_syncing and water:
-			water.crest_slope_end = value
-	)
-
 
 func _add_buoyancy_controls(parent : VBoxContainer) -> void:
 	var title := Label.new()
@@ -364,9 +301,9 @@ func _add_buoyancy_controls(parent : VBoxContainer) -> void:
 	_add_bound_param(parent, "Max Probe Accel", "Caps each buoyancy probe's acceleration contribution to avoid numerical blowups.", buoyant_body.max_probe_acceleration, 0.0, 100.0, 0.1, func(value : float) -> void: buoyant_body.max_probe_acceleration = value, true)
 
 
-func _add_far_lod_controls(parent : VBoxContainer) -> void:
+func _add_mesh_controls(parent : VBoxContainer) -> void:
 	var title := Label.new()
-	title.text = "Far Ocean LOD"
+	title.text = "Mesh"
 	title.add_theme_font_size_override("font_size", 15)
 	parent.add_child(title)
 
@@ -375,27 +312,6 @@ func _add_far_lod_controls(parent : VBoxContainer) -> void:
 	extent.value_changed.connect(func(value : float) -> void:
 		if not _is_syncing and water:
 			water.mesh_extent = value
-	)
-
-	var start := _add_float_row(parent, "LOD Start Distance", "Distance where near shading starts fading into far-ocean shading.", 0.0, 4000.0, 1.0, true)
-	start.name = "FarLodStartDistance"
-	start.value_changed.connect(func(value : float) -> void:
-		if not _is_syncing and water:
-			water.far_lod_start_distance = value
-	)
-
-	var blend := _add_float_row(parent, "LOD Blend Distance", "Distance over which near shading fades into far-ocean shading (foam, reflection, scatter).", 1.0, 4000.0, 10.0, true)
-	blend.name = "FarLodBlendDistance"
-	blend.value_changed.connect(func(value : float) -> void:
-		if not _is_syncing and water:
-			water.far_lod_blend_distance = value
-	)
-
-	var curve := _add_float_row(parent, "LOD Curve", "Higher values preserve near/mid-distance detail longer before entering far LOD.", 0.25, 4.0, 0.01, false)
-	curve.name = "FarLodCurve"
-	curve.value_changed.connect(func(value : float) -> void:
-		if not _is_syncing and water:
-			water.far_lod_curve = value
 	)
 
 
@@ -596,9 +512,11 @@ func _populate_values() -> void:
 
 	_set_named_spin("MaxWavePhaseStep", water.max_wave_phase_step)
 	_set_named_spin("MeshBaseCellSize", water.mesh_base_cell_size)
-	_set_named_color("WaterColor", water.water_color)
-	_set_named_color("WaterScatterColor", water.water_scatter_color)
-	_set_named_spin("WaterDiffuseStrength", water.water_diffuse_strength)
+	for channel in 3:
+		var channel_name : String = ["R", "G", "B"][channel]
+		_set_named_spin("WaterAbsorption" + channel_name, water.water_absorption[channel])
+		_set_named_spin("WaterScattering" + channel_name, water.water_scattering[channel])
+	_set_named_spin("WaterScatteringAnisotropy", water.water_scattering_anisotropy)
 	_set_named_color("FoamColor", water.foam_color)
 	_set_named_spin("WaterClearRoughness", water.clear_roughness)
 	_set_named_spin("WaterFoamRoughness", water.foam_roughness)
@@ -608,20 +526,7 @@ func _populate_values() -> void:
 	_set_named_spin("SkyHorizonBoost", water.sky_horizon_boost)
 	_set_named_spin("SunSpecularStrength", water.sun_specular_strength)
 	_set_named_spin("SunGlitterDensity", water.sun_glitter_density)
-	_set_named_spin("SunScatterStrength", water.sun_scatter_strength)
-	_set_named_spin("SunScatterBase", water.sun_scatter_base)
-	_set_named_spin("SunScatterPhase", water.sun_scatter_phase_power)
-	_set_named_check("CrestGlowEnabled", water.crest_glow_enabled)
-	_set_named_spin("CrestGlowStrength", water.crest_glow_strength)
-	_set_named_spin("CrestGlowEmission", water.crest_glow_emission_strength)
-	_set_named_spin("CrestHeightStart", water.crest_height_start)
-	_set_named_spin("CrestHeightEnd", water.crest_height_end)
-	_set_named_spin("CrestSlopeStart", water.crest_slope_start)
-	_set_named_spin("CrestSlopeEnd", water.crest_slope_end)
 	_set_named_spin("MeshExtent", water.mesh_extent)
-	_set_named_spin("FarLodStartDistance", water.far_lod_start_distance)
-	_set_named_spin("FarLodBlendDistance", water.far_lod_blend_distance)
-	_set_named_spin("FarLodCurve", water.far_lod_curve)
 	_set_named_check("UseExternalWind", water.use_external_wind)
 	if wind_source:
 		_set_named_spin("ExternalWindSpeed", _get_wind_source_speed())

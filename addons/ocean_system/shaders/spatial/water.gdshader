@@ -6,6 +6,10 @@ render_mode world_vertex_coords, cull_disabled;
  * resolve, so glints are sharp up close and merge into a broad sun path in the
  * distance. Sky and planar reflections are computed here and added as EMISSION;
  * SPECULAR = 0 turns off the engine's own sky reflection, which would double them.
+ *
+ * Light under the surface follows the water's optical properties (water_absorption,
+ * water_scattering): the deep-water color (water_body_albedo()) and the light that
+ * crosses thin wave crests and scatters toward the eye (crest_scatter(), in light()).
  */
 
 #define MAX_CASCADES 8
@@ -13,6 +17,15 @@ render_mode world_vertex_coords, cull_disabled;
 #define MAX_LOD_LEVELS 16
 // Solid angle (sr) of the sun's (and the moon's) disk, about 0.53 degrees across.
 #define LIGHT_DISK_SOLID_ANGLE 6.8e-5
+#define WATER_IOR 1.333
+// Scattering by water molecules (1/m; Morel: 0.00193 (550 nm / lambda)^4.32 at the sRGB
+// primaries' wavelengths), and the share particles scatter backward (Petzold, about 1.8%).
+#define WATER_MOLECULAR_SCATTERING vec3(0.0012, 0.0019, 0.0040)
+#define WATER_PARTICLE_BACKSCATTER_RATIO 0.018
+// Light paths through wave crests (crest_light_path()): march steps 0.25 * 2^k m, and the
+// length assumed when the march does not leave the water.
+#define CREST_MARCH_STEPS 7
+#define CREST_PATH_MAX 32.0
 // Foam lighting (light()): wrap of its diffuse term, and strength and sharpness of the
 // light it lets through toward the viewer.
 #define FOAM_WRAP 0.6
@@ -21,11 +34,15 @@ render_mode world_vertex_coords, cull_disabled;
 // Refinement steps of the planar reflection hit along a pixel's reflected ray.
 #define PLANAR_REFLECTION_STEPS 3
 
-uniform vec4 water_color : source_color;
 uniform vec4 foam_color : source_color;
+// Optical properties of the water, per sRGB channel (1/m): absorption, and scattering by
+// particles (sediment, plankton). Pure seawater absorbs about (0.30, 0.056, 0.012); dissolved
+// organic matter and algae add to it, turning clear blue water greener and darker. Particles
+// make it brighter and more turbid.
+uniform vec3 water_absorption = vec3(0.45, 0.07, 0.03);
+uniform vec3 water_scattering = vec3(0.03, 0.035, 0.04);
+uniform float water_scattering_anisotropy : hint_range(0.0, 0.99) = 0.85; // Henyey-Greenstein g of particle scattering (ocean particles: about 0.9)
 
-uniform float water_diffuse_strength : hint_range(0.0, 1.0) = 0.08;
-uniform vec4 water_scatter_color : source_color = vec4(0.045, 0.18, 0.20, 1.0);
 uniform float clear_roughness : hint_range(0.0, 1.0) = 0.10;
 uniform float foam_roughness : hint_range(0.0, 1.0) = 0.24;
 uniform float normal_strength : hint_range(0.0, 1.0) = 1.0; // Global normal strength
@@ -39,7 +56,6 @@ uniform vec4 sky_horizon_color : source_color = vec4(0.58, 0.78, 0.94, 1.0);
 uniform vec4 sky_ground_horizon_color : source_color = vec4(0.16, 0.24, 0.28, 1.0);
 uniform vec4 sky_ground_bottom_color : source_color = vec4(0.01, 0.02, 0.03, 1.0);
 uniform vec3 sky_sun_direction = vec3(0.0, 0.2, -1.0);
-uniform vec4 sky_sun_color : source_color = vec4(1.0, 0.92, 0.72, 1.0);
 uniform float sky_sun_visibility : hint_range(0.0, 1.0) = 1.0;
 // Clouds from the sky source (SkySystem.get_cloud_cubemap()): rgb premultiplied
 // radiance, a opacity, with a mip chain for rough reflections. Set at runtime by OceanSystem.
@@ -53,25 +69,7 @@ uniform float sun_specular_strength : hint_range(0.0, 4.0) = 1.0;
 // Stochastic glints (see glitter_scale()): facets per square meter of water, 0 = smooth highlight.
 uniform float sun_glitter_density : hint_range(0.0, 10000000.0) = 1000000.0;
 uniform float sun_glitter_rate : hint_range(0.0, 60.0) = 12.0; // glint patterns per second
-uniform float sun_scatter_strength : hint_range(0.0, 2.0) = 0.24;
-uniform float sun_scatter_base : hint_range(0.0, 1.0) = 0.08;
-uniform float sun_scatter_phase_power : hint_range(0.25, 8.0) = 2.0;
-uniform float sun_scatter_normal_power : hint_range(0.25, 4.0) = 0.75;
-uniform float sun_scatter_slope_strength : hint_range(0.0, 2.0) = 0.65;
-uniform float sun_scatter_distance_strength : hint_range(0.0, 2.0) = 0.25;
-uniform bool crest_glow_enabled = true;
-uniform vec4 crest_glow_color : source_color = vec4(0.08, 0.58, 0.46, 1.0);
-uniform float crest_glow_strength : hint_range(0.0, 4.0) = 0.75;
-uniform float crest_glow_emission_strength : hint_range(0.0, 2.0) = 0.35;
-uniform float crest_height_start : hint_range(-2.0, 4.0) = 0.18;
-uniform float crest_height_end : hint_range(-2.0, 6.0) = 0.85;
-uniform float crest_slope_start : hint_range(0.0, 4.0) = 0.18;
-uniform float crest_slope_end : hint_range(0.0, 8.0) = 0.85;
-uniform float crest_back_view_power : hint_range(0.25, 8.0) = 1.6;
-uniform float crest_back_normal_power : hint_range(0.25, 8.0) = 1.25;
-uniform float crest_low_sun_start : hint_range(-0.1, 1.0) = 0.02;
-uniform float crest_low_sun_end : hint_range(-0.1, 1.0) = 0.38;
-uniform int water_debug_view : hint_range(0, 15) = 0;
+uniform int water_debug_view : hint_range(0, 11) = 0;
 uniform bool planar_reflection_enabled = false;
 // Linear HDR, rgb premultiplied by geometry coverage (a), with a mip chain (PlanarReflectionCaptureEffect).
 uniform sampler2D planar_reflection_texture : filter_linear_mipmap, repeat_disable;
@@ -84,10 +82,6 @@ uniform float planar_reflection_strength : hint_range(0.0, 1.0) = 0.0; // how mu
 uniform float planar_reflection_plane_y = 0.0;
 uniform bool use_bicubic_normals = true;
 uniform int fragment_cascade_limit : hint_range(1, 8) = 3;
-// Far-ocean shading fade (foam, reflection): 0 near, 1 far.
-uniform float far_lod_start_distance = 192.0;
-uniform float far_lod_blend_distance : hint_range(1.0, 4000.0) = 1400.0;
-uniform float far_lod_curve : hint_range(0.25, 4.0) = 1.8;
 // CDLOD mesh (OceanSystem._update_lod_grid). Off for the editor's preview plane.
 uniform bool lod_grid_enabled = false;
 uniform float lod_ranges[MAX_LOD_LEVELS];       // beyond range(L), level-L vertices sit on the level L + 1 lattice
@@ -129,16 +123,13 @@ varying float foam_factor;
 varying vec3 water_world_position;
 // Fragment -> light(): multiplies the specular highlight (foam covers it).
 varying float light_specular_scale;
+// Fragment -> light(): view-ray transmission for crest_scatter() (Fresnel, foam covers it).
+varying float crest_transmission;
 // Fragment -> light(), for glitter_scale(): random numbers of the pixel's glint cells, for
 // (fine level, coarse level) x (current pattern, next pattern).
 varying vec4 glitter_random;
 // Facets in a fine and in a coarse cell, fine-to-coarse blend, current-to-next pattern blend.
 varying vec4 glitter_cells;
-
-float get_distance_lod(float dist) {
-	float linear_lod = smoothstep(far_lod_start_distance, far_lod_start_distance + far_lod_blend_distance, dist);
-	return pow(linear_lod, far_lod_curve);
-}
 
 /** 1 inside the interaction window, fading to 0 before its absorbing border. */
 float interaction_fade(vec2 xz) {
@@ -277,14 +268,6 @@ vec3 safe_normalize_vec3(vec3 value, vec3 fallback) {
 	return normalize(value);
 }
 
-float safe_smoothstep(float edge0, float edge1, float value) {
-	return smoothstep(edge0, max(edge1, edge0 + 0.0001), value);
-}
-
-float sky_low_sun_factor(vec3 sun_dir) {
-	return sky_sun_visibility * (1.0 - safe_smoothstep(crest_low_sun_start, crest_low_sun_end, sun_dir.y));
-}
-
 float fresnel_schlick(float no_v, float f0) {
 	return f0 + (1.0 - f0) * pow(1.0 - saturate(no_v), 5.0);
 }
@@ -377,6 +360,107 @@ float water_specular_brdf(vec3 normal, vec3 view, vec3 light_direction, float ro
 	float visibility = smith_ggx_visibility(no_v, no_l, roughness);
 	float fresnel = fresnel_schlick(saturate(dot(view, half_vector)), sky_reflection_f0);
 	return distribution * visibility * fresnel;
+}
+
+/**
+ * Albedo of optically deep water (radiance = albedo * irradiance / PI), from its optical
+ * properties: the remote-sensing reflectance just below the surface, rrs = 0.0949 u + 0.0794 u^2
+ * with u = bb / (a + bb) (Gordon et al. 1988), above it Rrs = 0.52 rrs / (1 - 1.7 rrs) (Lee et
+ * al. 1998, for a view from above, surface transmission included); the albedo is PI Rrs.
+ */
+vec3 water_body_albedo() {
+	vec3 backscattering = 0.5 * WATER_MOLECULAR_SCATTERING + WATER_PARTICLE_BACKSCATTER_RATIO * water_scattering;
+	vec3 u = backscattering / (water_absorption + backscattering);
+	vec3 subsurface = (0.0949 + 0.0794 * u) * u;
+	return PI * 0.52 * subsurface / (1.0 - 1.7 * subsurface);
+}
+
+/** Henyey-Greenstein phase function (1/sr). */
+float henyey_greenstein(float cos_theta, float g) {
+	float g2 = g * g;
+	return (1.0 - g2) / (4.0 * PI * pow(max(1.0 + g2 - 2.0 * g * cos_theta, 1e-6), 1.5));
+}
+
+/**
+ * Height of the FFT waves at rest position rest_xz, blended like the vertex shader and
+ * prefiltered to `spacing` meters (wakes left out).
+ */
+float wave_height_at(vec2 rest_xz, float spacing) {
+	float map_size = float(textureSize(displacements_a, 0).x);
+	float height = 0.0;
+	for (int i = 0; i < min(num_cascades, MAX_CASCADES); ++i) {
+		vec4 scales = map_scales[i];
+		if (scales.z == 0.0)
+			continue;
+		float lod = log2(max(spacing * map_size * max(scales.x, scales.y), 1.0));
+		vec4 blend_state = spectrum_blend_states[i];
+		float b_weight = wave_frame_blends[i].x;
+		vec3 coords = vec3(rest_xz * scales.xy, blend_state.x);
+		float cascade_height = mix(textureLod(displacements_a, coords, lod).y, textureLod(displacements_b, coords, lod).y, b_weight) * blend_state.z;
+		if (blend_state.w > 0.0) {
+			coords.z = blend_state.y;
+			cascade_height += mix(textureLod(displacements_a, coords, lod).y, textureLod(displacements_b, coords, lod).y, b_weight) * blend_state.w;
+		}
+		height += cascade_height * scales.z;
+	}
+	return height;
+}
+
+/**
+ * Length (m) of water a ray toward the light crosses from the surface point at rest position
+ * rest_xz (world height surface_y) before it leaves the water: marched along the heightfield
+ * in steps doubling from 0.25 m. Short behind thin wave crests; CREST_PATH_MAX when the ray
+ * stays in the water (it is not refracted: the march only measures how thick the water is).
+ */
+float crest_light_path(vec2 rest_xz, float surface_y, vec3 to_light) {
+	// The heightfield through this point (the mesh's own height may differ by wakes and filtering).
+	float base = surface_y - wave_height_at(rest_xz, 0.25);
+	float previous_t = 0.0;
+	float previous_depth = 0.0;
+	for (int k = 0; k < CREST_MARCH_STEPS; ++k) {
+		float t = 0.25 * exp2(float(k));
+		float depth = base + wave_height_at(rest_xz + to_light.xz * t, t * 0.5) - (surface_y + to_light.y * t);
+		if (depth <= 0.0) {
+			return mix(previous_t, t, previous_depth / (previous_depth - depth));
+		}
+		previous_t = t;
+		previous_depth = depth;
+	}
+	return CREST_PATH_MAX;
+}
+
+/**
+ * Light from direction to_light that enters the water, scatters once just under this surface
+ * point and leaves toward the eye, per unit of the light's irradiance, before the view ray's own
+ * Fresnel transmission. It is the glow of backlit wave crests: forward scattering is strong, so
+ * it shows where light that crossed a thin crest heads for the eye.
+ *
+ * The view ray refracts through this face. Light enters through this face when it faces the
+ * light, else through the crest's far face, taken as this face mirrored about the vertical (a
+ * symmetric crest). Scattering: particles (Henyey-Greenstein) and water molecules (Rayleigh).
+ * Along the view ray the light's path through the water grows about as fast as the view ray
+ * goes in, so the in-scattering integrates to sigma_s p / (2 sigma_t), attenuated over the
+ * light's path to this point (crest_light_path()).
+ */
+vec3 crest_scatter(vec3 normal, vec3 view, vec3 to_light, vec2 rest_xz, float surface_y, out float light_path, out float phase) {
+	light_path = 0.0;
+	phase = 0.0;
+	vec3 view_in_water = refract(-view, normal, 1.0 / WATER_IOR);
+	vec3 entry_normal = dot(normal, to_light) > 0.0 ? normal : vec3(-normal.x, normal.y, -normal.z);
+	if (dot(entry_normal, to_light) <= 0.0 || dot(view_in_water, view_in_water) == 0.0)
+		return vec3(0.0);
+	vec3 light_in_water = refract(-to_light, entry_normal, 1.0 / WATER_IOR);
+	float cos_theta = dot(light_in_water, -view_in_water);
+	phase = henyey_greenstein(cos_theta, water_scattering_anisotropy);
+	vec3 scattering = water_scattering * phase + WATER_MOLECULAR_SCATTERING * (3.0 / (16.0 * PI)) * (1.0 + cos_theta * cos_theta);
+	vec3 extinction = water_absorption + water_scattering + WATER_MOLECULAR_SCATTERING;
+	vec3 unshadowed = scattering / (2.0 * extinction);
+	// Skip the march where even an unobstructed path would scatter almost nothing.
+	if (max(unshadowed.r, max(unshadowed.g, unshadowed.b)) < 0.002)
+		return vec3(0.0);
+	light_path = crest_light_path(rest_xz, surface_y, to_light);
+	float transmission_in = 1.0 - fresnel_schlick(dot(entry_normal, to_light), sky_reflection_f0);
+	return unshadowed * transmission_in * exp(-extinction * light_path);
 }
 
 /** Uniform random number in [0, 1) for integer coordinates (PCG3D hash). */
@@ -500,30 +584,16 @@ void fragment() {
 		}
 	}
 
-	float dist = length(water_world_position.xz - CAMERA_POSITION_WORLD.xz);
-	float fragment_distance_lod = get_distance_lod(dist);
 	vec2 gradient = vec2(0.0);
 	float foam_signal = 0.0;
 	// Total variance of the slopes inside the pixel footprint, over all cascades.
 	float slope_variance = 0.0;
 	foam_factor = 0.0;
-	float raw_wave_slope = 0.0;
 	vec3 world_normal = vec3(0.0, 1.0, 0.0);
 	float sky_reflection_amount = 0.0;
 	vec3 reflected_sky_color = vec3(0.0);
-	vec3 sun_scatter_radiance = vec3(0.0);
 	float sun_specular_amount = 0.0;
-	float sun_scatter_amount = 0.0;
-	float sun_scatter_no_l = 0.0;
-	float view_sun_phase = 0.0;
-	float micro_slope_energy = 0.0;
 	float effective_reflection_roughness = 0.0;
-	float crest_height_mask = 0.0;
-	float crest_slope_mask = 0.0;
-	float crest_backlight_mask = 0.0;
-	float crest_glow_mask = 0.0;
-	vec2 macro_gradient = vec2(0.0);
-	vec3 macro_world_normal = vec3(0.0, 1.0, 0.0);
 
 	if (num_cascades > 0) {
 		float map_size = float(textureSize(normals_a, 0).x);
@@ -557,21 +627,11 @@ void fragment() {
 				// Foam is a non-negative mask, so it crossfades linearly rather than by equal power.
 				cascade_foam = mix(active_sample.w, pending_sample.w, blend_state.w / (blend_state.z + blend_state.w));
 			}
-			vec2 normal_signal = cascade_gradient * scales.w;
-			cascade_variance *= scales.w * scales.w;
-			float tile_length = 1.0 / max(min(scales.x, scales.y), 0.0001);
-			float macro_weight = smoothstep(18.0, 80.0, tile_length);
-			gradient += normal_signal;
-			slope_variance += cascade_variance;
+			gradient += cascade_gradient * scales.w;
+			slope_variance += cascade_variance * scales.w * scales.w;
 			foam_signal += cascade_foam;
-			macro_gradient += normal_signal * macro_weight;
-			// RMS slope (resolved + unresolved): the same at every filter level.
-			micro_slope_energy += sqrt(dot(normal_signal, normal_signal) + cascade_variance) * (1.0 - macro_weight);
 		}
 
-		raw_wave_slope = length(gradient);
-		micro_slope_energy = saturate(micro_slope_energy * 0.75 + raw_wave_slope * 0.15);
-		macro_world_normal = normalize(vec3(-macro_gradient.x * 0.45, 1.0, -macro_gradient.y * 0.45));
 		// Foam is coverage (fft_unpack.glsl), so its mips hold the covered share of
 		// each texel: right at every distance, with no fade.
 		foam_factor = saturate(foam_signal * foam_intensity);
@@ -604,7 +664,6 @@ void fragment() {
 	// mirroring it up stands in for that second bounce (the sky gradient's
 	// ground colors are for looking down, not for reflections).
 	reflection_direction.y = abs(reflection_direction.y);
-	float low_sun = sky_low_sun_factor(sun_dir);
 	float clear_water_mask = 1.0 - foam_factor * 0.85;
 	float no_v = saturate(dot(world_normal, view_direction_world));
 	// GGX alpha (perceptual roughness squared) widened by the unresolved slope variance
@@ -619,11 +678,12 @@ void fragment() {
 	float slope_sigma = sqrt(base_alpha * base_alpha + slope_variance) * 0.70710678;
 	float sky_fresnel = rough_fresnel(no_v, slope_sigma, sky_reflection_f0);
 	// The water body's color is light that entered the water and scattered back
-	// out: only the share the surface does not reflect leaves toward the eye.
-	// Foam lies on top, so it is not dimmed.
-	vec3 water_body_albedo = water_color.rgb * water_diffuse_strength * (1.0 - sky_fresnel);
+	// out: only the share the surface does not reflect leaves toward the eye
+	// (water_body_albedo() holds it for a view from above). Foam lies on top, so it
+	// is not dimmed.
+	vec3 body_albedo = water_body_albedo() * (1.0 - sky_fresnel) / (1.0 - sky_reflection_f0);
 	// Bubble cells (low pattern values) are a little darker than the lace between them.
-	vec3 base_albedo = mix(water_body_albedo, foam_color.rgb * mix(0.75, 1.0, detail), foam_factor);
+	vec3 base_albedo = mix(body_albedo, foam_color.rgb * mix(0.75, 1.0, detail), foam_factor);
 	sky_reflection_amount = saturate(sky_reflection_strength * sky_fresnel * clear_water_mask);
 	if (sky_reflection_enabled) {
 		reflected_sky_color = sample_rough_procedural_environment(reflection_direction, effective_reflection_roughness);
@@ -632,13 +692,6 @@ void fragment() {
 
 	// The highlight itself is lit in light(); this copy (per unit of sun irradiance) is for the debug view.
 	sun_specular_amount = water_specular_brdf(world_normal, view_direction_world, sun_dir, effective_reflection_roughness) * saturate(dot(world_normal, sun_dir));
-
-	sun_scatter_no_l = pow(saturate(dot(macro_world_normal, sun_dir)), sun_scatter_normal_power);
-	view_sun_phase = pow(saturate(dot(view_direction_world, sun_dir)), sun_scatter_phase_power);
-	float scatter_slope = mix(1.0, 0.5 + micro_slope_energy, sun_scatter_slope_strength);
-	float scatter_distance = 1.0 + fragment_distance_lod * sun_scatter_distance_strength;
-	sun_scatter_amount = sun_scatter_strength * sky_sun_visibility * sun_scatter_no_l * (sun_scatter_base + view_sun_phase) * scatter_slope * scatter_distance * clear_water_mask;
-	sun_scatter_radiance = water_scatter_color.rgb * sky_sun_color.rgb * sun_scatter_amount;
 
 	// Reflected scene geometry hides the sky behind it (alpha: geometry coverage).
 	if (planar_reflection_enabled && planar_reflection_strength > 0.0) {
@@ -674,21 +727,15 @@ void fragment() {
 	}
 	vec3 reflection_radiance = reflected_color * sky_reflection_amount;
 
-	vec3 crest_emission = vec3(0.0);
-	if (crest_glow_enabled && crest_glow_strength > 0.0) {
-		float height_above_water = water_world_position.y - planar_reflection_plane_y;
-		crest_height_mask = safe_smoothstep(crest_height_start, crest_height_end, height_above_water);
-		crest_slope_mask = safe_smoothstep(crest_slope_start, crest_slope_end, raw_wave_slope);
-		float back_view = pow(saturate(-dot(view_direction_world, sun_dir)), crest_back_view_power);
-		float back_normal = pow(saturate(dot(-world_normal, sun_dir)), crest_back_normal_power);
-		crest_backlight_mask = back_view * back_normal * low_sun;
-		crest_glow_mask = crest_height_mask * crest_slope_mask * crest_backlight_mask * clear_water_mask;
-		vec3 crest_light = crest_glow_color.rgb * sky_sun_color.rgb;
-		crest_emission = crest_light * crest_glow_mask * crest_glow_strength * crest_glow_emission_strength;
-	}
-
 	if (water_debug_view > 0) {
 		vec3 debug_color = vec3(0.0);
+		// For the crest views: the sun's crest scattering, as light() computes it.
+		float crest_path = 0.0;
+		float crest_phase = 0.0;
+		vec3 sun_crest = vec3(0.0);
+		if (water_debug_view >= 4 && water_debug_view <= 6) {
+			sun_crest = crest_scatter(world_normal, view_direction_world, sun_dir, UV, water_world_position.y, crest_path, crest_phase) * (1.0 - sky_fresnel);
+		}
 		if (water_debug_view == 1) {
 			debug_color = vec3(sky_reflection_amount);
 		} else if (water_debug_view == 2) {
@@ -696,44 +743,39 @@ void fragment() {
 		} else if (water_debug_view == 3) {
 			debug_color = vec3(1.0) - exp(-vec3(sun_specular_amount)); // tonemapped
 		} else if (water_debug_view == 4) {
-			debug_color = vec3(crest_height_mask);
+			debug_color = vec3(crest_path / CREST_PATH_MAX); // light path through the water toward the sun
 		} else if (water_debug_view == 5) {
-			debug_color = vec3(crest_slope_mask);
+			debug_color = vec3(crest_phase / (crest_phase + 1.0)); // scattering phase (1/sr), mapped to 0-1
 		} else if (water_debug_view == 6) {
-			debug_color = vec3(crest_backlight_mask);
+			debug_color = vec3(1.0) - exp(-sun_crest * 20.0); // crest scattering per unit sun irradiance, tonemapped
 		} else if (water_debug_view == 7) {
-			debug_color = vec3(crest_glow_mask);
+			debug_color = water_body_albedo() * 20.0;
 		} else if (water_debug_view == 8) {
 			debug_color = vec3(reflection_direction.y * 0.5 + 0.5);
 		} else if (water_debug_view == 9) {
 			debug_color = vec3(effective_reflection_roughness);
 		} else if (water_debug_view == 10) {
-			debug_color = vec3(sun_scatter_amount);
-		} else if (water_debug_view == 11) {
-			debug_color = vec3(sun_scatter_no_l);
-		} else if (water_debug_view == 12) {
-			debug_color = vec3(view_sun_phase);
-		} else if (water_debug_view == 13) {
-			debug_color = vec3(micro_slope_energy);
-		} else if (water_debug_view == 14) {
 			debug_color = vec3(sqrt(slope_variance));
-		} else if (water_debug_view == 15) {
+		} else if (water_debug_view == 11) {
 			debug_color = vec3(foam_factor);
 		}
-		ALBEDO = debug_color;
+		// Shown unlit, so the scene's lighting does not scale the values.
+		ALBEDO = vec3(0.0);
 		METALLIC = 0.0;
 		ROUGHNESS = 1.0;
 		SPECULAR = 0.0;
-		EMISSION = vec3(0.0);
+		EMISSION = debug_color;
 		light_specular_scale = 0.0;
+		crest_transmission = 0.0;
 		glitter_cells = vec4(0.0);
 	} else {
 		ALBEDO = base_albedo;
 		METALLIC = 0.0;
 		ROUGHNESS = mix(effective_reflection_roughness, foam_roughness, foam_factor);
 		SPECULAR = 0.0; // No engine sky reflection: it is in EMISSION (see the header).
-		EMISSION = reflection_radiance + sun_scatter_radiance + crest_emission;
+		EMISSION = reflection_radiance;
 		light_specular_scale = sun_specular_strength * clear_water_mask;
+		crest_transmission = (1.0 - sky_fresnel) * (1.0 - foam_factor);
 
 		// Glint cells on the rest-position grid (UV), so patterns ride with the water.
 		// Cell sides are powers of two around the pixel footprint's size.
@@ -773,6 +815,16 @@ void light() {
 	float foam_light = max(no_l + FOAM_WRAP, 0.0) / (1.0 + FOAM_WRAP)
 		+ FOAM_TRANSMISSION * pow(max(dot(-VIEW, LIGHT), 0.0), FOAM_TRANSMISSION_POWER);
 	DIFFUSE_LIGHT += LIGHT_COLOR * ATTENUATION * mix(body_light, foam_light, foam_factor) / PI;
+	// Light that crossed a wave crest and scatters toward the eye. Not scaled by albedo.
+	if (crest_transmission > 0.0) {
+		vec3 world_normal = (INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz;
+		vec3 world_view = (INV_VIEW_MATRIX * vec4(VIEW, 0.0)).xyz;
+		vec3 world_light = (INV_VIEW_MATRIX * vec4(LIGHT, 0.0)).xyz;
+		float light_path;
+		float phase;
+		vec3 crest = crest_scatter(world_normal, world_view, world_light, UV, water_world_position.y, light_path, phase);
+		SPECULAR_LIGHT += LIGHT_COLOR * ATTENUATION / PI * crest * crest_transmission;
+	}
 	if (no_l > 0.0) {
 		float glitter = glitter_cells.x > 0.0 ? glitter_scale(NORMAL, VIEW, LIGHT, ROUGHNESS) : 1.0;
 		SPECULAR_LIGHT += LIGHT_COLOR * ATTENUATION * (no_l / PI) * water_specular_brdf(NORMAL, VIEW, LIGHT, ROUGHNESS) * light_specular_scale * glitter;

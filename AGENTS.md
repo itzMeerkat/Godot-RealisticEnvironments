@@ -54,7 +54,7 @@ before touching its code; this file only records what is easy to get wrong.
 - Cross-system contracts (change both sides together):
   - Wind source: `get_wind_speed()` + `get_wind_direction_degrees()`, or
     `wind_speed` / `wind_direction` properties.
-  - Sky source: `get_sun_direction/sun_color/sky_top_color/sky_horizon_color/
+  - Sky source: `get_sun_direction/sky_top_color/sky_horizon_color/
     sky_ground_horizon_color/sky_ground_bottom_color/sun_visibility()` or the
     same names as properties; missing values fall back to `manual_*` exports.
     A source with a `lighting_changed` signal is read only when it fires, so it
@@ -126,8 +126,11 @@ before touching its code; this file only records what is easy to get wrong.
   (`create_texture_slice_view`; Godot does not expose mip views of whole
   arrays); compute shaders read displacement through samplers.
 - Water lighting: `light()` does diffuse (water body by the light's height, not
-  the facet; foam wrapped and transmitted) and the sun's GGX highlight (lit by
-  the scene's lights); sky and planar reflections are `EMISSION`. The shader writes
+  the facet; foam wrapped and transmitted), crest scattering and the sun's GGX
+  highlight (lit by the scene's lights); sky and planar reflections are
+  `EMISSION`. Water color and crest glow both come from the optical properties
+  (`water_absorption`, `water_scattering`, `water_scattering_anisotropy`); don't
+  add artistic tints or masks on top. The shader writes
   `SPECULAR = 0`; don't reintroduce engine specular, it doubles the sky
   reflection. Sky and planar reflections share one rough-surface Fresnel
   (`rough_fresnel`, from the same slope variance as the roughness); plain

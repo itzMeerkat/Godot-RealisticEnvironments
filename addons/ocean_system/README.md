@@ -82,15 +82,16 @@ Heights match the rendered mesh:
 ## Inspector groups
 
 - **Material** — `water_material` template.
-- **Wave Parameters / Surface Shading / Foam Shading** — water and foam colour,
-  roughness, normal strength, bicubic normal filtering,
+- **Wave Parameters / Surface Shading / Foam Shading** — the water's optical
+  properties (`water_absorption`, `water_scattering`,
+  `water_scattering_anisotropy`; see Lighting below), foam colour, roughness,
+  normal strength, bicubic normal filtering,
   `fragment_cascade_limit` (cascades sampled per pixel), `foam_intensity`,
   `foam_detail_texture` and `foam_detail_tile_size` (see Foam below).
-- **Sky Reflection** — procedural sky reflection, `sun_specular_strength`, sun scatter;
-  `manual_*` values are used when no sky source is set or the source lacks a
-  value. A sky source with `get_cloud_cubemap()` (SkySystem) also puts its
-  clouds into the reflection.
-- **Crest Glow** — low-sun, back-lit tint on tall steep crests (artistic).
+- **Sky Reflection** — procedural sky reflection, `sun_specular_strength`, sun
+  glitter; `manual_*` values are used when no sky source is set or the source
+  lacks a value. A sky source with `get_cloud_cubemap()` (SkySystem) also puts
+  its clouds into the reflection.
 - **Planar Reflections** — mirrored-camera reflection of scene geometry,
   resolution, strength, and clipping of submerged pixels.
 - **External Wind** — `use_external_wind`, `wind_source_path`.
@@ -100,10 +101,8 @@ Heights match the rendered mesh:
   wavelength, a cascade's waves may travel between FFT updates; sets each
   cascade's update rate).
 - **Mesh** — `mesh_base_cell_size` (vertex spacing nearest the camera) and
-  `mesh_extent` (radius of rendered water, default 7 km).
-- **Far Ocean LOD** — distance fade of the sun scatter shading
-  (`far_lod_start_distance`, blend distance, curve). Geometry, normals and
-  foam are not faded: their mip chains filter them.
+  `mesh_extent` (radius of rendered water, default 7 km). Nothing fades with
+  distance: geometry, normals and foam are filtered by their mip chains.
 
 ## Wave cascades (`WaveCascadeParameters`)
 
@@ -145,10 +144,11 @@ tiles for swell and short tiles for chop. Per cascade:
 - **Wake foam** — comes from the interaction simulation (see
   [Interaction simulation](#interaction-simulation-wakes)); there is no
   scripted foam API.
-- **Shading debug** — the shader uniform `water_debug_view` (1–14) shows single
-  terms (sky reflection, sun specular, crest masks, scatter, roughness, slope
-  deviation, …). The
-  ocean resets it to 0 on ready, so set it on the material at runtime.
+- **Shading debug** — the shader uniform `water_debug_view` (1–11) shows single
+  terms unlit: 1 reflectance, 2 reflected sky, 3 sun specular, 4 crest light
+  path, 5 crest scattering phase, 6 crest scattering (sun), 7 deep-water albedo,
+  8 reflection direction, 9 roughness, 10 slope deviation, 11 foam. The ocean
+  resets it to 0 on ready, so set it on the material at runtime.
 
 ## Hull cutouts
 
@@ -445,16 +445,35 @@ exactly `coverage` of the area, as patches that dissolve into lace as they thin.
 Once the pattern's texels are smaller than a pixel its mips flatten toward
 0.5, and plain coverage takes over (the mips of coverage are exact at any
 distance, so foam needs no distance fade). Thin foam is translucent (opacity
-0.35 at low coverage, 1 when dense). Debug view 15 shows the result.
+0.35 at low coverage, 1 when dense). Debug view 11 shows the result.
 
 Lighting:
 - `light()` replaces Godot's per-light shading. It uses the light's color,
   energy and attenuation, so it follows the SkySystem's sun (altitude, clouds).
   - Water body: light refracted in and scattered back up, so it follows the
     light's height above the horizon, not the wave facet (Lambert on facets
-    looked like shaded plastic). Its albedo (`water_color` ×
-    `water_diffuse_strength`) is scaled by `1 − Fresnel`: only light the surface
-    does not reflect gets in and out.
+    looked like shaded plastic). Its albedo comes from the optical properties:
+    the remote-sensing reflectance of optically deep water,
+    `rrs = 0.0949 u + 0.0794 u²` with `u = bb / (a + bb)` (Gordon et al. 1988),
+    above the surface `Rrs = 0.52 rrs / (1 − 1.7 rrs)` (Lee et al. 1998), as an
+    albedo `π Rrs` (`water_body_albedo()`). `a` is `water_absorption`; the
+    backscattering `bb` is half the molecular scattering (Morel) plus 1.8 % of
+    `water_scattering` (Petzold). It is scaled by `1 − Fresnel` relative to a
+    view from above: only light the surface does not reflect gets in and out.
+  - Crest scattering (`crest_scatter()`): light that crossed a wave crest and
+    scatters once toward the eye, just under the surface. The view ray refracts
+    through this face; the light enters through this face if it faces the
+    light, else through the crest's far face (this face mirrored about the
+    vertical). Particles scatter by Henyey–Greenstein
+    (`water_scattering_anisotropy`), water molecules by Rayleigh. Along the view
+    ray the light's path grows about as fast as the view ray goes in, so the
+    in-scattering integrates to `σs p / (2 σt)`, attenuated by `exp(−σt d)` over
+    the light's path `d` through the water, which `crest_light_path()` marches
+    along the wave heightfield toward the light (7 steps doubling from 0.25 m).
+    Through gentle faces, refraction bends both rays steeply down, so the
+    scattering angle stays wide and the glow is faint; steep and breaking
+    crests send light forward to the eye and glow, tinted by the absorption.
+    Lit by the scene's lights (color, energy, shadows), added as specular light.
   - Foam: a bubble layer that scatters light through its volume: wrapped
     diffuse (facets turned from the light still get some) plus light shining
     through toward a viewer facing the light. Its albedo (`foam_color`,
@@ -472,8 +491,8 @@ Lighting:
 - `SPECULAR` is 0, which turns off the engine's sky reflection; the shader
   adds its own as `EMISSION`: procedural sky reflection (Fresnel, blurred by
   the same roughness; the sky gradient over three directions, clouds from the
-  cloud cubemap's mip whose blur matches the reflection lobe), planar
-  reflection, sun scatter and crest glow.
+  cloud cubemap's mip whose blur matches the reflection lobe) and planar
+  reflection.
 - Reflections use one reflectance: Fresnel averaged over the same slopes as the
   roughness (Bruneton et al. 2010, mean normal plus slope deviation
   `alpha / √2`). Schlick on the filtered normal would make distant water a

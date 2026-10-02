@@ -41,13 +41,26 @@ const WATER_DEBUG_VIEW_NORMAL := 0
 			_push_all_shader_parameters()
 
 @export_group('Wave Parameters')
-## Base deep-water tint before foam, reflections, and emission are added. This
-## should usually stay dark and low-saturation because sky and sun lighting are
-## layered on top by the shader.
-@export_color_no_alpha var water_color : Color = Color(0.1, 0.15, 0.18) :
+## Light absorption of the water per color channel, in 1/m. Pure seawater is
+## about (0.30, 0.056, 0.012); dissolved organic matter and algae add to it,
+## turning clear blue water greener and darker. Sets the deep-water color and how
+## light passing through thin wave crests is tinted.
+@export var water_absorption := Vector3(0.45, 0.07, 0.03) :
 	set(value):
-		water_color = value
-		_set_water_shader_parameter(&'water_color', water_color)
+		water_absorption = value
+		_set_water_shader_parameter(&'water_absorption', water_absorption)
+## Light scattering by particles (sediment, plankton) per color channel, in
+## 1/m. More makes the water brighter and more turbid, and crests glow more.
+@export var water_scattering := Vector3(0.03, 0.035, 0.04) :
+	set(value):
+		water_scattering = value
+		_set_water_shader_parameter(&'water_scattering', water_scattering)
+## How strongly particles scatter forward (Henyey-Greenstein g; ocean particles
+## about 0.9). Higher concentrates the crest glow toward the light.
+@export_range(0.0, 0.99, 0.01) var water_scattering_anisotropy := 0.85 :
+	set(value):
+		water_scattering_anisotropy = value
+		_set_water_shader_parameter(&'water_scattering_anisotropy', water_scattering_anisotropy)
 
 ## Albedo of dense foam (wave, wake and hull edge foam). Foam is a near-neutral
 ## white scatterer (albedo about 0.8); the lights and sky tint it.
@@ -57,19 +70,6 @@ const WATER_DEBUG_VIEW_NORMAL := 0
 		_set_water_shader_parameter(&'foam_color', foam_color)
 
 @export_group('Surface Shading')
-## Amount of water_color that contributes to diffuse ALBEDO. Keep this low for
-## realistic water because most visible brightness should come from reflection,
-## sun glitter, scatter, and crest emission rather than matte diffuse color.
-@export_range(0.0, 1.0, 0.01) var water_diffuse_strength := 0.08 :
-	set(value):
-		water_diffuse_strength = value
-		_set_water_shader_parameter(&'water_diffuse_strength', water_diffuse_strength)
-## Tint for broad sun-lit water-body scattering. This is added as radiance in
-## the shader and is most visible at low angles or when looking away from the sun.
-@export_color_no_alpha var water_scatter_color : Color = Color(0.045, 0.18, 0.20) :
-	set(value):
-		water_scatter_color = value
-		_set_water_shader_parameter(&'water_scatter_color', water_scatter_color)
 ## Roughness of ripples shorter than the smallest cascade. The shader widens it
 ## by the wave slopes a pixel cannot resolve, so distant water gets rougher on
 ## its own; this only sets how sharp the closest sun glints and reflections are.
@@ -104,7 +104,7 @@ const WATER_DEBUG_VIEW_NORMAL := 0
 
 @export_group('Sky Reflection')
 ## Optional sky source node. SkySystem exposes the expected getters, but any node
-## with get_sun_direction(), get_sun_color(), get_sky_top_color(),
+## with get_sun_direction(), get_sky_top_color(),
 ## get_sky_horizon_color(), and get_sun_visibility() can be used. Sources with a
 ## lighting_changed signal are read only when it fires; others every frame.
 @export var sky_source_path : NodePath :
@@ -125,14 +125,8 @@ const WATER_DEBUG_VIEW_NORMAL := 0
 	set(value):
 		manual_sky_horizon_color = value
 		_update_sky_lighting_shader_parameters()
-## Fallback direct sun color used for glitter, scatter, and crest glow when no
-## sky source provides a sun color.
-@export_color_no_alpha var manual_sun_color : Color = Color(1.0, 0.92, 0.72) :
-	set(value):
-		manual_sun_color = value
-		_update_sky_lighting_shader_parameters()
 ## Fallback normalized sun direction in world space when no sky source provides
-## one. The shader uses this for glitter direction and backlit crest masks.
+## one. The shader uses it for the sky reflection and the debug views.
 @export var manual_sun_direction := Vector3(0.0, 0.2, -1.0) :
 	set(value):
 		manual_sun_direction = value
@@ -185,116 +179,7 @@ const WATER_DEBUG_VIEW_NORMAL := 0
 	set(value):
 		sun_glitter_rate = value
 		_set_water_shader_parameter(&'sun_glitter_rate', sun_glitter_rate)
-## Strength of broad sun-lit water scatter. This is a soft radiance term that
-## helps backlit water read as translucent instead of only reflective.
-@export_range(0.0, 2.0, 0.01) var sun_scatter_strength := 0.24 :
-	set(value):
-		sun_scatter_strength = value
-		_set_water_shader_parameter(&'sun_scatter_strength', sun_scatter_strength)
-## Minimum sun scatter before view-direction phase is applied. Raise for a more
-## constant sun tint on clear water; lower for more directional scatter.
-@export_range(0.0, 1.0, 0.01) var sun_scatter_base := 0.08 :
-	set(value):
-		sun_scatter_base = value
-		_set_water_shader_parameter(&'sun_scatter_base', sun_scatter_base)
-## View-sun phase exponent for scatter. Higher values concentrate scatter when
-## looking more directly away from the sun.
-@export_range(0.25, 8.0, 0.05) var sun_scatter_phase_power := 2.0 :
-	set(value):
-		sun_scatter_phase_power = value
-		_set_water_shader_parameter(&'sun_scatter_phase_power', sun_scatter_phase_power)
-## Normal alignment exponent for sun scatter. Higher values require wave normals
-## to face the sun more directly before scatter appears.
-@export_range(0.25, 4.0, 0.05) var sun_scatter_normal_power := 0.75 :
-	set(value):
-		sun_scatter_normal_power = value
-		_set_water_shader_parameter(&'sun_scatter_normal_power', sun_scatter_normal_power)
-## How wave micro-slope affects scatter strength. Higher values make choppy water
-## show more sunlit body color and flatter water show less.
-@export_range(0.0, 2.0, 0.01) var sun_scatter_slope_strength := 0.65 :
-	set(value):
-		sun_scatter_slope_strength = value
-		_set_water_shader_parameter(&'sun_scatter_slope_strength', sun_scatter_slope_strength)
-## Additional scatter multiplier across the far-ocean LOD fade. Raise to keep
-## distant water luminous; lower if the horizon looks too bright.
-@export_range(0.0, 2.0, 0.01) var sun_scatter_distance_strength := 0.25 :
-	set(value):
-		sun_scatter_distance_strength = value
-		_set_water_shader_parameter(&'sun_scatter_distance_strength', sun_scatter_distance_strength)
 
-@export_group('Crest Glow')
-## Enables low-sun backlit crest glow. This is an artistic scattering effect that
-## colors high, steep, backlit wave crests without changing wave physics.
-@export var crest_glow_enabled := true :
-	set(value):
-		crest_glow_enabled = value
-		_set_water_shader_parameter(&'crest_glow_enabled', crest_glow_enabled)
-## Color tint for backlit crest glow before multiplying by sun color. Blue-green
-## values suggest translucent seawater; warmer values suggest sunset glow.
-@export_color_no_alpha var crest_glow_color : Color = Color(0.08, 0.58, 0.46) :
-	set(value):
-		crest_glow_color = value
-		_set_water_shader_parameter(&'crest_glow_color', crest_glow_color)
-## Overall strength of the crest glow mask. Raise to make the color visible on
-## more crests; lower for a subtler transmission effect.
-@export_range(0.0, 4.0, 0.01) var crest_glow_strength := 0.75 :
-	set(value):
-		crest_glow_strength = value
-		_set_water_shader_parameter(&'crest_glow_strength', crest_glow_strength)
-## HDR emission multiplier for crest glow. Increase when using bloom; keep low
-## if crests should only tint rather than visibly emit light.
-@export_range(0.0, 2.0, 0.01) var crest_glow_emission_strength := 0.35 :
-	set(value):
-		crest_glow_emission_strength = value
-		_set_water_shader_parameter(&'crest_glow_emission_strength', crest_glow_emission_strength)
-## World-space wave height where crest glow starts. Lower values include more
-## waves; higher values restrict glow to taller crests.
-@export_range(-2.0, 4.0, 0.01) var crest_height_start := 0.18 :
-	set(value):
-		crest_height_start = value
-		_set_water_shader_parameter(&'crest_height_start', crest_height_start)
-## World-space wave height where the crest height mask reaches full strength.
-## Keep above crest_height_start for a smooth transition.
-@export_range(-2.0, 6.0, 0.01) var crest_height_end := 0.85 :
-	set(value):
-		crest_height_end = value
-		_set_water_shader_parameter(&'crest_height_end', crest_height_end)
-## Wave slope where crest glow starts. Lower values include gentler waves; higher
-## values restrict the effect to steep or breaking crests.
-@export_range(0.0, 4.0, 0.01) var crest_slope_start := 0.18 :
-	set(value):
-		crest_slope_start = value
-		_set_water_shader_parameter(&'crest_slope_start', crest_slope_start)
-## Wave slope where the crest slope mask reaches full strength. Keep above
-## crest_slope_start to avoid an abrupt glow cutoff.
-@export_range(0.0, 8.0, 0.01) var crest_slope_end := 0.85 :
-	set(value):
-		crest_slope_end = value
-		_set_water_shader_parameter(&'crest_slope_end', crest_slope_end)
-## View-angle exponent for backlit crest glow. Higher values require the camera
-## to look more directly against the sun to see the glow.
-@export_range(0.1, 8.0, 0.05) var crest_back_view_power := 1.6 :
-	set(value):
-		crest_back_view_power = value
-		_set_water_shader_parameter(&'crest_back_view_power', crest_back_view_power)
-## Normal-angle exponent for backlit crest glow. Higher values require crests to
-## be more strongly back-facing relative to the sun.
-@export_range(0.1, 8.0, 0.05) var crest_back_normal_power := 1.25 :
-	set(value):
-		crest_back_normal_power = value
-		_set_water_shader_parameter(&'crest_back_normal_power', crest_back_normal_power)
-## Sun height where low-sun crest glow starts fading in. Values near 0 mean the
-## effect begins around the horizon.
-@export_range(-0.1, 1.0, 0.01) var crest_low_sun_start := 0.02 :
-	set(value):
-		crest_low_sun_start = value
-		_set_water_shader_parameter(&'crest_low_sun_start', crest_low_sun_start)
-## Sun height where low-sun crest glow is fully faded out. Lower this for glow
-## only at sunrise/sunset; raise it for a broader daytime effect.
-@export_range(-0.1, 1.0, 0.01) var crest_low_sun_end := 0.38 :
-	set(value):
-		crest_low_sun_end = value
-		_set_water_shader_parameter(&'crest_low_sun_end', crest_low_sun_end)
 @export_group('Foam Shading')
 ## Multiplies the wave foam coverage the cascades produce (their whitecap,
 ## foam_generation and foam_lifetime). Raise for more whitecaps; lower for
@@ -528,25 +413,6 @@ const WATER_DEBUG_VIEW_NORMAL := 0
 		water_level = value
 		if is_node_ready(): _update_planar_reflection_settings()
 
-@export_group('Far Ocean LOD')
-## Distance in meters at which near shading starts fading into far-ocean shading
-## (foam coverage and softness, reflection, scatter).
-@export_range(0.0, 4000.0, 1.0) var far_lod_start_distance := 192.0 :
-	set(value):
-		far_lod_start_distance = value
-		_update_far_lod_shader_parameters()
-## Distance over which near detail fades into far-ocean shading. Larger values
-## make the transition gradual; smaller values make far simplification start fast.
-@export_range(1.0, 4000.0, 1.0) var far_lod_blend_distance := 1400.0 :
-	set(value):
-		far_lod_blend_distance = value
-		_update_far_lod_shader_parameters()
-## Curve exponent applied to the near-to-far LOD fade. Higher values preserve
-## near detail longer before rolling off toward the far ocean.
-@export_range(0.25, 4.0, 0.01) var far_lod_curve := 1.8 :
-	set(value):
-		far_lod_curve = value
-		_update_far_lod_shader_parameters()
 
 var wave_generator : WaveGenerator :
 	set(value):
@@ -643,7 +509,6 @@ func _physics_process(delta : float) -> void:
 
 ## Pushes every shader parameter this node owns into the current water material.
 func _push_all_shader_parameters() -> void:
-	_set_water_shader_parameter(&'water_color', water_color)
 	_set_water_shader_parameter(&'foam_color', foam_color)
 	_set_water_shader_parameter(&'normal_strength', normal_strength)
 	_set_water_shader_parameter(&'use_bicubic_normals', use_bicubic_normals)
@@ -655,7 +520,6 @@ func _push_all_shader_parameters() -> void:
 	_set_water_shader_parameter(&'foam_detail_tile_size', foam_detail_tile_size)
 	_update_sky_shading_static_parameters()
 	_update_sky_lighting_shader_parameters()
-	_update_far_lod_shader_parameters()
 	_lod_ranges_key = Vector2.ZERO
 	_update_lod_ranges()
 	_update_scales_uniform()
@@ -931,8 +795,9 @@ func _append_vector4(data : PackedFloat32Array, value : Vector4) -> void:
 	data.push_back(value.w)
 
 func _update_sky_shading_static_parameters() -> void:
-	_set_water_shader_parameter(&'water_diffuse_strength', water_diffuse_strength)
-	_set_water_shader_parameter(&'water_scatter_color', water_scatter_color)
+	_set_water_shader_parameter(&'water_absorption', water_absorption)
+	_set_water_shader_parameter(&'water_scattering', water_scattering)
+	_set_water_shader_parameter(&'water_scattering_anisotropy', water_scattering_anisotropy)
 	_set_water_shader_parameter(&'sky_reflection_enabled', sky_reflection_enabled)
 	_set_water_shader_parameter(&'sky_reflection_strength', sky_reflection_strength)
 	_set_water_shader_parameter(&'sky_reflection_f0', sky_reflection_f0)
@@ -940,24 +805,6 @@ func _update_sky_shading_static_parameters() -> void:
 	_set_water_shader_parameter(&'sun_specular_strength', sun_specular_strength)
 	_set_water_shader_parameter(&'sun_glitter_density', sun_glitter_density)
 	_set_water_shader_parameter(&'sun_glitter_rate', sun_glitter_rate)
-	_set_water_shader_parameter(&'sun_scatter_strength', sun_scatter_strength)
-	_set_water_shader_parameter(&'sun_scatter_base', sun_scatter_base)
-	_set_water_shader_parameter(&'sun_scatter_phase_power', sun_scatter_phase_power)
-	_set_water_shader_parameter(&'sun_scatter_normal_power', sun_scatter_normal_power)
-	_set_water_shader_parameter(&'sun_scatter_slope_strength', sun_scatter_slope_strength)
-	_set_water_shader_parameter(&'sun_scatter_distance_strength', sun_scatter_distance_strength)
-	_set_water_shader_parameter(&'crest_glow_enabled', crest_glow_enabled)
-	_set_water_shader_parameter(&'crest_glow_color', crest_glow_color)
-	_set_water_shader_parameter(&'crest_glow_strength', crest_glow_strength)
-	_set_water_shader_parameter(&'crest_glow_emission_strength', crest_glow_emission_strength)
-	_set_water_shader_parameter(&'crest_height_start', crest_height_start)
-	_set_water_shader_parameter(&'crest_height_end', crest_height_end)
-	_set_water_shader_parameter(&'crest_slope_start', crest_slope_start)
-	_set_water_shader_parameter(&'crest_slope_end', crest_slope_end)
-	_set_water_shader_parameter(&'crest_back_view_power', crest_back_view_power)
-	_set_water_shader_parameter(&'crest_back_normal_power', crest_back_normal_power)
-	_set_water_shader_parameter(&'crest_low_sun_start', crest_low_sun_start)
-	_set_water_shader_parameter(&'crest_low_sun_end', crest_low_sun_end)
 	_set_water_shader_parameter(&'water_debug_view', WATER_DEBUG_VIEW_NORMAL)
 
 func _update_sky_lighting_shader_parameters() -> void:
@@ -966,7 +813,6 @@ func _update_sky_lighting_shader_parameters() -> void:
 	assert(sun_direction.length_squared() > 0.0001, "Sun direction must be non-zero.")
 	sun_direction = sun_direction.normalized()
 	_set_water_shader_parameter(&'sky_sun_direction', sun_direction)
-	_set_water_shader_parameter(&'sky_sun_color', _get_sky_color(&'get_sun_color', &'sun_color', manual_sun_color))
 	_set_water_shader_parameter(&'sky_top_color', _get_sky_color(&'get_sky_top_color', &'sky_top_color', manual_sky_top_color))
 	_set_water_shader_parameter(&'sky_horizon_color', _get_sky_color(&'get_sky_horizon_color', &'sky_horizon_color', manual_sky_horizon_color))
 	_set_water_shader_parameter(&'sky_ground_horizon_color', _get_sky_color(&'get_sky_ground_horizon_color', &'sky_ground_horizon_color', manual_sky_horizon_color.darkened(0.25)))
@@ -1160,12 +1006,6 @@ func _push_lod_grid_shader_parameters() -> void:
 	_set_water_shader_parameter(&'lod_ranges', _lod_ranges)
 	_set_water_shader_parameter(&'lod_morph_starts', _lod_morph_starts)
 	_set_water_shader_parameter(&'lod_top_level', _lod_top_level)
-
-func _update_far_lod_shader_parameters() -> void:
-	_set_water_shader_parameter(&'far_lod_start_distance', far_lod_start_distance)
-	_set_water_shader_parameter(&'far_lod_blend_distance', far_lod_blend_distance)
-	_set_water_shader_parameter(&'far_lod_curve', far_lod_curve)
-
 
 func _update_planar_reflection_settings() -> void:
 	# Reflections never render in the editor, and the renderer is only created once enabled.
