@@ -2,9 +2,11 @@ class_name OceanReflectionRenderer
 extends Node
 ## Planar reflection pass for an OceanSystem: renders a camera mirrored across the
 ## water plane into a SubViewport. Created and configured by OceanSystem, which
-## sets the properties below and then calls apply().
+## sets the properties below and then calls apply(). The water reads the
+## capture effect's texture (linear HDR, with mips for rough water), not the
+## viewport's tonemapped output.
 
-const PLANAR_REFLECTION_CLIP_EFFECT := preload("res://addons/ocean_system/planar_reflection_clip_effect.gd")
+const PLANAR_REFLECTION_CAPTURE_EFFECT := preload("res://addons/ocean_system/planar_reflection_capture_effect.gd")
 
 ## Enables the offscreen mirrored camera pass. When disabled, the viewport stops
 ## rendering and the water material receives zero planar reflection strength.
@@ -36,7 +38,7 @@ var water_level := 0.0
 var _viewport : SubViewport
 var _camera : Camera3D
 var _reflection_environment : Environment
-var _clip_effect : CompositorEffect
+var _capture_effect : PlanarReflectionCaptureEffect
 
 
 func _ready() -> void:
@@ -48,9 +50,9 @@ func _ready() -> void:
 	_reflection_environment.ambient_light_energy = 0.0
 	_reflection_environment.reflected_light_source = Environment.REFLECTION_SOURCE_DISABLED
 
-	_clip_effect = PLANAR_REFLECTION_CLIP_EFFECT.new()
+	_capture_effect = PLANAR_REFLECTION_CAPTURE_EFFECT.new()
 	var compositor := Compositor.new()
-	compositor.compositor_effects = [_clip_effect]
+	compositor.compositor_effects = [_capture_effect]
 
 	_viewport = SubViewport.new()
 	_viewport.name = "PlanarReflectionViewport"
@@ -77,15 +79,16 @@ func apply(target_water: OceanSystem, target_water_level: float) -> void:
 	water.layers = _layer_bit(water_layer)
 	_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS if enabled else SubViewport.UPDATE_DISABLED
 	set_process(enabled)
-	_clip_effect.enabled = enabled and clip_below_water
-	_clip_effect.water_level = water_level
-	_clip_effect.clip_bias = clip_bias
+	_capture_effect.enabled = enabled
+	_capture_effect.clip_below_water = clip_below_water
+	_capture_effect.water_level = water_level
+	_capture_effect.clip_bias = clip_bias
 	_update_viewport_size()
 	_update_water_material()
 
 
 func get_reflection_texture() -> Texture2D:
-	return _viewport.get_texture()
+	return _capture_effect.texture
 
 
 func _process(_delta: float) -> void:
@@ -105,6 +108,7 @@ func _update_viewport_size() -> void:
 	var scaled := Vector2(get_viewport().get_visible_rect().size) * resolution_scale
 	scaled *= minf(1.0, float(texture_size) / maxf(scaled.x, scaled.y))
 	_viewport.size = Vector2i(maxi(int(roundf(scaled.x)), 128), maxi(int(roundf(scaled.y)), 128))
+	_capture_effect.set_size(_viewport.size)
 
 
 func _sync_camera(source_camera: Camera3D) -> void:
@@ -142,15 +146,22 @@ func _update_water_material() -> void:
 	var material := water.get_water_material()
 	material.set_shader_parameter(&"planar_reflection_enabled", enabled)
 	material.set_shader_parameter(&"planar_reflection_texture", get_reflection_texture())
+	material.set_shader_parameter(&"planar_reflection_distance", _capture_effect.distance_texture)
 	material.set_shader_parameter(&"planar_reflection_strength", reflection_strength if enabled else 0.0)
 	material.set_shader_parameter(&"planar_reflection_plane_y", water_level)
 	_update_view_projection()
 
 
-## The only reflection parameter that changes every frame.
+## The reflection parameters that change every frame.
 func _update_view_projection() -> void:
+	var material := water.get_water_material()
 	var view_projection := _camera.get_camera_projection() * Projection(_camera.global_transform.affine_inverse())
-	water.get_water_material().set_shader_parameter(&"planar_reflection_view_projection", view_projection)
+	material.set_shader_parameter(&"planar_reflection_view_projection", view_projection)
+	material.set_shader_parameter(&"planar_reflection_camera_position", _camera.global_position)
+	# Angle one texel spans at the image center, to pick the mip that blurs the
+	# reflection to the water's roughness. fov is along the kept axis.
+	var kept_side := _viewport.size.y if _camera.keep_aspect == Camera3D.KEEP_HEIGHT else _viewport.size.x
+	material.set_shader_parameter(&"planar_reflection_texel_angle", 2.0 * tan(deg_to_rad(_camera.fov) * 0.5) / float(kept_side))
 
 
 func _layer_bit(layer: int) -> int:

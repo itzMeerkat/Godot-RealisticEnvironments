@@ -11,6 +11,15 @@ render_mode world_vertex_coords, cull_disabled;
 #define MAX_CASCADES 8
 #define MAX_NEAR_HULLS 8
 #define MAX_LOD_LEVELS 16
+// Solid angle (sr) of the sun's (and the moon's) disk, about 0.53 degrees across.
+#define LIGHT_DISK_SOLID_ANGLE 6.8e-5
+// Foam lighting (light()): wrap of its diffuse term, and strength and sharpness of the
+// light it lets through toward the viewer.
+#define FOAM_WRAP 0.6
+#define FOAM_TRANSMISSION 0.5
+#define FOAM_TRANSMISSION_POWER 4.0
+// Refinement steps of the planar reflection hit along a pixel's reflected ray.
+#define PLANAR_REFLECTION_STEPS 3
 
 uniform vec4 water_color : source_color;
 uniform vec4 foam_color : source_color;
@@ -20,9 +29,11 @@ uniform vec4 water_scatter_color : source_color = vec4(0.045, 0.18, 0.20, 1.0);
 uniform float clear_roughness : hint_range(0.0, 1.0) = 0.10;
 uniform float foam_roughness : hint_range(0.0, 1.0) = 0.24;
 uniform float normal_strength : hint_range(0.0, 1.0) = 1.0; // Global normal strength
-uniform float foam_intensity : hint_range(0.0, 4.0) = 1.25;
-uniform float foam_threshold : hint_range(0.0, 2.0) = 0.05;
-uniform float foam_softness : hint_range(0.01, 2.0) = 0.35;
+uniform float foam_intensity : hint_range(0.0, 4.0) = 1.0; // multiplies the wave foam coverage
+// Foam pattern with uniformly distributed values (textures/generate_foam_detail.py): foam
+// shows where pattern > 1 - coverage, which covers exactly `coverage` of the area.
+uniform sampler2D foam_detail : hint_default_white, filter_linear_mipmap, repeat_enable;
+uniform float foam_detail_tile_size = 3.0; // meters per pattern tile
 uniform vec4 sky_top_color : source_color = vec4(0.12, 0.42, 0.78, 1.0);
 uniform vec4 sky_horizon_color : source_color = vec4(0.58, 0.78, 0.94, 1.0);
 uniform vec4 sky_ground_horizon_color : source_color = vec4(0.16, 0.24, 0.28, 1.0);
@@ -31,15 +42,17 @@ uniform vec3 sky_sun_direction = vec3(0.0, 0.2, -1.0);
 uniform vec4 sky_sun_color : source_color = vec4(1.0, 0.92, 0.72, 1.0);
 uniform float sky_sun_visibility : hint_range(0.0, 1.0) = 1.0;
 // Clouds from the sky source (SkySystem.get_cloud_cubemap()): rgb premultiplied
-// radiance, a opacity. Set at runtime by OceanSystem.
+// radiance, a opacity, with a mip chain for rough reflections. Set at runtime by OceanSystem.
 uniform bool sky_clouds_enabled = false;
-uniform samplerCube sky_cloud_cubemap : filter_linear;
+uniform samplerCube sky_cloud_cubemap : filter_linear_mipmap;
 uniform bool sky_reflection_enabled = true;
 uniform float sky_reflection_strength : hint_range(0.0, 2.0) = 1.0;
-uniform float sky_reflection_fresnel_power : hint_range(0.25, 8.0) = 5.0;
 uniform float sky_reflection_f0 : hint_range(0.0, 0.12) = 0.02;
 uniform float sky_horizon_boost : hint_range(0.0, 3.0) = 0.85;
 uniform float sun_specular_strength : hint_range(0.0, 4.0) = 1.0;
+// Stochastic glints (see glitter_scale()): facets per square meter of water, 0 = smooth highlight.
+uniform float sun_glitter_density : hint_range(0.0, 10000000.0) = 1000000.0;
+uniform float sun_glitter_rate : hint_range(0.0, 60.0) = 12.0; // glint patterns per second
 uniform float sun_scatter_strength : hint_range(0.0, 2.0) = 0.24;
 uniform float sun_scatter_base : hint_range(0.0, 1.0) = 0.08;
 uniform float sun_scatter_phase_power : hint_range(0.25, 8.0) = 2.0;
@@ -58,10 +71,15 @@ uniform float crest_back_view_power : hint_range(0.25, 8.0) = 1.6;
 uniform float crest_back_normal_power : hint_range(0.25, 8.0) = 1.25;
 uniform float crest_low_sun_start : hint_range(-0.1, 1.0) = 0.02;
 uniform float crest_low_sun_end : hint_range(-0.1, 1.0) = 0.38;
-uniform int water_debug_view : hint_range(0, 14) = 0;
+uniform int water_debug_view : hint_range(0, 15) = 0;
 uniform bool planar_reflection_enabled = false;
-uniform sampler2D planar_reflection_texture;
+// Linear HDR, rgb premultiplied by geometry coverage (a), with a mip chain (PlanarReflectionCaptureEffect).
+uniform sampler2D planar_reflection_texture : filter_linear_mipmap, repeat_disable;
+// Distance (m) from the mirrored camera to the surface each texel shows, 0 = no geometry.
+uniform sampler2D planar_reflection_distance : filter_nearest, repeat_disable;
 uniform mat4 planar_reflection_view_projection;
+uniform vec3 planar_reflection_camera_position; // the mirrored camera
+uniform float planar_reflection_texel_angle = 0.001; // radians per mip-0 texel at the image center
 uniform float planar_reflection_strength : hint_range(0.0, 1.0) = 0.0; // how much reflected geometry covers the sky behind it
 uniform float planar_reflection_plane_y = 0.0;
 uniform bool use_bicubic_normals = true;
@@ -75,8 +93,6 @@ uniform bool lod_grid_enabled = false;
 uniform float lod_ranges[MAX_LOD_LEVELS];       // beyond range(L), level-L vertices sit on the level L + 1 lattice
 uniform float lod_morph_starts[MAX_LOD_LEVELS]; // level-L vertices morph between this and range(L)
 uniform int lod_top_level = 0;
-uniform float far_foam_coverage : hint_range(0.0, 1.0) = 0.24;
-uniform float far_foam_threshold_boost : hint_range(0.0, 1.0) = 0.2; // Historical name: widens far foam softness.
 // Hulls near the camera (see OceanSystem._update_hull_cutouts and HullProfile).
 uniform int near_hull_count = 0;
 uniform vec4 near_hull_world_to_local_x[MAX_NEAR_HULLS]; // rows of the world-to-hull affine transform: xyz basis row, w origin
@@ -102,15 +118,20 @@ uniform int num_cascades = 0;
 // Displacement maps carry mip chains: coarse vertices read prefiltered waves.
 uniform sampler2DArray displacements : filter_linear_mipmap, repeat_enable; // Each layer represents one wave cascade.
 // Normal maps: xy mean slope, z mean squared slope, w foam; full mip chain (mip_downsample.glsl).
-uniform sampler2DArray normals : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable; // Each layer represents one wave cascade.
+uniform sampler2DArray normals : hint_normal, filter_linear_mipmap, repeat_enable; // Each layer represents one wave cascade.
 uniform sampler2DArray previous_displacements : filter_linear_mipmap, repeat_enable;
-uniform sampler2DArray previous_normals : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2DArray previous_normals : hint_normal, filter_linear_mipmap, repeat_enable;
 uniform float wave_blend_alpha = 1.0;
 
 varying float foam_factor;
 varying vec3 water_world_position;
 // Fragment -> light(): multiplies the specular highlight (foam covers it).
 varying float light_specular_scale;
+// Fragment -> light(), for glitter_scale(): random numbers of the pixel's glint cells, for
+// (fine level, coarse level) x (current pattern, next pattern).
+varying vec4 glitter_random;
+// Facets in a fine and in a coarse cell, fine-to-coarse blend, current-to-next pattern blend.
+varying vec4 glitter_cells;
 
 float get_distance_lod(float dist) {
 	float linear_lod = smoothstep(far_lod_start_distance, far_lod_start_distance + far_lod_blend_distance, dist);
@@ -212,26 +233,34 @@ vec4 texture_bicubic(in sampler2DArray sampler, in vec3 uvw) {
 	vec4 g = vec4(wx.xz + wx.yw, wy.xz + wy.yw);
 	vec4 h = (vec4(wx.yw, wy.yw) / g + vec2(-1.5, 0.5).xyxy + floor(uvw.xy).xxyy)*dims_inv.xxyy;
 	vec2 w = g.xz / (g.xz + g.yw);
-	// Explicit LOD 0 (the maps have no mips), so this may run in divergent control flow.
+	// LOD 0: only used under magnification. Explicit, so this may run in divergent control flow.
 	return mix(
 		mix(textureLod(sampler, vec3(h.yw, uvw.z), 0.0), textureLod(sampler, vec3(h.xw, uvw.z), 0.0), w.x),
 		mix(textureLod(sampler, vec3(h.yz, uvw.z), 0.0), textureLod(sampler, vec3(h.xz, uvw.z), 0.0), w.x), w.y);
 }
 
 /**
- * Normal/foam sample of one spectrum layer, blended between the previous and current FFT output.
- * Filtered over the pixel footprint (trilinear/anisotropic from explicit gradients, so it may
- * run after the hull discard). bilinear_weight 1 skips the bicubic filter (8 extra reads),
- * which only helps under magnification.
+ * One spectrum layer's (mean slope xy, unresolved slope variance, foam), blended between the
+ * previous and current FFT output. Trilinear at mip lod (explicit, so it may run after the hull
+ * discard). bilinear_weight 1 skips the bicubic filter (8 extra reads), which only helps under
+ * magnification.
  */
-vec4 sample_normal_layer(vec3 coords, vec2 coords_dx, vec2 coords_dy, float bilinear_weight) {
-	vec4 previous_sample = textureGrad(previous_normals, coords, coords_dx, coords_dy);
-	vec4 current_sample = textureGrad(normals, coords, coords_dx, coords_dy);
+vec4 sample_normal_layer(vec3 coords, float lod, float bilinear_weight) {
+	vec4 previous_sample = textureLod(previous_normals, coords, lod);
+	vec4 current_sample = textureLod(normals, coords, lod);
 	if (use_bicubic_normals && bilinear_weight < 1.0) {
 		previous_sample = mix(texture_bicubic(previous_normals, coords), previous_sample, bilinear_weight);
 		current_sample = mix(texture_bicubic(normals, coords), current_sample, bilinear_weight);
 	}
-	return mix(previous_sample, current_sample, wave_blend_alpha);
+	// Slopes the filter averaged away: E|g|^2 - |E g|^2 (mip_downsample.glsl), per frame, as
+	// blending two frames' slopes is not roughness. Interpolating texels with different slopes
+	// also raises it, but while a pixel covers less than a texel that spread is drawn (the
+	// interpolated slope varies across pixels), not missed: count it from one texel up.
+	float previous_variance = max(previous_sample.z - dot(previous_sample.xy, previous_sample.xy), 0.0);
+	float current_variance = max(current_sample.z - dot(current_sample.xy, current_sample.xy), 0.0);
+	vec4 blended = mix(previous_sample, current_sample, wave_blend_alpha);
+	blended.z = mix(previous_variance, current_variance, wave_blend_alpha) * min(lod, 1.0);
+	return blended;
 }
 
 float saturate(float value) {
@@ -253,8 +282,20 @@ float sky_low_sun_factor(vec3 sun_dir) {
 	return sky_sun_visibility * (1.0 - safe_smoothstep(crest_low_sun_start, crest_low_sun_end, sun_dir.y));
 }
 
-float fresnel_schlick(float no_v, float f0, float power) {
-	return f0 + (1.0 - f0) * pow(1.0 - saturate(no_v), power);
+float fresnel_schlick(float no_v, float f0) {
+	return f0 + (1.0 - f0) * pow(1.0 - saturate(no_v), 5.0);
+}
+
+/**
+ * Fresnel reflectance averaged over a rough surface (Bruneton, Neyret, Holzschuch,
+ * "Real-time Realistic Ocean Lighting using Seamless Transitions from Geometry to
+ * BRDF", 2010), for the mean normal and an isotropic slope deviation sigma per
+ * axis. Unresolved facets seen at grazing angles tilt toward the viewer, so a
+ * rough sea reflects much less than a mirror there.
+ */
+float rough_fresnel(float no_v, float sigma, float f0) {
+	float mean = pow(1.0 - saturate(no_v), 5.0 * exp(-2.69 * sigma)) / (1.0 + 22.7 * pow(sigma, 1.5));
+	return f0 + (1.0 - f0) * mean;
 }
 
 /** Sky gradient without clouds. */
@@ -269,32 +310,43 @@ vec3 sample_sky_gradient(vec3 direction) {
 	return mix(lower_sky, upper_sky, horizon_blend);
 }
 
-/** Composites the sky source's clouds over a sky color seen in direction. */
-vec3 composite_clouds(vec3 sky, vec3 direction) {
+/**
+ * Composites the sky source's clouds over a sky color seen in direction, blurred
+ * over the reflection lobe of GGX roughness (perceptual).
+ */
+vec3 composite_clouds(vec3 sky, vec3 direction, float roughness) {
 	if (!sky_clouds_enabled) {
 		return sky;
 	}
-	// Explicit LOD (the cubemap has no mips): called from divergent control flow.
-	vec4 cloud = textureLod(sky_cloud_cubemap, direction, 0.0);
+	// Reflected directions spread with an angular deviation of about sqrt(2) alpha
+	// (twice the normal's, slope deviation alpha / sqrt(2)). A box-filtered mip of
+	// texels 2^lod wide (about 2 / face size radians each at mip 0) has deviation
+	// 2^lod * texel / sqrt(12); matching the two gives the level.
+	float alpha = roughness * roughness;
+	float lod = log2(max(alpha * float(textureSize(sky_cloud_cubemap, 0).x) * 2.45, 1.0));
+	// Explicit LOD: called from divergent control flow.
+	vec4 cloud = textureLod(sky_cloud_cubemap, direction, lod);
 	return sky * (1.0 - cloud.a) + cloud.rgb;
 }
 
 vec3 sample_rough_procedural_environment(vec3 direction, float roughness) {
 	float rough = saturate(roughness);
-	vec3 sharp = composite_clouds(sample_sky_gradient(direction), direction);
+	vec3 sky = sample_sky_gradient(direction);
+	vec3 cloud_direction = direction;
 	float broad_weight = smoothstep(0.05, 0.55, rough);
-	if (broad_weight <= 0.0) {
-		return sharp;
+	if (broad_weight > 0.0) {
+		vec3 upper_dir = safe_normalize_vec3(vec3(direction.x, direction.y + rough * 0.65, direction.z), direction);
+		vec3 lower_dir = safe_normalize_vec3(vec3(direction.x, direction.y - rough * 0.45, direction.z), direction);
+		vec3 center_dir = safe_normalize_vec3(mix(direction, vec3(0.0, 1.0, 0.0), rough * 0.25), direction);
+		// The gradient is cheap and blurred over three directions; clouds are
+		// prefiltered (cubemap mips), read once toward the broad lobe's center.
+		vec3 broad_gradient = sample_sky_gradient(center_dir) * 0.5
+			+ sample_sky_gradient(upper_dir) * 0.3
+			+ sample_sky_gradient(lower_dir) * 0.2;
+		sky = mix(sky, broad_gradient, broad_weight);
+		cloud_direction = safe_normalize_vec3(mix(direction, center_dir, broad_weight), direction);
 	}
-	vec3 upper_dir = safe_normalize_vec3(vec3(direction.x, direction.y + rough * 0.65, direction.z), direction);
-	vec3 lower_dir = safe_normalize_vec3(vec3(direction.x, direction.y - rough * 0.45, direction.z), direction);
-	vec3 center_dir = safe_normalize_vec3(mix(direction, vec3(0.0, 1.0, 0.0), rough * 0.25), direction);
-	// The gradient is cheap and blurred over three directions; clouds are read
-	// once, along the broad lobe's center.
-	vec3 broad_gradient = sample_sky_gradient(center_dir) * 0.5
-		+ sample_sky_gradient(upper_dir) * 0.3
-		+ sample_sky_gradient(lower_dir) * 0.2;
-	return mix(sharp, composite_clouds(broad_gradient, center_dir), broad_weight);
+	return composite_clouds(sky, cloud_direction, rough);
 }
 
 float ggx_distribution(float no_h, float roughness) {
@@ -320,8 +372,78 @@ float water_specular_brdf(vec3 normal, vec3 view, vec3 light_direction, float ro
 	float no_l = saturate(dot(normal, light_direction));
 	float distribution = ggx_distribution(saturate(dot(normal, half_vector)), roughness);
 	float visibility = smith_ggx_visibility(no_v, no_l, roughness);
-	float fresnel = fresnel_schlick(saturate(dot(view, half_vector)), sky_reflection_f0, 5.0);
+	float fresnel = fresnel_schlick(saturate(dot(view, half_vector)), sky_reflection_f0);
 	return distribution * visibility * fresnel;
+}
+
+/** Uniform random number in [0, 1) for integer coordinates (PCG3D hash). */
+float hash_uniform(ivec3 key) {
+	uvec3 v = uvec3(key) * 1664525u + 1013904223u;
+	v.x += v.y * v.z; v.y += v.z * v.x; v.z += v.x * v.y;
+	v ^= v >> 16u;
+	v.x += v.y * v.z; v.y += v.z * v.x; v.z += v.x * v.y;
+	return float(v.x >> 8u) / 16777216.0;
+}
+
+/**
+ * Glint multiplier of one cell with `facets` facets, of which a share `aligned_fraction` reflects
+ * the light into the eye: the aligned count is Poisson distributed (drawn with uniform u), and
+ * its ratio to the mean is the multiplier, so the mean highlight stays the GGX one.
+ */
+float glint_cell(float facets, float aligned_fraction, float u) {
+	float mean = facets * aligned_fraction;
+	if (mean <= 0.0) {
+		return 1.0;
+	}
+	float count = 0.0;
+	if (mean < 8.0) {
+		// Inverse of the Poisson CDF.
+		float probability = exp(-mean);
+		float cumulative = probability;
+		for (int k = 1; k < 24 && u > cumulative; ++k) {
+			count += 1.0;
+			probability *= mean / count;
+			cumulative += probability;
+		}
+	} else {
+		// Nearly normal: logistic approximation of the normal quantile (std 1).
+		float z = log(max(u, 1e-6) / max(1.0 - u, 1e-6)) * 0.5513;
+		count = max(mean + sqrt(mean) * z, 0.0);
+	}
+	return count / mean;
+}
+
+/**
+ * Stochastic sun glitter (after Zirr & Kaplanyan 2016 and Deliot & Belcour 2023). The GGX
+ * highlight is the mean over many tiny facets; a pixel holds a finite number of them, and the
+ * few that point the light's disk at the eye flash as glints. World cells about a pixel wide
+ * (two levels, blended) draw their aligned facet count; patterns change sun_glitter_rate times a
+ * second and crossfade.
+ */
+float glitter_scale(vec3 normal, vec3 view, vec3 light_direction, float roughness) {
+	vec3 half_vector = safe_normalize_vec3(view + light_direction, normal);
+	float no_h = saturate(dot(normal, half_vector));
+	float vo_h = max(dot(view, half_vector), 0.0001);
+	// Share of facet normals inside the half-vector cone of the light's disk.
+	float aligned_fraction = min(ggx_distribution(no_h, roughness) * no_h * LIGHT_DISK_SOLID_ANGLE / (4.0 * vo_h), 1.0);
+	float fine = mix(glint_cell(glitter_cells.x, aligned_fraction, glitter_random.x), glint_cell(glitter_cells.x, aligned_fraction, glitter_random.y), glitter_cells.w);
+	float coarse = mix(glint_cell(glitter_cells.y, aligned_fraction, glitter_random.z), glint_cell(glitter_cells.y, aligned_fraction, glitter_random.w), glitter_cells.w);
+	return mix(fine, coarse, glitter_cells.z);
+}
+
+/**
+ * Planar reflection texture coordinates of a world point (w = 1) or of a direction at
+ * infinity (w = 0); z is 1 inside the image, else 0.
+ */
+vec3 planar_reflection_project(vec4 point) {
+	vec4 clip = planar_reflection_view_projection * point;
+	if (clip.w <= 0.0001) {
+		return vec3(0.0);
+	}
+	vec2 uv = clip.xy / clip.w * 0.5 + 0.5;
+	uv.y = 1.0 - uv.y;
+	float inside = all(greaterThanEqual(uv, vec2(0.0))) && all(lessThanEqual(uv, vec2(1.0))) ? 1.0 : 0.0;
+	return vec3(uv, inside);
 }
 
 void fragment() {
@@ -412,19 +534,22 @@ void fragment() {
 			// Where one screen pixel covers two or more texels (minification) bicubic adds nothing.
 			float pixels_per_meter = map_size * min(scales.x, scales.y);
 			float bilinear_weight = max(min(1.0, pixels_per_meter * 0.1), smoothstep(1.0, 2.0, meters_per_screen_pixel * pixels_per_meter));
-			vec2 coords_dx = uv_dx * scales.xy;
-			vec2 coords_dy = uv_dy * scales.xy;
-			vec4 active_sample = sample_normal_layer(vec3(UV*scales.xy, blend_state.x), coords_dx, coords_dy, bilinear_weight);
+			// Isotropic mip covering the pixel footprint's area. The slopes it averages
+			// away become roughness (slope variance) instead of aliasing into sparkle.
+			// Sizing it by the footprint's longer axis instead counts every slope along
+			// a grazing footprint as round blur, which turns the water milky.
+			float footprint = sqrt(length(uv_dx * scales.xy) * length(uv_dy * scales.xy)) * map_size;
+			float lod = log2(max(footprint, 1.0));
+			vec4 active_sample = sample_normal_layer(vec3(UV*scales.xy, blend_state.x), lod, bilinear_weight);
 			vec2 cascade_gradient = active_sample.xy * blend_state.z;
-			// Slopes the filtered sample averaged away: E|g|^2 - |E g|^2 (mip_downsample.glsl).
-			float cascade_variance = max(active_sample.z - dot(active_sample.xy, active_sample.xy), 0.0) * blend_state.z * blend_state.z;
+			float cascade_variance = active_sample.z * blend_state.z * blend_state.z;
 			float cascade_foam = active_sample.w;
 			// Uniform branch: the pending spectrum is only sampled during a crossfade.
 			if (blend_state.w > 0.0) {
-				vec4 pending_sample = sample_normal_layer(vec3(UV*scales.xy, blend_state.y), coords_dx, coords_dy, bilinear_weight);
+				vec4 pending_sample = sample_normal_layer(vec3(UV*scales.xy, blend_state.y), lod, bilinear_weight);
 				cascade_gradient += pending_sample.xy * blend_state.w;
 				// The two spectra are independent, so their variances add with squared weights.
-				cascade_variance += max(pending_sample.z - dot(pending_sample.xy, pending_sample.xy), 0.0) * blend_state.w * blend_state.w;
+				cascade_variance += pending_sample.z * blend_state.w * blend_state.w;
 				// Foam is a non-negative mask, so it crossfades linearly rather than by equal power.
 				cascade_foam = mix(active_sample.w, pending_sample.w, blend_state.w / (blend_state.z + blend_state.w));
 			}
@@ -443,23 +568,38 @@ void fragment() {
 		raw_wave_slope = length(gradient);
 		micro_slope_energy = saturate(micro_slope_energy * 0.75 + raw_wave_slope * 0.15);
 		macro_world_normal = normalize(vec3(-macro_gradient.x * 0.45, 1.0, -macro_gradient.y * 0.45));
-		float visible_foam_signal = foam_signal * 0.75 * foam_intensity;
-		float far_foam_softness = foam_softness * (1.0 + far_foam_threshold_boost * fragment_distance_lod * 4.0);
-		float foam_distance_fade = mix(1.0, far_foam_coverage, fragment_distance_lod);
-		foam_factor = smoothstep(foam_threshold, foam_threshold + far_foam_softness, visible_foam_signal) * exp(-dist*0.0075) * foam_distance_fade;
+		// Foam is coverage (fft_unpack.glsl), so its mips hold the covered share of
+		// each texel: right at every distance, with no fade.
+		foam_factor = saturate(foam_signal * foam_intensity);
 
 		gradient = (gradient + interaction_gradient) * normal_strength;
 		slope_variance *= normal_strength * normal_strength;
 		world_normal = normalize(vec3(-gradient.x, 1.0, -gradient.y));
 		NORMAL = (VIEW_MATRIX * vec4(world_normal, 0.0)).xyz;
 	}
-	foam_factor = max(max(foam_factor, hull_edge_foam), interaction_foam);
+	float foam_coverage = max(max(foam_factor, hull_edge_foam), interaction_foam);
+	// Reveal the coverage as foam lace: white where the pattern exceeds 1 - coverage,
+	// with a narrow edge. On the rest-position grid (UV), so the lace rides with the
+	// water. Once the pattern's texels shrink below a pixel its mips flatten toward
+	// 0.5 and the threshold no longer keeps the area; there plain coverage takes over.
+	// Explicit LOD: this follows the hull discard.
+	float detail_texels = max(length(uv_dx), length(uv_dy)) / foam_detail_tile_size * float(textureSize(foam_detail, 0).x);
+	float detail_lod = log2(max(detail_texels, 1.0));
+	float detail = textureLod(foam_detail, UV / foam_detail_tile_size, detail_lod).r;
+	const float FOAM_EDGE = 0.12;
+	float foam_threshold = (1.0 - foam_coverage) * (1.0 + FOAM_EDGE) - FOAM_EDGE;
+	float revealed_foam = smoothstep(foam_threshold, foam_threshold + FOAM_EDGE, detail);
+	// Thin foam (low coverage: old or barely formed) is translucent, dense foam opaque.
+	float foam_opacity = mix(0.35, 1.0, foam_coverage);
+	foam_factor = mix(revealed_foam, foam_coverage, saturate(detail_lod * 0.25)) * foam_opacity;
 
-	vec3 water_body_albedo = water_color.rgb * water_diffuse_strength;
-	vec3 base_albedo = mix(water_body_albedo, foam_color.rgb, foam_factor);
 	vec3 view_direction_world = safe_normalize_vec3(CAMERA_POSITION_WORLD - water_world_position, vec3(0.0, 0.0, 1.0));
 	vec3 sun_dir = safe_normalize_vec3(sky_sun_direction, vec3(0.0, 0.2, -1.0));
 	vec3 reflection_direction = reflect(-view_direction_world, world_normal);
+	// A ray reflected below the horizon hits the next wave and goes on upward;
+	// mirroring it up stands in for that second bounce (the sky gradient's
+	// ground colors are for looking down, not for reflections).
+	reflection_direction.y = abs(reflection_direction.y);
 	float low_sun = sky_low_sun_factor(sun_dir);
 	float clear_water_mask = 1.0 - foam_factor * 0.85;
 	float no_v = saturate(dot(world_normal, view_direction_world));
@@ -470,10 +610,17 @@ void fragment() {
 	effective_reflection_roughness = saturate(sqrt(sqrt(base_alpha * base_alpha + slope_variance)));
 
 	// One Fresnel reflectance for everything the water reflects: the sky, and the
-	// scene geometry of the planar reflection in front of it.
-	float sky_fresnel = fresnel_schlick(no_v, sky_reflection_f0, sky_reflection_fresnel_power);
-	float rough_fresnel_floor = sky_reflection_f0 + effective_reflection_roughness * (0.05 + micro_slope_energy * 0.08);
-	sky_reflection_amount = saturate(sky_reflection_strength * max(sky_fresnel, rough_fresnel_floor) * clear_water_mask * mix(1.0, 1.18, fragment_distance_lod));
+	// scene geometry of the planar reflection in front of it. Averaged over the
+	// same slopes as the roughness: alpha^2 = 2 sigma^2 per axis.
+	float slope_sigma = sqrt(base_alpha * base_alpha + slope_variance) * 0.70710678;
+	float sky_fresnel = rough_fresnel(no_v, slope_sigma, sky_reflection_f0);
+	// The water body's color is light that entered the water and scattered back
+	// out: only the share the surface does not reflect leaves toward the eye.
+	// Foam lies on top, so it is not dimmed.
+	vec3 water_body_albedo = water_color.rgb * water_diffuse_strength * (1.0 - sky_fresnel);
+	// Bubble cells (low pattern values) are a little darker than the lace between them.
+	vec3 base_albedo = mix(water_body_albedo, foam_color.rgb * mix(0.75, 1.0, detail), foam_factor);
+	sky_reflection_amount = saturate(sky_reflection_strength * sky_fresnel * clear_water_mask);
 	if (sky_reflection_enabled) {
 		reflected_sky_color = sample_rough_procedural_environment(reflection_direction, effective_reflection_roughness);
 	}
@@ -491,29 +638,35 @@ void fragment() {
 
 	// Reflected scene geometry hides the sky behind it (alpha: geometry coverage).
 	if (planar_reflection_enabled && planar_reflection_strength > 0.0) {
-		// The mirrored camera sees, through the water point, whatever a flat mirror
-		// would reflect there. With waves, follow this pixel's reflected ray instead:
-		// look up a point along it. For flat water every point on the ray projects
-		// to the same texel; with waves the reflection breaks up like real water.
-		// The distance along the ray (to the reflected object) is unknown; the
-		// camera distance is a fair guess for ships near the water point.
-		float reflected_distance = max(length(CAMERA_POSITION_WORLD - water_world_position), 1.0);
-		vec3 reflected_point = water_world_position + reflection_direction * reflected_distance;
-		vec4 reflection_clip = planar_reflection_view_projection * vec4(reflected_point, 1.0);
-		float reflection_w = reflection_clip.w;
-		if (abs(reflection_w) < 0.0001) {
-			reflection_w = 0.0001;
+		// Find what this pixel's reflected ray (about its own wave normal) hits. The
+		// mirrored camera sees every surface a ray from the water plane can reach,
+		// and the capture stores each texel's surface distance. Start with the ray's
+		// end at infinity; then repeatedly project the end, read the surface seen
+		// there, and move the end to that surface's distance along the ray. A texel
+		// with no geometry means the ray goes on to the sky.
+		vec4 ray_end = vec4(reflection_direction, 0.0);
+		float hit_distance = 0.0;
+		vec3 reflection_uv = planar_reflection_project(ray_end);
+		for (int i = 0; i < PLANAR_REFLECTION_STEPS && reflection_uv.z > 0.0; ++i) {
+			// Explicit LOD: this follows the hull discard.
+			float surface_distance = textureLod(planar_reflection_distance, reflection_uv.xy, 0.0).r;
+			if (surface_distance <= 0.0)
+				break;
+			vec3 texel_ray = ray_end.w > 0.0 ? normalize(ray_end.xyz - planar_reflection_camera_position) : reflection_direction;
+			vec3 surface = planar_reflection_camera_position + texel_ray * surface_distance;
+			hit_distance = max(dot(surface - water_world_position, reflection_direction), 0.0);
+			ray_end = vec4(water_world_position + reflection_direction * hit_distance, 1.0);
+			reflection_uv = planar_reflection_project(ray_end);
 		}
-		vec2 reflection_uv = reflection_clip.xy / reflection_w * 0.5 + 0.5;
-		reflection_uv.y = 1.0 - reflection_uv.y;
-		vec2 reflection_bounds = step(vec2(0.0), reflection_uv) * step(reflection_uv, vec2(1.0));
-		float reflection_in_bounds = reflection_bounds.x * reflection_bounds.y * step(0.0001, reflection_clip.w);
-		vec4 reflected_sample = texture(planar_reflection_texture, reflection_uv);
-		// A rough surface spreads the reflection over a wide lobe that one planar
-		// texel cannot represent: there the geometry fades into the blurred sky.
-		float sharpness = 1.0 - smoothstep(0.25, 0.6, effective_reflection_roughness);
-		float geometry_coverage = planar_reflection_strength * reflection_in_bounds * reflected_sample.a * sharpness;
-		reflected_color = mix(reflected_color, reflected_sample.rgb, geometry_coverage);
+		// Blurred over the reflection lobe like the clouds (composite_clouds): the
+		// reflected rays spread by about sqrt(2) alpha, which the mirrored camera sees
+		// scaled by (distance from the water) / (distance from the mirrored camera).
+		float lobe_scale = ray_end.w > 0.0 ? hit_distance / max(distance(ray_end.xyz, planar_reflection_camera_position), 0.001) : 1.0;
+		float alpha = effective_reflection_roughness * effective_reflection_roughness;
+		float reflection_lod = log2(max(alpha * 4.9 * lobe_scale / planar_reflection_texel_angle, 1.0));
+		vec4 reflected_sample = textureLod(planar_reflection_texture, reflection_uv.xy, reflection_lod);
+		float geometry_coverage = planar_reflection_strength * reflection_uv.z;
+		reflected_color = reflected_color * (1.0 - geometry_coverage * reflected_sample.a) + reflected_sample.rgb * geometry_coverage;
 	}
 	vec3 reflection_radiance = reflected_color * sky_reflection_amount;
 
@@ -560,6 +713,8 @@ void fragment() {
 			debug_color = vec3(micro_slope_energy);
 		} else if (water_debug_view == 14) {
 			debug_color = vec3(sqrt(slope_variance));
+		} else if (water_debug_view == 15) {
+			debug_color = vec3(foam_factor);
 		}
 		ALBEDO = debug_color;
 		METALLIC = 0.0;
@@ -567,6 +722,7 @@ void fragment() {
 		SPECULAR = 0.0;
 		EMISSION = vec3(0.0);
 		light_specular_scale = 0.0;
+		glitter_cells = vec4(0.0);
 	} else {
 		ALBEDO = base_albedo;
 		METALLIC = 0.0;
@@ -574,6 +730,25 @@ void fragment() {
 		SPECULAR = 0.0; // No engine sky reflection: it is in EMISSION (see the header).
 		EMISSION = reflection_radiance + sun_scatter_radiance + crest_emission;
 		light_specular_scale = sun_specular_strength * clear_water_mask;
+
+		// Glint cells on the rest-position grid (UV), so patterns ride with the water.
+		// Cell sides are powers of two around the pixel footprint's size.
+		float footprint_area = max(abs(uv_dx.x * uv_dy.y - uv_dx.y * uv_dy.x), 1e-8);
+		float cell_level = 0.5 * log2(footprint_area);
+		float fine_level = floor(cell_level);
+		float fine_size = exp2(fine_level);
+		ivec2 fine_cell = ivec2(floor(UV / fine_size));
+		ivec2 coarse_cell = ivec2(floor(UV / (2.0 * fine_size)));
+		float pattern_time = TIME * sun_glitter_rate;
+		int pattern = int(floor(pattern_time));
+		int level_key = int(fine_level) * 65536;
+		glitter_random = vec4(
+			hash_uniform(ivec3(fine_cell, level_key + pattern)),
+			hash_uniform(ivec3(fine_cell, level_key + pattern + 1)),
+			hash_uniform(ivec3(coarse_cell, level_key + 65536 + pattern)),
+			hash_uniform(ivec3(coarse_cell, level_key + 65536 + pattern + 1)));
+		float fine_facets = sun_glitter_density * fine_size * fine_size;
+		glitter_cells = vec4(fine_facets, fine_facets * 4.0, cell_level - fine_level, fract(pattern_time));
 	}
 }
 
@@ -583,8 +758,19 @@ void fragment() {
  */
 void light() {
 	float no_l = dot(NORMAL, LIGHT);
-	DIFFUSE_LIGHT += LIGHT_COLOR * ATTENUATION * max(no_l, 0.0) / PI;
+	// Water body: light refracted into the water and scattered back up. It depends
+	// on how high the light is, not on the wave facet; Lambert on the facets made
+	// the water look like shaded plastic.
+	vec3 up = (VIEW_MATRIX * vec4(0.0, 1.0, 0.0, 0.0)).xyz;
+	float body_light = max(dot(up, LIGHT), 0.0);
+	// Foam: a layer of bubbles that scatters light through its volume, so facets
+	// turned away from the light still get some (wrapped diffuse), and light from
+	// behind shines through toward the viewer.
+	float foam_light = max(no_l + FOAM_WRAP, 0.0) / (1.0 + FOAM_WRAP)
+		+ FOAM_TRANSMISSION * pow(max(dot(-VIEW, LIGHT), 0.0), FOAM_TRANSMISSION_POWER);
+	DIFFUSE_LIGHT += LIGHT_COLOR * ATTENUATION * mix(body_light, foam_light, foam_factor) / PI;
 	if (no_l > 0.0) {
-		SPECULAR_LIGHT += LIGHT_COLOR * ATTENUATION * (no_l / PI) * water_specular_brdf(NORMAL, VIEW, LIGHT, ROUGHNESS) * light_specular_scale;
+		float glitter = glitter_cells.x > 0.0 ? glitter_scale(NORMAL, VIEW, LIGHT, ROUGHNESS) : 1.0;
+		SPECULAR_LIGHT += LIGHT_COLOR * ATTENUATION * (no_l / PI) * water_specular_brdf(NORMAL, VIEW, LIGHT, ROUGHNESS) * light_specular_scale * glitter;
 	}
 }

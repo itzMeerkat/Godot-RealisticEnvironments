@@ -212,22 +212,10 @@ func _add_ocean_controls(parent : VBoxContainer) -> void:
 			water.foam_roughness = value
 	)
 
-	var foam_intensity := _add_float_row(parent, "Foam Intensity", "Scales the visible whitecap amount in the water shader.", 0.0, 4.0, 0.01, true)
+	var foam_intensity := _add_float_row(parent, "Foam Intensity", "Multiplies the wave foam coverage (per-cascade whitecap, generation and lifetime are in the cascade tabs).", 0.0, 4.0, 0.01, true)
 	foam_intensity.value_changed.connect(func(value : float) -> void:
 		if not _is_syncing and water:
 			water.foam_intensity = value
-	)
-
-	var foam_threshold := _add_float_row(parent, "Foam Threshold", "Higher values keep only stronger crest foam.", 0.0, 2.0, 0.01, false)
-	foam_threshold.value_changed.connect(func(value : float) -> void:
-		if not _is_syncing and water:
-			water.foam_threshold = value
-	)
-
-	var foam_softness := _add_float_row(parent, "Foam Softness", "Lower values make foam edges sharper.", 0.01, 2.0, 0.01, false)
-	foam_softness.value_changed.connect(func(value : float) -> void:
-		if not _is_syncing and water:
-			water.foam_softness = value
 	)
 
 	update_spin.name = "UpdatesPerSecond"
@@ -239,8 +227,6 @@ func _add_ocean_controls(parent : VBoxContainer) -> void:
 	clear_roughness.name = "WaterClearRoughness"
 	foam_roughness.name = "WaterFoamRoughness"
 	foam_intensity.name = "FoamIntensity"
-	foam_threshold.name = "FoamThreshold"
-	foam_softness.name = "FoamSoftness"
 
 
 func _add_sky_reflection_controls(parent : VBoxContainer) -> void:
@@ -275,6 +261,13 @@ func _add_sky_reflection_controls(parent : VBoxContainer) -> void:
 	sun_specular.value_changed.connect(func(value : float) -> void:
 		if not _is_syncing and water:
 			water.sun_specular_strength = value
+	)
+
+	var glitter := _add_float_row(parent, "Sun Glitter", "Facets per square meter of sun glitter (0 = smooth highlight, fewer = sparser glints).", 0.0, 10000000.0, 1000.0, true)
+	glitter.name = "SunGlitterDensity"
+	glitter.value_changed.connect(func(value : float) -> void:
+		if not _is_syncing and water:
+			water.sun_glitter_density = value
 	)
 
 	var scatter_strength := _add_float_row(parent, "Sun Scatter", "Broad sun-lit water scattering visible when looking away from the sun.", 0.0, 2.0, 0.01, false)
@@ -403,20 +396,6 @@ func _add_far_lod_controls(parent : VBoxContainer) -> void:
 	curve.value_changed.connect(func(value : float) -> void:
 		if not _is_syncing and water:
 			water.far_lod_curve = value
-	)
-
-	var far_foam_coverage := _add_float_row(parent, "Far Foam Coverage", "Multiplier limiting foam coverage in the far LOD range.", 0.0, 1.0, 0.01, false)
-	far_foam_coverage.name = "FarFoamCoverage"
-	far_foam_coverage.value_changed.connect(func(value : float) -> void:
-		if not _is_syncing and water:
-			water.far_foam_coverage = value
-	)
-
-	var far_foam_threshold := _add_float_row(parent, "Far Foam Softness", "Additional foam edge softness applied as the surface enters far LOD.", 0.0, 1.0, 0.01, false)
-	far_foam_threshold.name = "FarFoamThresholdBoost"
-	far_foam_threshold.value_changed.connect(func(value : float) -> void:
-		if not _is_syncing and water:
-			water.far_foam_threshold_boost = value
 	)
 
 
@@ -599,8 +578,9 @@ func _add_cascade_tabs(parent : VBoxContainer) -> void:
 		_add_bound_param(tab, "Spread", "Modifies how much wind and swell affect the direction of the waves.", params.spread, 0.0, 1.0, 0.01, func(value : float) -> void: params.spread = value)
 		_add_bound_param(tab, "Detail", "Modifies the attenuation of high frequency waves.", params.detail, 0.0, 1.0, 0.01, func(value : float) -> void: params.detail = value)
 		tab.add_child(HSeparator.new())
-		_add_bound_param(tab, "Whitecap", "Modifies how steep a wave needs to be before foam can accumulate.", params.whitecap, 0.0, 2.0, 0.01, func(value : float) -> void: params.whitecap = value)
-		_add_bound_param(tab, "Foam Amount", "", params.foam_amount, 0.0, 10.0, 0.01, func(value : float) -> void: params.foam_amount = value)
+		_add_bound_param(tab, "Whitecap", "Foam forms where the rendered surface's Jacobian is below this (1 flat, 0 folding). Higher puts foam on gentler crests.", params.whitecap, -1.0, 1.5, 0.01, func(value : float) -> void: params.whitecap = value)
+		_add_bound_param(tab, "Foam Generation", "Coverage added per second per unit of Jacobian below whitecap.", params.foam_generation, 0.0, 100.0, 0.1, func(value : float) -> void: params.foam_generation = value, true)
+		_add_bound_param(tab, "Foam Lifetime", "Seconds for foam to fade to 1/e after its crest passes.", params.foam_lifetime, 0.05, 30.0, 0.05, func(value : float) -> void: params.foam_lifetime = value, true)
 
 
 func _populate_values() -> void:
@@ -623,12 +603,11 @@ func _populate_values() -> void:
 	_set_named_spin("WaterClearRoughness", water.clear_roughness)
 	_set_named_spin("WaterFoamRoughness", water.foam_roughness)
 	_set_named_spin("FoamIntensity", water.foam_intensity)
-	_set_named_spin("FoamThreshold", water.foam_threshold)
-	_set_named_spin("FoamSoftness", water.foam_softness)
 	_set_named_check("SkyReflectionEnabled", water.sky_reflection_enabled)
 	_set_named_spin("SkyReflectionStrength", water.sky_reflection_strength)
 	_set_named_spin("SkyHorizonBoost", water.sky_horizon_boost)
 	_set_named_spin("SunSpecularStrength", water.sun_specular_strength)
+	_set_named_spin("SunGlitterDensity", water.sun_glitter_density)
 	_set_named_spin("SunScatterStrength", water.sun_scatter_strength)
 	_set_named_spin("SunScatterBase", water.sun_scatter_base)
 	_set_named_spin("SunScatterPhase", water.sun_scatter_phase_power)
@@ -643,8 +622,6 @@ func _populate_values() -> void:
 	_set_named_spin("FarLodStartDistance", water.far_lod_start_distance)
 	_set_named_spin("FarLodBlendDistance", water.far_lod_blend_distance)
 	_set_named_spin("FarLodCurve", water.far_lod_curve)
-	_set_named_spin("FarFoamCoverage", water.far_foam_coverage)
-	_set_named_spin("FarFoamThresholdBoost", water.far_foam_threshold_boost)
 	_set_named_check("UseExternalWind", water.use_external_wind)
 	if wind_source:
 		_set_named_spin("ExternalWindSpeed", _get_wind_source_speed())

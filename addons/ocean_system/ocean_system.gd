@@ -49,10 +49,9 @@ const WATER_DEBUG_VIEW_NORMAL := 0
 		water_color = value
 		_set_water_shader_parameter(&'water_color', water_color)
 
-## Albedo tint used where the compute-generated foam mask, interaction foam
-## or hull cutout edge foam are visible. Slightly warm off-white values usually
-## look more natural than pure white.
-@export_color_no_alpha var foam_color : Color = Color(0.73, 0.67, 0.62) :
+## Albedo of dense foam (wave, wake and hull edge foam). Foam is a near-neutral
+## white scatterer (albedo about 0.8); the lights and sky tint it.
+@export_color_no_alpha var foam_color : Color = Color(0.9, 0.92, 0.93) :
 	set(value):
 		foam_color = value
 		_set_water_shader_parameter(&'foam_color', foam_color)
@@ -156,12 +155,6 @@ const WATER_DEBUG_VIEW_NORMAL := 0
 	set(value):
 		sky_reflection_strength = value
 		_set_water_shader_parameter(&'sky_reflection_strength', sky_reflection_strength)
-## Fresnel exponent for procedural sky reflection. Higher values push reflection
-## toward grazing view angles; lower values show more reflection from above.
-@export_range(0.25, 8.0, 0.05) var sky_reflection_fresnel_power := 5.0 :
-	set(value):
-		sky_reflection_fresnel_power = value
-		_set_water_shader_parameter(&'sky_reflection_fresnel_power', sky_reflection_fresnel_power)
 ## Base water reflectance at normal incidence. Real water is near 0.02; artistic
 ## values above that make reflections visible from more angles.
 @export_range(0.0, 0.12, 0.001) var sky_reflection_f0 := 0.02 :
@@ -180,6 +173,18 @@ const WATER_DEBUG_VIEW_NORMAL := 0
 	set(value):
 		sun_specular_strength = value
 		_set_water_shader_parameter(&'sun_specular_strength', sun_specular_strength)
+## Facets per square meter that make up the sun glitter: the highlight breaks into
+## glints of the few facets that point the sun at the eye, with the same mean
+## brightness. Fewer facets give sparser, brighter glints; 0 is a smooth highlight.
+@export_range(0.0, 10000000.0, 1000.0, "exp") var sun_glitter_density := 1000000.0 :
+	set(value):
+		sun_glitter_density = value
+		_set_water_shader_parameter(&'sun_glitter_density', sun_glitter_density)
+## Glitter patterns per second; consecutive patterns crossfade, so glints twinkle.
+@export_range(0.0, 60.0, 0.5) var sun_glitter_rate := 12.0 :
+	set(value):
+		sun_glitter_rate = value
+		_set_water_shader_parameter(&'sun_glitter_rate', sun_glitter_rate)
 ## Strength of broad sun-lit water scatter. This is a soft radiance term that
 ## helps backlit water read as translucent instead of only reflective.
 @export_range(0.0, 2.0, 0.01) var sun_scatter_strength := 0.24 :
@@ -291,24 +296,25 @@ const WATER_DEBUG_VIEW_NORMAL := 0
 		crest_low_sun_end = value
 		_set_water_shader_parameter(&'crest_low_sun_end', crest_low_sun_end)
 @export_group('Foam Shading')
-## Multiplies the foam signal produced by the wave compute pass before threshold
-## and softness are applied. Raise for more whitecaps; lower for cleaner water.
-@export_range(0.0, 4.0, 0.01) var foam_intensity := 1.25 :
+## Multiplies the wave foam coverage the cascades produce (their whitecap,
+## foam_generation and foam_lifetime). Raise for more whitecaps; lower for
+## cleaner water.
+@export_range(0.0, 4.0, 0.01) var foam_intensity := 1.0 :
 	set(value):
 		foam_intensity = value
 		_set_water_shader_parameter(&'foam_intensity', foam_intensity)
-## Minimum foam signal required before foam appears. Higher values keep only the
-## strongest whitecaps; lower values show foam on gentler waves.
-@export_range(0.0, 2.0, 0.01) var foam_threshold := 0.05 :
+## Pattern that reveals foam coverage as lace and bubbles: foam shows where the
+## pattern exceeds 1 - coverage, so its values must be uniformly distributed
+## (see textures/generate_foam_detail.py).
+@export var foam_detail_texture : Texture2D = preload('res://addons/ocean_system/textures/foam_detail.png') :
 	set(value):
-		foam_threshold = value
-		_set_water_shader_parameter(&'foam_threshold', foam_threshold)
-## Width of the transition between clear water and foam. Lower values create
-## sharper foam edges; higher values make foam blend more softly.
-@export_range(0.01, 2.0, 0.01) var foam_softness := 0.35 :
+		foam_detail_texture = value
+		_set_water_shader_parameter(&'foam_detail', foam_detail_texture)
+## World size in meters of one tile of foam_detail_texture.
+@export_range(0.5, 64.0, 0.1, "or_greater") var foam_detail_tile_size := 3.0 :
 	set(value):
-		foam_softness = value
-		_set_water_shader_parameter(&'foam_softness', foam_softness)
+		foam_detail_tile_size = value
+		_set_water_shader_parameter(&'foam_detail_tile_size', foam_detail_tile_size)
 
 @export_group('Planar Reflections')
 ## Renders a mirrored camera into a texture so dynamic scene geometry can appear
@@ -542,18 +548,6 @@ const WATER_DEBUG_VIEW_NORMAL := 0
 	set(value):
 		far_lod_curve = value
 		_update_far_lod_shader_parameters()
-## Foam multiplier retained in the far ocean. Lower values suppress noisy horizon
-## foam; higher values keep distant whitecaps visible.
-@export_range(0.0, 1.0, 0.01) var far_foam_coverage := 0.24 :
-	set(value):
-		far_foam_coverage = value
-		_update_far_lod_shader_parameters()
-## Extra foam edge softness added with distance. Raise to smooth distant foam;
-## lower if far whitecaps become too broad or faded.
-@export_range(0.0, 1.0, 0.01) var far_foam_threshold_boost := 0.2 :
-	set(value):
-		far_foam_threshold_boost = value
-		_update_far_lod_shader_parameters()
 
 var wave_generator : WaveGenerator :
 	set(value):
@@ -659,8 +653,8 @@ func _push_all_shader_parameters() -> void:
 	_set_water_shader_parameter(&'clear_roughness', clear_roughness)
 	_set_water_shader_parameter(&'foam_roughness', foam_roughness)
 	_set_water_shader_parameter(&'foam_intensity', foam_intensity)
-	_set_water_shader_parameter(&'foam_threshold', foam_threshold)
-	_set_water_shader_parameter(&'foam_softness', foam_softness)
+	_set_water_shader_parameter(&'foam_detail', foam_detail_texture)
+	_set_water_shader_parameter(&'foam_detail_tile_size', foam_detail_tile_size)
 	_update_sky_shading_static_parameters()
 	_update_sky_lighting_shader_parameters()
 	_update_far_lod_shader_parameters()
@@ -917,10 +911,11 @@ func _update_sky_shading_static_parameters() -> void:
 	_set_water_shader_parameter(&'water_scatter_color', water_scatter_color)
 	_set_water_shader_parameter(&'sky_reflection_enabled', sky_reflection_enabled)
 	_set_water_shader_parameter(&'sky_reflection_strength', sky_reflection_strength)
-	_set_water_shader_parameter(&'sky_reflection_fresnel_power', sky_reflection_fresnel_power)
 	_set_water_shader_parameter(&'sky_reflection_f0', sky_reflection_f0)
 	_set_water_shader_parameter(&'sky_horizon_boost', sky_horizon_boost)
 	_set_water_shader_parameter(&'sun_specular_strength', sun_specular_strength)
+	_set_water_shader_parameter(&'sun_glitter_density', sun_glitter_density)
+	_set_water_shader_parameter(&'sun_glitter_rate', sun_glitter_rate)
 	_set_water_shader_parameter(&'sun_scatter_strength', sun_scatter_strength)
 	_set_water_shader_parameter(&'sun_scatter_base', sun_scatter_base)
 	_set_water_shader_parameter(&'sun_scatter_phase_power', sun_scatter_phase_power)
@@ -1146,8 +1141,6 @@ func _update_far_lod_shader_parameters() -> void:
 	_set_water_shader_parameter(&'far_lod_start_distance', far_lod_start_distance)
 	_set_water_shader_parameter(&'far_lod_blend_distance', far_lod_blend_distance)
 	_set_water_shader_parameter(&'far_lod_curve', far_lod_curve)
-	_set_water_shader_parameter(&'far_foam_coverage', far_foam_coverage)
-	_set_water_shader_parameter(&'far_foam_threshold_boost', far_foam_threshold_boost)
 
 
 func _update_planar_reflection_settings() -> void:

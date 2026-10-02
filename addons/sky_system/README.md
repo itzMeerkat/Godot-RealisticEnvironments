@@ -56,7 +56,7 @@ Mobile renderer).
   (1024, stride 4, 64/6 steps) cost about 0.5 ms (fair) to 1.3 ms (storm) of
   GPU time on an RTX 4070 Ti.
 - `get_cloud_cubemap()` returns the cloud texture (or `null` while clouds are
-  off) for other shaders; `get_cloud_state()` the blended weather on screen.
+  off) for other shaders, with a full mip chain for blurred lookups; `get_cloud_state()` the blended weather on screen.
 
 ### Limits
 
@@ -102,7 +102,7 @@ then. When the day cycle advances `time_of_day`, `day_of_year` and
 
 ### How the clouds work
 
-`CloudRenderer` runs three compute shaders on the main RenderingDevice
+`CloudRenderer` runs four compute shaders on the main RenderingDevice
 (`shaders/compute/`):
 
 1. `cloud_noise_bake.glsl`, once: tiling 3D noise. Shape (128³, Perlin-Worley
@@ -128,6 +128,10 @@ then. When the day cycle advances `time_of_day`, `day_of_year` and
    fades as the cover closes; the planet's shadow for twilight. Distant
    clouds fade into the sky (aerial perspective). Steps are spaced
    quadratically and jittered per texel and frame.
+4. `cloud_mip_downsample.glsl`, every frame: rebuilds the cubemap's mip chain
+   (2×2 box filter per face, no filtering across face edges). Premultiplied
+   radiance and opacity average linearly, so every level composites like the
+   top one. The ocean reads coarser levels for rough reflections.
 
 Each frame refreshes one texel in every `cloud_update_stride`² block (an
 ordered-dither sequence), blended 60/40 with the texel's previous value. The

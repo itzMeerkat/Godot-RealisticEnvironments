@@ -93,17 +93,21 @@ class SpectrumInputs:
 @export_range(0.01, 60.0, 0.01, "or_greater") var spectrum_blend_duration := 4.0
 
 @export_group("Foam")
-## Foam accumulates where the surface Jacobian (of the unscaled displacement)
-## drops below this value. Higher values create whitecaps sooner; lower values
-## reserve foam for breaking crests (below 0 the surface folds over).
-@export_range(0, 2) var whitecap := 0.82
-## Foam persistence and growth strength for this cascade. Higher values create
-## more visible foam that grows quickly and decays more slowly.
-@export_range(0, 10) var foam_amount := 5.0
+## Foam forms where the Jacobian of the rendered surface (displacement_scale
+## included) drops below this value: 1 is flat, lower is compressed into a crest,
+## 0 and below folds over. Higher values put foam on gentler crests.
+@export_range(-1, 1.5, 0.01) var whitecap := 0.5
+## Foam coverage added per second for each unit the Jacobian is below whitecap.
+## Higher values whiten a crest faster.
+@export_range(0, 100, 0.1, "or_greater") var foam_generation := 10.0
+## Seconds for foam to fade to 1/e once its crest has passed. Longer leaves
+## patches and streaks behind breaking waves.
+@export_range(0.05, 30, 0.05, "or_greater") var foam_lifetime := 2.0
 
 var spectrum_seed := Vector2i.ZERO
 var has_runtime_seed := false
 var time : float
+## Per-update foam rates for fft_unpack.glsl, set by advance().
 var foam_grow_rate : float
 var foam_decay_rate : float
 
@@ -141,9 +145,8 @@ func request_spectrum_reset() -> void:
 ## wave-simulation update.
 func advance(delta : float, external_wind_speed : float, external_wind_direction : float, use_external_wind : bool) -> void:
 	time += delta
-	# Constants normalize foam_amount (0-10) into per-update growth and decay.
-	foam_grow_rate = delta * foam_amount * 21.2
-	foam_decay_rate = delta * maxf(0.5, 10.0 - foam_amount) * 1.15
+	foam_grow_rate = delta * foam_generation
+	foam_decay_rate = delta / foam_lifetime
 
 	var target_direction := _get_target_spectrum_direction(external_wind_direction, use_external_wind)
 	if _direction_initialized:

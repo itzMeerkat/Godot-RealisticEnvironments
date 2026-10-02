@@ -21,9 +21,9 @@ layout(std430, set = 1, binding = 0) restrict buffer FFTBuffer {
 
 layout(push_constant) restrict readonly uniform PushConstants {
 	uint buffer_slot;    // region of the FFT buffer (the spectrum slot)
-	float whitecap;
-	float foam_grow_rate;
-	float foam_decay_rate;
+	float whitecap;      // foam forms where the rendered surface's Jacobian is below this
+	float foam_grow;     // coverage added this update per unit of Jacobian below whitecap
+	float foam_decay;    // this update's share of the e-folding lifetime (update interval / lifetime)
 	float choppiness;    // the cascade's displacement scale, as rendered by the vertex shader
 };
 
@@ -59,13 +59,6 @@ void main() {
 			float dhz_dz = tile[3][id_local.y][id_local.x].x * sign_shift;
 			float dhz_dx = tile[3][id_local.y][id_local.x].y * sign_shift;
 
-			float jacobian = (1.0 + dhx_dx) * (1.0 + dhz_dz) - dhz_dx*dhz_dx;
-			float foam_factor = -min(0, jacobian - whitecap);
-			float foam = imageLoad(previous_normal_map, id).a;
-			foam *= exp(-foam_decay_rate);
-			foam += foam_factor * foam_grow_rate;
-			foam = clamp(foam, 0.0, 1.0);
-
 			// Slope of the displaced surface P = (x + c*Dx, Dy, z + c*Dz), c = choppiness:
 			// normal = dP/dz x dP/dx, gradient = -normal.xz / normal.y. Crests (horizontal
 			// compression, Jacobian < 1) get steeper, troughs flatter. The vertical part
@@ -78,6 +71,14 @@ void main() {
 			// Folded surface (Jacobian <= 0) has no single normal; cap the steepening at 4x.
 			vec2 gradient = vec2((1.0 + chop_dz_dz) * dhy_dx - chop_dz_dx * dhy_dz,
 			                     (1.0 + chop_dx_dx) * dhy_dz - chop_dz_dx * dhy_dx) / max(chop_jacobian, 0.25);
+
+			// Foam coverage (0-1). It forms where the rendered surface is compressed
+			// (Jacobian below whitecap: the crests that look sharp), fades with the
+			// cascade's lifetime, and stays with the water: the map is indexed by rest
+			// position, so foam left by a passing crest stays behind it.
+			float foam = imageLoad(previous_normal_map, id).a * exp(-foam_decay);
+			foam += max(whitecap - chop_jacobian, 0.0) * foam_grow;
+			foam = clamp(foam, 0.0, 1.0);
 			// z: squared slope, the second moment the mip chain averages (mip_downsample.glsl).
 			imageStore(normal_map, id, vec4(gradient, dot(gradient, gradient), foam));
 			break;

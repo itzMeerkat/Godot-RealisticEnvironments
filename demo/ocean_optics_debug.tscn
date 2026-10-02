@@ -30,14 +30,12 @@ crest_height_end = 0.75
 crest_slope_start = 0.12
 crest_slope_end = 0.7
 foam_intensity = 0.0
-foam_softness = 2.0
 use_external_wind = true
 wind_source_path = NodePath("../WindSystem")
 simulation_map_size = 512
 mesh_extent = 10000.0
 far_lod_start_distance = 384.0
 far_lod_blend_distance = 2200.0
-far_foam_coverage = 0.0
 
 [node name="Camera3D" type="Camera3D" parent="." unique_id=537177153]
 current = true

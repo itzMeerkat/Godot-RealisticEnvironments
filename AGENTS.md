@@ -60,8 +60,9 @@ before touching its code; this file only records what is easy to get wrong.
     A source with a `lighting_changed` signal is read only when it fires, so it
     must emit it after every lighting change; one without it is read every
     frame. Optional `get_cloud_cubemap()` returns a cubemap (rgb premultiplied
-    cloud radiance, a opacity; `null` = no clouds) that the water composites
-    into its sky reflection as `sky * (1 - a) + rgb`.
+    cloud radiance, a opacity; `null` = no clouds) with a full mip chain, that
+    the water composites into its sky reflection as `sky * (1 - a) + rgb`,
+    reading the mip that matches its roughness.
   - Hull cutouts: `HullWaterFootprint` nodes (group `ocean_hull`) with a baked
     `HullProfile`. Profiles are editor-baked and saved as `.tres`; never
     hand-edit their image. At most 8 hulls near the camera are cut out.
@@ -124,15 +125,24 @@ before touching its code; this file only records what is easy to get wrong.
   averageable. Storage bindings use per-layer, single-mip 2D views
   (`create_texture_slice_view`; Godot does not expose mip views of whole
   arrays); compute shaders read displacement through samplers.
-- Water lighting: `light()` does diffuse and the sun's GGX highlight (lit by the
-  scene's lights); sky and planar reflections are `EMISSION`. The shader writes
+- Water lighting: `light()` does diffuse (water body by the light's height, not
+  the facet; foam wrapped and transmitted) and the sun's GGX highlight (lit by
+  the scene's lights); sky and planar reflections are `EMISSION`. The shader writes
   `SPECULAR = 0`; don't reintroduce engine specular, it doubles the sky
-  reflection. `normal_scale` 1 gives the spectrum's physical slopes; steeper
+  reflection. Sky and planar reflections share one rough-surface Fresnel
+  (`rough_fresnel`, from the same slope variance as the roughness); plain
+  Schlick on the filtered normal turns distant water into a mirror. `normal_scale` 1 gives the spectrum's physical slopes; steeper
   normals make distant water look rough and dark.
 - The spectrum is normalized to the JONSWAP height variance
   (`spectrum_compute.glsl`): `displacement_scale` 1 is the physical wave
   height for the wind and fetch. The demo exaggerates swell with ~2.
-  Foam thresholds (`whitecap`) are Jacobians of that unscaled displacement.
+  Foam thresholds (`whitecap`) are Jacobians of the rendered surface
+  (`displacement_scale` included), so whitecaps sit on the crests that look
+  sharp; retune them when changing `displacement_scale`.
+- Foam in the normal maps' alpha is coverage (0–1), averaged by the mips; the
+  water shader reveals it through `foam_detail.png`, whose values must stay
+  uniformly distributed (regenerate it with `generate_foam_detail.py`, which
+  histogram-equalizes). Don't add distance fades to foam: the mips handle it.
 - Surface queries are asynchronous: `submit_surface_query(owner, points)` every
   tick, `get_surface_query_result(owner)` returns the latest completed result
   (`null` at first), `release_surface_query(owner)` in `_exit_tree`. Results lag
@@ -164,13 +174,19 @@ before touching its code; this file only records what is easy to get wrong.
   channels means re-baking every profile: all layers of the profile texture
   array must share one format.
 - Planar reflections force the water mesh onto render layer 20
-  (`reflection_water_layer`); keep that layer reserved for water.
+  (`reflection_water_layer`); keep that layer reserved for water. The water
+  samples `PlanarReflectionCaptureEffect.texture` (linear HDR, premultiplied,
+  with mips) and `distance_texture` (surface distance from the mirrored camera,
+  for finding where each pixel's reflected ray hits), not the SubViewport's
+  tonemapped texture; both must be resized with the viewport (`set_size()`).
 
 ## Sky and cloud invariants
 - Clouds are rendered by `CloudRenderer` (owned by `SkySystem`, editor and
   runtime) into the upper half of a cubemap around the camera. Its consumers
   (sky shader, starfield, water) all composite `sky * (1 - a) + rgb`; change
-  the encoding in all of them together.
+  the encoding in all of them together. The mip chain is rebuilt every frame
+  after the raymarch (`cloud_mip_downsample.glsl`, 2×2 box per face); the sky
+  and starfield read mip 0 (`filter_linear`), the water blurred mips.
 - The sky and starfield cloud uniforms (`clouds_enabled`, `cloud_cubemap`)
   are set only through `RenderingServer.material_set_param`, never
   `set_shader_parameter`, so the runtime texture is never saved into

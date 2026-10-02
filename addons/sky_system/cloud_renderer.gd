@@ -4,11 +4,13 @@ extends RefCounted
 ## main RenderingDevice. Owned by SkySystem; see the sky_system README.
 ##
 ## Per frame: the weather pass writes a camera-centred coverage/type/density map,
-## then the raymarch pass refreshes 1 / update_stride^2 of the cubemap texels.
+## the raymarch pass refreshes 1 / update_stride^2 of the cubemap texels, and the
+## mip pass rebuilds the cubemap's mip chain from them.
 
 const NOISE_BAKE_SHADER := preload("res://addons/sky_system/shaders/compute/cloud_noise_bake.glsl")
 const WEATHER_SHADER := preload("res://addons/sky_system/shaders/compute/cloud_weather.glsl")
 const RAYMARCH_SHADER := preload("res://addons/sky_system/shaders/compute/cloud_raymarch.glsl")
+const MIP_DOWNSAMPLE_SHADER := preload("res://addons/sky_system/shaders/compute/cloud_mip_downsample.glsl")
 
 const SHAPE_NOISE_SIZE := 128
 const DETAIL_NOISE_SIZE := 64
@@ -28,7 +30,8 @@ const RENDERED_FACE_COUNT := 5
 const PARAMS_SIZE := 10 * 16
 
 ## Sampled by the sky, the starfield and the ocean. rgb: premultiplied cloud
-## radiance, a: opacity. Only the upper hemisphere is written.
+## radiance, a: opacity. Only the upper hemisphere is written. Has a full mip
+## chain (2x2 box filtered per face) for blurred lookups, e.g. rough reflections.
 var cubemap := TextureCubemapRD.new()
 
 ## 1, 2 or 4: each frame refreshes one texel of every stride x stride block.
@@ -53,6 +56,9 @@ var _weather_pipeline : RID
 var _weather_set : RID
 var _raymarch_pipeline : RID
 var _raymarch_set : RID
+var _mip_pipeline : RID
+## _mip_sets[level - 1] reads level - 1 and writes level.
+var _mip_sets : Array[RID] = []
 var _params_buffer : RID
 var _frame := 0
 ## Frames left that replace texels instead of blending them with history.
@@ -69,10 +75,17 @@ func _init(device : RenderingDevice, face_size : int) -> void:
 	var shape_noise := _own(_create_texture(RenderingDevice.TEXTURE_TYPE_3D, RenderingDevice.DATA_FORMAT_R8_UNORM, Vector3i.ONE * SHAPE_NOISE_SIZE, 1, storage_usage))
 	var detail_noise := _own(_create_texture(RenderingDevice.TEXTURE_TYPE_3D, RenderingDevice.DATA_FORMAT_R8_UNORM, Vector3i.ONE * DETAIL_NOISE_SIZE, 1, storage_usage))
 	var weather_map := _own(_create_texture(RenderingDevice.TEXTURE_TYPE_2D, RenderingDevice.DATA_FORMAT_R16G16B16A16_SFLOAT, Vector3i(WEATHER_MAP_SIZE, WEATHER_MAP_SIZE, 1), 1, storage_usage))
-	_cubemap_rid = _own(_create_texture(RenderingDevice.TEXTURE_TYPE_CUBE, RenderingDevice.DATA_FORMAT_R16G16B16A16_SFLOAT, Vector3i(face_size, face_size, 1), 6, storage_usage | RenderingDevice.TEXTURE_USAGE_CAN_COPY_TO_BIT))
+	var mip_count := 1 # down to 1x1
+	while face_size >> mip_count > 0:
+		mip_count += 1
+	_cubemap_rid = _own(_create_texture(RenderingDevice.TEXTURE_TYPE_CUBE, RenderingDevice.DATA_FORMAT_R16G16B16A16_SFLOAT, Vector3i(face_size, face_size, 1), 6, storage_usage | RenderingDevice.TEXTURE_USAGE_CAN_COPY_TO_BIT, mip_count))
 	# The lower hemisphere is never written and must read as "no cloud".
-	_device.texture_clear(_cubemap_rid, Color(0.0, 0.0, 0.0, 0.0), 0, 1, 0, 6)
+	_device.texture_clear(_cubemap_rid, Color(0.0, 0.0, 0.0, 0.0), 0, mip_count, 0, 6)
 	cubemap.texture_rd_rid = _cubemap_rid
+	# Storage bindings need single-mip views.
+	var mip_views : Array[RID] = []
+	for mip in mip_count:
+		mip_views.push_back(_own(_device.texture_create_shared_from_slice(RDTextureView.new(), _cubemap_rid, 0, mip, 1, RenderingDevice.TEXTURE_SLICE_CUBEMAP)))
 
 	_params_buffer = _own(_device.storage_buffer_create(PARAMS_SIZE))
 
@@ -88,12 +101,17 @@ func _init(device : RenderingDevice, face_size : int) -> void:
 	var raymarch_shader := _load_shader(RAYMARCH_SHADER)
 	_raymarch_pipeline = _own(_device.compute_pipeline_create(raymarch_shader))
 	_raymarch_set = _own(_device.uniform_set_create([
-		_image_uniform(0, _cubemap_rid),
+		_image_uniform(0, mip_views[0]),
 		_sampled_uniform(1, linear_repeat, shape_noise),
 		_sampled_uniform(2, linear_repeat, detail_noise),
 		_sampled_uniform(3, linear_clamp, weather_map),
 		_buffer_uniform(4, _params_buffer),
 	], raymarch_shader, 0))
+
+	var mip_shader := _load_shader(MIP_DOWNSAMPLE_SHADER)
+	_mip_pipeline = _own(_device.compute_pipeline_create(mip_shader))
+	for mip in range(1, mip_count):
+		_mip_sets.push_back(_own(_device.uniform_set_create([_image_uniform(0, mip_views[mip - 1]), _image_uniform(1, mip_views[mip])], mip_shader, 0)))
 
 	var compute_list := _device.compute_list_begin()
 	_device.compute_list_bind_compute_pipeline(compute_list, noise_pipeline)
@@ -161,6 +179,20 @@ func render(camera_position : Vector3, preset : CloudPreset, wind_offset : Vecto
 	_device.compute_list_set_push_constant(compute_list, raymarch_push, raymarch_push.size())
 	var raymarch_groups := ceili(ceili(_face_size / float(update_stride)) / 8.0)
 	_device.compute_list_dispatch(compute_list, raymarch_groups, raymarch_groups, RENDERED_FACE_COUNT)
+
+	# Every level, every frame: each refresh touches texels all over the top level.
+	for mip in range(1, _mip_sets.size() + 1):
+		_device.compute_list_add_barrier(compute_list)
+		# Bound after the barrier: a barrier re-applies the last push constant
+		# (the raymarch's, before the first level) to the bound pipeline.
+		_device.compute_list_bind_compute_pipeline(compute_list, _mip_pipeline)
+		var source_size := maxi(_face_size >> (mip - 1), 1)
+		var target_size := maxi(_face_size >> mip, 1)
+		_device.compute_list_bind_uniform_set(compute_list, _mip_sets[mip - 1], 0)
+		var mip_push := _pack([source_size, target_size])
+		_device.compute_list_set_push_constant(compute_list, mip_push, mip_push.size())
+		var mip_groups := ceili(target_size / 8.0)
+		_device.compute_list_dispatch(compute_list, mip_groups, mip_groups, RENDERED_FACE_COUNT)
 	_device.compute_list_end()
 
 	_frame += 1
@@ -221,7 +253,7 @@ func _load_shader(shader_file : RDShaderFile) -> RID:
 	return _own(_device.shader_create_from_spirv(spirv))
 
 
-func _create_texture(type : RenderingDevice.TextureType, format : RenderingDevice.DataFormat, size : Vector3i, layers : int, usage : int) -> RID:
+func _create_texture(type : RenderingDevice.TextureType, format : RenderingDevice.DataFormat, size : Vector3i, layers : int, usage : int, mipmaps := 1) -> RID:
 	var texture_format := RDTextureFormat.new()
 	texture_format.texture_type = type
 	texture_format.format = format
@@ -229,6 +261,7 @@ func _create_texture(type : RenderingDevice.TextureType, format : RenderingDevic
 	texture_format.height = size.y
 	texture_format.depth = size.z
 	texture_format.array_layers = layers
+	texture_format.mipmaps = mipmaps
 	texture_format.usage_bits = usage
 	return _device.texture_create(texture_format, RDTextureView.new())
 

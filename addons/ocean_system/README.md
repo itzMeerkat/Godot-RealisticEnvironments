@@ -84,24 +84,24 @@ Heights match the rendered mesh:
 - **Material** — `water_material` template.
 - **Wave Parameters / Surface Shading / Foam Shading** — water and foam colour,
   roughness, normal strength, bicubic normal filtering,
-  `fragment_cascade_limit` (cascades sampled per pixel), foam intensity /
-  threshold / softness.
+  `fragment_cascade_limit` (cascades sampled per pixel), `foam_intensity`,
+  `foam_detail_texture` and `foam_detail_tile_size` (see Foam below).
 - **Sky Reflection** — procedural sky reflection, `sun_specular_strength`, sun scatter;
   `manual_*` values are used when no sky source is set or the source lacks a
   value. A sky source with `get_cloud_cubemap()` (SkySystem) also puts its
   clouds into the reflection.
 - **Crest Glow** — low-sun, back-lit tint on tall steep crests (artistic).
 - **Planar Reflections** — mirrored-camera reflection of scene geometry,
-  resolution, strength, distortion, and clipping of submerged pixels.
+  resolution, strength, and clipping of submerged pixels.
 - **External Wind** — `use_external_wind`, `wind_source_path`.
 - **`parameters`** — the ordered `Array[WaveCascadeParameters]` (at most 8).
 - **Performance** — `simulation_map_size` (128–1024, default 512),
   `updates_per_second` (FFT updates per second, default 20; 0 = every frame).
 - **Mesh** — `mesh_base_cell_size` (vertex spacing nearest the camera) and
   `mesh_extent` (radius of rendered water, default 7 km).
-- **Far Ocean LOD** — distance fades of foam, reflection and scatter shading
-  (`far_lod_start_distance`, blend distance, curve, far foam). Geometry and
-  normals are not faded: their mip chains filter them.
+- **Far Ocean LOD** — distance fade of the sun scatter shading
+  (`far_lod_start_distance`, blend distance, curve). Geometry, normals and
+  foam are not faded: their mip chains filter them.
 
 ## Wave cascades (`WaveCascadeParameters`)
 
@@ -118,7 +118,9 @@ tiles for swell and short tiles for chop. Per cascade:
 - **Spectrum** — `fetch_length` (km), `water_depth_meters`, `swell`, `spread`,
   `detail`.
 - **Spectrum Refresh** — when to regenerate and how long to crossfade (below).
-- **Foam** — `whitecap` (steepness threshold), `foam_amount` (growth vs. decay).
+- **Foam** — `whitecap` (Jacobian of the rendered surface below which foam
+  forms), `foam_generation` (coverage per second per unit below it),
+  `foam_lifetime` (seconds to fade to 1/e).
 
 **Spectrum crossfades.**
 - Each cascade has two spectrum slots, and each slot remembers the inputs it was
@@ -330,9 +332,11 @@ Per cascade, per spectrum slot:
    (height gradient, squared gradient, foam in alpha). The gradient is the slope of the
    displaced surface with the cascade's `displacement_scale` as choppiness:
    crests, where the surface is compressed, get steeper (at most 4×), troughs
-   flatter. Foam appears where the (unscaled) displacement Jacobian drops below
-   `whitecap`; it reads the previous normal map so it accumulates
-   (`foam_grow_rate`) and decays (`foam_decay_rate`) across updates.
+   flatter. Foam is coverage (0–1): it grows where the Jacobian of that same
+   rendered surface drops below `whitecap` (by `foam_generation` per second
+   per unit below) and fades over `foam_lifetime`, reading the previous
+   normal map across updates. The map is indexed by rest position, so foam
+   stays with the water while its crest moves on.
 5. `mip_downsample` — builds the displacement and normal maps' mip chains
    (2×2 box filter per level). All channels average linearly, so at any level
    `z − |xy|²` of the normal map is the slope variance inside the texel.
@@ -396,25 +400,68 @@ camera.
 
 Uses `world_vertex_coords`. The fragment stage discards water inside near
 hulls, then samples normals/foam for up to `fragment_cascade_limit` cascades
-with trilinear/anisotropic filtering over the pixel footprint (explicit
-gradients, taken before the discard; bicubic only under magnification).
+with trilinear filtering at the mip covering the pixel footprint's area
+(explicit LOD from derivatives taken before the discard; bicubic only under
+magnification). A mip sized by the footprint's longer axis would count every
+slope along a grazing footprint as round blur and turn the water milky.
 
 Filtering averages small waves away, and the slopes it removed come back as
 roughness: per cascade, `z − |xy|²` of the filtered sample is the unresolved
 slope variance, scaled by `normal_scale²`, and the GGX alpha is
 `sqrt(clear_roughness⁴ + Σ variance)` (Toksvig/LEAN). Up close the water is
 smooth and every resolved wave makes its own sharp glint; in the distance the
-waves merge into a rough surface with a broad sun path.
+waves merge into a rough surface with a broad sun path. Two things raise
+`z − |xy|²` without being unresolved slopes, and are left out: blending the
+previous and current FFT frames (variance is taken per frame, then blended),
+and bilinear interpolation between texels while a pixel covers less than a
+texel (that slope change is drawn across pixels; variance counts from one
+texel up). Both made near water rough and its reflections milky.
+
+Foam: the wave foam coverage (summed over the sampled cascades, times
+`foam_intensity`), the interaction simulation's wake foam and the hull edge
+foam are combined by `max`. Coverage is revealed through
+`foam_detail_texture`, a tiling pattern whose values are uniformly
+distributed (`textures/generate_foam_detail.py`: soft patches textured by
+bubble lace): foam shows where the pattern exceeds `1 − coverage`, so it covers
+exactly `coverage` of the area, as patches that dissolve into lace as they thin.
+Once the pattern's texels are smaller than a pixel its mips flatten toward
+0.5, and plain coverage takes over (the mips of coverage are exact at any
+distance, so foam needs no distance fade). Thin foam is translucent (opacity
+0.35 at low coverage, 1 when dense). Debug view 15 shows the result.
 
 Lighting:
-- `light()` replaces Godot's per-light shading: Lambert diffuse and a GGX
-  highlight with the water's Fresnel (`sky_reflection_f0`), times
-  `sun_specular_strength` and the clear-water mask. It uses the light's color,
+- `light()` replaces Godot's per-light shading. It uses the light's color,
   energy and attenuation, so it follows the SkySystem's sun (altitude, clouds).
+  - Water body: light refracted in and scattered back up, so it follows the
+    light's height above the horizon, not the wave facet (Lambert on facets
+    looked like shaded plastic). Its albedo (`water_color` ×
+    `water_diffuse_strength`) is scaled by `1 − Fresnel`: only light the surface
+    does not reflect gets in and out.
+  - Foam: a bubble layer that scatters light through its volume: wrapped
+    diffuse (facets turned from the light still get some) plus light shining
+    through toward a viewer facing the light. Its albedo (`foam_color`,
+    near-neutral white) is a little darker in the pattern's bubble cells.
+  - A GGX highlight with the water's Fresnel (`sky_reflection_f0`), times
+    `sun_specular_strength` and the clear-water mask.
+- Sun glitter (`glitter_scale()`, after Zirr & Kaplanyan 2016 and Deliot &
+  Belcour 2023): the GGX highlight is the mean over many tiny facets
+  (`sun_glitter_density` per m²). World cells about a pixel wide, on the rest
+  grid so they ride with the water, draw a Poisson count of facets aligned with
+  the light's disk (share from the GGX distribution), and the highlight is
+  scaled by count / mean: the same mean, broken into glints. Two cell levels
+  blend with the footprint, and patterns change `sun_glitter_rate` times a
+  second with a crossfade, so glints twinkle.
 - `SPECULAR` is 0, which turns off the engine's sky reflection; the shader
   adds its own as `EMISSION`: procedural sky reflection (Fresnel, blurred by
-  the same roughness; the sky gradient over three directions, clouds along
-  one), planar reflection, sun scatter and crest glow.
+  the same roughness; the sky gradient over three directions, clouds from the
+  cloud cubemap's mip whose blur matches the reflection lobe), planar
+  reflection, sun scatter and crest glow.
+- Reflections use one reflectance: Fresnel averaged over the same slopes as the
+  roughness (Bruneton et al. 2010, mean normal plus slope deviation
+  `alpha / √2`). Schlick on the filtered normal would make distant water a
+  mirror at grazing angles; the unresolved facets there tilt toward the viewer
+  and reflect much less. Rays reflected below the horizon are mirrored back up
+  (the next wave would send them there).
 
 ### Planar reflections
 
@@ -422,10 +469,27 @@ Lighting:
 never in the editor; configured through `apply()`) renders a `SubViewport`
 from a camera mirrored across `water_level`, sharing the main `World3D`. The
 water mesh is moved to `reflection_water_layer` (default 20) and that layer is
-removed from the reflection camera's cull mask. `PlanarReflectionClipEffect`, a
-`CompositorEffect` on that camera, clears pixels whose reconstructed world Y is
-below the water plane so sinking objects don't reflect. The water shader
-projects into the reflection texture with `planar_reflection_view_projection`.
+removed from the reflection camera's cull mask. `PlanarReflectionCaptureEffect`,
+a `CompositorEffect` on that camera, copies its color after the transparent
+pass (linear HDR, before tonemapping; the background is cleared to zero, so
+rgb is premultiplied by coverage a) into its own texture, clearing pixels whose
+reconstructed world Y is below the water plane so sinking objects don't
+reflect, then builds that texture's mip chain. It also writes each pixel's
+distance from the mirrored camera to `distance_texture` (0 = no geometry). The
+renderer sizes both to the viewport (`set_size()`) and hands them to the water,
+never the viewport's tonemapped output.
+
+The water shader reflects the view ray about each pixel's own wave normal and
+finds what that ray hits: starting with the ray's end at infinity, it projects
+the end with `planar_reflection_view_projection`, reads the stored distance of
+the surface seen there, and moves the end to that surface's distance along the
+ray (three steps). A texel with no geometry sends the ray on to the sky. This
+is what makes the reflection follow the waves; a flat mirror would put every
+reflection directly below its object. It then reads the mip whose blur matches
+the reflection lobe (the reflected rays' spread `√2·alpha`, scaled by the hit's
+distance from the water over its distance from the mirrored camera, over
+`planar_reflection_texel_angle`), and composites `sky · (1 − a) + rgb` with the
+same Fresnel as the sky.
 
 ### Surface query (`ocean_surface_queries.gd`, `shaders/compute/surface_query.glsl`)
 
@@ -464,7 +528,8 @@ Godot doesn't track include dependencies: reimport `surface_query.glsl` and
 | `ocean_surface_queries.gd` | `OceanSurfaceQueries` async query batching and readback |
 | `water_surface_query_result.gd`, `water_surface_sample.gd` | Query result types |
 | `rendering/render_context.gd` | `RenderingContext` RenderingDevice helper |
-| `ocean_reflection_renderer.gd`, `planar_reflection_clip_effect.gd` | Planar reflections |
+| `ocean_reflection_renderer.gd`, `planar_reflection_capture_effect.gd` | Planar reflections |
+| `textures/foam_detail.png`, `textures/generate_foam_detail.py` | Foam pattern and its generator |
 | `hull_water_footprint.gd`, `hull_profile.gd`, `hull_slicer.gd` | Hull footprints, baked profiles, and the triangle slicer (also used by `BuoyancyProbeVolume`) |
 | `water_interaction_sim.gd` | `WaterInteractionSim` iWave simulation around the camera |
 | `shaders/compute/iwave_*.glsl`, `iwave_common.glslinc` | Interaction passes: scroll, impulse, pressure, FFT, operator, step |

@@ -70,7 +70,8 @@ wind_direction = 20.0
 fetch_length = 12.0
 swell = 0.55
 spread = 0.35
-foam_amount = 2.0
+whitecap = 0.45
+foam_lifetime = 3.0
 
 [sub_resource type="Resource" id="Resource_luhq0"]
 script = ExtResource("2_pw5n6")
@@ -84,7 +85,7 @@ wind_direction_offset = -5.0
 fetch_length = 4.0
 swell = 0.35
 spread = 0.55
-foam_amount = 1.0
+whitecap = 0.6
 
 [sub_resource type="Resource" id="Resource_83u3u"]
 script = ExtResource("2_pw5n6")
@@ -97,8 +98,8 @@ wind_speed_multiplier = 1.6
 fetch_length = 1.5
 swell = 0.2
 spread = 0.65
-whitecap = 0.8
-foam_amount = 0.8
+whitecap = 0.87
+foam_lifetime = 0.8
 
 [node name="Main" type="Node3D" unique_id=1897186747]
 script = ExtResource("1_skarq")
@@ -132,7 +133,6 @@ crest_glow_strength = 1.25
 crest_glow_emission_strength = 0.75
 crest_back_view_power = 0.5
 crest_back_normal_power = 1.0
-foam_intensity = 0.5
 use_external_wind = true
 wind_source_path = NodePath("../WindSystem")
 parameters = Array[ExtResource("2_pw5n6")]([SubResource("Resource_adqv5"), SubResource("Resource_luhq0"), SubResource("Resource_83u3u")])
