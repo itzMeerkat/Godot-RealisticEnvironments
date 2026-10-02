@@ -5,6 +5,20 @@ extends Node3D
 ## all on an input action, and pushes the carrying rigid body back on every shot.
 
 const AIM_MARKER_NODE_NAME := &"AimMarker"
+## Extra height margin (m) for the reach test in _solve_ballistic_direction():
+## covers the solver's step discretization.
+const REACH_BOUND_SLACK := 0.05
+
+## One launcher's shot toward the aim point, in the vertical plane through it.
+class BallisticShot:
+	var origin_y : float
+	var horizontal_direction : Vector3
+	var horizontal_distance : float
+	var target_y : float
+	var initial_speed : float
+	var inherited_velocity : Vector3
+	var drag_coefficient : float
+	var projectile_mass : float
 
 ## Enables aiming, firing and recoil.
 @export var enabled := true
@@ -100,6 +114,8 @@ var _gravity := 9.8
 var _marker_instance: MeshInstance3D
 var _marker_mesh := ImmediateMesh.new()
 var _marker_material: StandardMaterial3D
+## Shape the marker mesh was built for: [segments, radius, height].
+var _marker_shape := []
 var _current_launch_directions := {}
 var _last_valid_launch_directions := {}
 
@@ -287,18 +303,32 @@ func _solve_ballistic_direction(launcher: ProjectileLauncher) -> Dictionary:
 		return {"reachable": false}
 
 	var horizontal_direction := horizontal_delta / horizontal_distance
-	var shot := {
-		"origin": origin,
-		"horizontal_direction": horizontal_direction,
-		"horizontal_distance": horizontal_distance,
-		"target_y": aim_point.y,
-		"initial_speed": maxf(launcher.initial_speed, 0.001),
-		"inherited_velocity": launcher.get_inherited_velocity_at(origin),
-		"drag_coefficient": launcher.drag_coefficient,
-		"projectile_mass": maxf(launcher.projectile_mass, 0.001),
-	}
+	var shot := BallisticShot.new()
+	shot.origin_y = origin.y
+	shot.horizontal_direction = horizontal_direction
+	shot.horizontal_distance = horizontal_distance
+	shot.target_y = aim_point.y
+	shot.initial_speed = maxf(launcher.initial_speed, 0.001)
+	shot.inherited_velocity = launcher.get_inherited_velocity_at(origin)
+	shot.drag_coefficient = launcher.drag_coefficient
+	shot.projectile_mass = maxf(launcher.projectile_mass, 0.001)
 	var pitch_min := deg_to_rad(minf(min_pitch_degrees, max_pitch_degrees))
 	var pitch_max := deg_to_rad(maxf(min_pitch_degrees, max_pitch_degrees))
+	var steps := maxi(pitch_search_steps, 2)
+
+	# Out of reach at every scanned pitch (see _height_bound_at_aim()): every
+	# shot falls short or passes the aim point more than impact_height_tolerance
+	# too low, so the scan below would find nothing. Skips it while aiming
+	# beyond range, where it costs the most (every shot flies to the end).
+	var may_reach := false
+	for i in range(steps + 1):
+		var pitch := lerpf(pitch_min, pitch_max, float(i) / float(steps))
+		if _height_bound_at_aim(shot, pitch) >= shot.target_y - impact_height_tolerance - REACH_BOUND_SLACK:
+			may_reach = true
+			break
+	if not may_reach:
+		return {"reachable": false}
+
 	var best_pitch := 0.0
 	var best_abs_error := INF
 	var best_reachable := false
@@ -307,19 +337,22 @@ func _solve_ballistic_direction(launcher: ProjectileLauncher) -> Dictionary:
 	var previous_error := 0.0
 	var has_previous := false
 
-	var steps := maxi(pitch_search_steps, 2)
 	for i in range(steps + 1):
 		var pitch := lerpf(pitch_min, pitch_max, float(i) / float(steps))
 		var sample := _simulate_ballistic_pitch(shot, pitch)
-		if not bool(sample["has_error"]):
+		if sample.z == 0.0:
 			continue
-		var error := float(sample["height_error"])
+		var error := sample.x
 		if absf(error) < best_abs_error:
 			best_abs_error = absf(error)
 			best_pitch = pitch
-			best_reachable = bool(sample["reached_range"])
+			best_reachable = sample.y != 0.0
 		if has_previous and ((previous_error <= 0.0 and error >= 0.0) or (previous_error >= 0.0 and error <= 0.0)):
 			intervals.push_back(Vector2(previous_pitch, pitch))
+			# The low arc is the first interval; later samples cannot change the
+			# result, and the steep ones are the longest to simulate.
+			if not prefer_high_arc:
+				break
 		has_previous = true
 		previous_pitch = pitch
 		previous_error = error
@@ -336,13 +369,32 @@ func _solve_ballistic_direction(launcher: ProjectileLauncher) -> Dictionary:
 	}
 
 
-func _refine_ballistic_pitch(shot: Dictionary, low_pitch: float, high_pitch: float) -> float:
+## Upper bound on the height at which a shot reaches the aim distance (-INF
+## when it never gets there). Along the path y'' = -g / vx^2 (y over horizontal
+## distance x), and drag acceleration k |v| v with k = drag / mass gives
+## dvx/dx = -k |v| <= -k vx, so vx <= vx0 e^(-kx) and the shot stays below
+## y0 + y0' x - g / vx0^2 ((e^(2kx) - 1) / 2k - x) / 2k.
+func _height_bound_at_aim(shot: BallisticShot, pitch: float) -> float:
+	var launch_direction := (shot.horizontal_direction * cos(pitch) + Vector3.UP * sin(pitch)).normalized()
+	var velocity := launch_direction * shot.initial_speed + shot.inherited_velocity
+	var horizontal_speed := velocity.dot(shot.horizontal_direction)
+	if horizontal_speed <= 0.0:
+		return -INF
+	var x := shot.horizontal_distance
+	var k := shot.drag_coefficient / shot.projectile_mass
+	var a := 2.0 * k * x
+	# Series for small drag: x^2 / 2 + k x^3 / 3 + k^2 x^4 / 6 (the drag-free x^2 / 2 at k = 0).
+	var fall := x * x * (0.5 + k * x / 3.0 + k * k * x * x / 6.0) if a < 0.001 else ((exp(a) - 1.0) / (2.0 * k) - x) / (2.0 * k)
+	return shot.origin_y + velocity.y / horizontal_speed * x - _gravity / (horizontal_speed * horizontal_speed) * fall
+
+
+func _refine_ballistic_pitch(shot: BallisticShot, low_pitch: float, high_pitch: float) -> float:
 	var low := low_pitch
 	var high := high_pitch
-	var low_error := float(_simulate_ballistic_pitch(shot, low).get("height_error", 0.0))
+	var low_error := _simulate_ballistic_pitch(shot, low).x
 	for _i in pitch_refine_steps:
 		var mid := (low + high) * 0.5
-		var mid_error := float(_simulate_ballistic_pitch(shot, mid).get("height_error", 0.0))
+		var mid_error := _simulate_ballistic_pitch(shot, mid).x
 		if (low_error <= 0.0 and mid_error >= 0.0) or (low_error >= 0.0 and mid_error <= 0.0):
 			high = mid
 		else:
@@ -351,24 +403,25 @@ func _refine_ballistic_pitch(shot: Dictionary, low_pitch: float, high_pitch: flo
 	return (low + high) * 0.5
 
 
-## Simulates one shot in the vertical plane through the aim point. Returns the
+## Simulates one shot in the vertical plane through the aim point. Returns
+## (height error, 1 if it reached the aim distance, 1 if it has an error): the
 ## height error where it reaches the aim distance, or where it falls below the
-## target height short of it.
-func _simulate_ballistic_pitch(shot: Dictionary, pitch: float) -> Dictionary:
-	var horizontal_direction: Vector3 = shot["horizontal_direction"]
-	var horizontal_distance: float = shot["horizontal_distance"]
-	var target_y: float = shot["target_y"]
-	var drag_coefficient: float = shot["drag_coefficient"]
-	var projectile_mass: float = shot["projectile_mass"]
-	var launch_direction := (horizontal_direction * cos(pitch) + Vector3.UP * sin(pitch)).normalized()
-	var velocity_3d: Vector3 = launch_direction * float(shot["initial_speed"]) + shot["inherited_velocity"]
-	var velocity := Vector2(velocity_3d.dot(horizontal_direction), velocity_3d.y)
-	var position := Vector2(0.0, (shot["origin"] as Vector3).y)
+## target height short of it; no error when it does neither in time.
+func _simulate_ballistic_pitch(shot: BallisticShot, pitch: float) -> Vector3:
+	var horizontal_distance := shot.horizontal_distance
+	var target_y := shot.target_y
+	var drag_coefficient := shot.drag_coefficient
+	var projectile_mass := shot.projectile_mass
+	var launch_direction := (shot.horizontal_direction * cos(pitch) + Vector3.UP * sin(pitch)).normalized()
+	var velocity_3d := launch_direction * shot.initial_speed + shot.inherited_velocity
+	var velocity := Vector2(velocity_3d.dot(shot.horizontal_direction), velocity_3d.y)
+	var position := Vector2(0.0, shot.origin_y)
 	var step := maxf(simulation_step, 0.001)
+	var gravity := Vector2(0.0, -_gravity)
 	var elapsed := 0.0
 	while elapsed < max_simulation_time:
 		var previous_position := position
-		var acceleration := Vector2(0.0, -_gravity)
+		var acceleration := gravity
 		var speed_squared := velocity.length_squared()
 		if drag_coefficient > 0.0 and speed_squared > 0.0001:
 			acceleration += -velocity.normalized() * speed_squared * drag_coefficient / projectile_mass
@@ -379,10 +432,10 @@ func _simulate_ballistic_pitch(shot: Dictionary, pitch: float) -> Dictionary:
 		if position.x >= horizontal_distance:
 			var segment_distance := position.x - previous_position.x
 			var weight := 1.0 if absf(segment_distance) <= 0.0001 else clampf((horizontal_distance - previous_position.x) / segment_distance, 0.0, 1.0)
-			return {"has_error": true, "reached_range": true, "height_error": lerpf(previous_position.y, position.y, weight) - target_y}
+			return Vector3(lerpf(previous_position.y, position.y, weight) - target_y, 1.0, 1.0)
 		if position.y <= target_y and velocity.y < 0.0:
-			return {"has_error": true, "reached_range": false, "height_error": position.y - target_y}
-	return {"has_error": false, "reached_range": false}
+			return Vector3(position.y - target_y, 0.0, 1.0)
+	return Vector3.ZERO
 
 
 func _create_marker() -> void:
@@ -394,7 +447,6 @@ func _create_marker() -> void:
 	_marker_instance.top_level = true
 	_marker_instance.visible = false
 	_marker_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	_marker_instance.extra_cull_margin = 10000.0
 	_marker_instance.mesh = _marker_mesh
 	_marker_instance.material_override = _marker_material
 	add_child(_marker_instance, false, INTERNAL_MODE_BACK)
@@ -410,20 +462,28 @@ func _update_marker() -> void:
 		_marker_material.albedo_color = reachable_marker_color if has_reachable_solution else unreachable_marker_color
 	else:
 		_marker_material.albedo_color = marker_color
+	var shape := [maxi(marker_segments, 8), marker_radius, marker_height]
+	if shape != _marker_shape:
+		_marker_shape = shape
+		_build_marker_mesh()
+	_marker_instance.global_transform = Transform3D(Basis.IDENTITY, aim_point)
 
+
+## The marker around the origin; _update_marker() moves the instance to the aim point.
+func _build_marker_mesh() -> void:
 	_marker_mesh.clear_surfaces()
 	_marker_mesh.surface_begin(Mesh.PRIMITIVE_LINES)
 	var segments := maxi(marker_segments, 8)
 	for i in segments:
 		var a0 := float(i) / float(segments) * TAU
 		var a1 := float(i + 1) / float(segments) * TAU
-		_marker_mesh.surface_add_vertex(aim_point + Vector3(cos(a0), 0.0, sin(a0)) * marker_radius)
-		_marker_mesh.surface_add_vertex(aim_point + Vector3(cos(a1), 0.0, sin(a1)) * marker_radius)
-	_marker_mesh.surface_add_vertex(aim_point + Vector3.LEFT * marker_radius)
-	_marker_mesh.surface_add_vertex(aim_point + Vector3.RIGHT * marker_radius)
-	_marker_mesh.surface_add_vertex(aim_point + Vector3.FORWARD * marker_radius)
-	_marker_mesh.surface_add_vertex(aim_point + Vector3.BACK * marker_radius)
+		_marker_mesh.surface_add_vertex(Vector3(cos(a0), 0.0, sin(a0)) * marker_radius)
+		_marker_mesh.surface_add_vertex(Vector3(cos(a1), 0.0, sin(a1)) * marker_radius)
+	_marker_mesh.surface_add_vertex(Vector3.LEFT * marker_radius)
+	_marker_mesh.surface_add_vertex(Vector3.RIGHT * marker_radius)
+	_marker_mesh.surface_add_vertex(Vector3.FORWARD * marker_radius)
+	_marker_mesh.surface_add_vertex(Vector3.BACK * marker_radius)
 	if marker_height > 0.0:
-		_marker_mesh.surface_add_vertex(aim_point)
-		_marker_mesh.surface_add_vertex(aim_point + Vector3.UP * marker_height)
+		_marker_mesh.surface_add_vertex(Vector3.ZERO)
+		_marker_mesh.surface_add_vertex(Vector3.UP * marker_height)
 	_marker_mesh.surface_end()

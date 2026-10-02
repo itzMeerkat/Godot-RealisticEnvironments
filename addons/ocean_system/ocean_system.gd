@@ -24,6 +24,8 @@ const MAX_LOD_NODES := 1024
 const LOD_INSTANCE_FLOATS := 16
 ## Room for displaced waves around a node, for frustum culling (m).
 const LOD_WAVE_MARGIN := 12.0
+## Frustum planes the node selection tests (all but the far plane).
+const LOD_FRUSTUM_PLANES := 5
 ## The water is drawn on a sphere of this radius (meters) touching the camera's
 ## sea-level point (water.gdshader, EARTH_RADIUS), so it ends at a real horizon.
 ## Only the drawing: surface queries, buoyancy and the simulation stay flat.
@@ -467,7 +469,17 @@ var _lod_ranges_key := 0.0
 ## Radius of the water drawn this frame (see _update_lod_grid()).
 var _lod_radius := 0.0
 var _lod_camera_position := Vector3.ZERO
-var _lod_frustum : Array[Plane] = []
+## This frame's selection inputs as plain floats (_select_lod_node() reads them
+## a few thousand times a frame).
+var _lod_camera_x := 0.0
+var _lod_camera_z := 0.0
+var _lod_water_y := 0.0
+## Camera height above the water, squared.
+var _lod_height_squared := 0.0
+var _lod_radius_squared := 0.0
+## The camera's frustum planes except the far one (nothing within _lod_radius
+## reaches it): normal xyz, d (outward).
+var _lod_planes := PackedFloat32Array()
 
 func _init() -> void:
 	rng.set_seed(1234) # This seed gives big waves!
@@ -969,13 +981,27 @@ func _update_lod_grid() -> void:
 		return
 	_update_lod_ranges()
 	_lod_camera_position = camera.global_position
-	_lod_frustum = camera.get_frustum()
+	_lod_camera_x = _lod_camera_position.x
+	_lod_camera_z = _lod_camera_position.z
+	_lod_water_y = global_position.y
+	_lod_height_squared = (_lod_camera_position.y - _lod_water_y) * (_lod_camera_position.y - _lod_water_y)
+	# Camera.get_frustum() order: near, far, left, top, right, bottom.
+	var frustum := camera.get_frustum()
+	frustum.remove_at(1)
+	_lod_planes.resize(LOD_FRUSTUM_PLANES * 4)
+	for i in LOD_FRUSTUM_PLANES:
+		var plane := frustum[i]
+		_lod_planes[i * 4] = plane.normal.x
+		_lod_planes[i * 4 + 1] = plane.normal.y
+		_lod_planes[i * 4 + 2] = plane.normal.z
+		_lod_planes[i * 4 + 3] = plane.d
 	_lod_node_count = 0
 	# Out to the horizon: the farthest point of the sphere visible from the camera's
 	# height, plus how far beyond it a wave crest LOD_WAVE_MARGIN high still shows.
 	# Nothing past the far plane is drawn anyway.
-	var height := maxf(_lod_camera_position.y - global_position.y, 0.0)
+	var height := maxf(_lod_camera_position.y - _lod_water_y, 0.0)
 	_lod_radius = minf(sqrt(2.0 * EARTH_RADIUS * height) + sqrt(2.0 * EARTH_RADIUS * LOD_WAVE_MARGIN), camera.far)
+	_lod_radius_squared = _lod_radius * _lod_radius
 	var top_level := _get_lod_top_level(_lod_radius)
 	if top_level != _lod_top_level:
 		_lod_top_level = top_level
@@ -985,7 +1011,7 @@ func _update_lod_grid() -> void:
 	var root_count := int(ceil(2.0 * _lod_radius / top_size)) + 1
 	for iz in root_count:
 		for ix in root_count:
-			_select_lod_node((first + Vector2(ix, iz)) * top_size, _lod_top_level)
+			_select_lod_node((first.x + ix) * top_size, (first.y + iz) * top_size, top_size, _lod_top_level, (1 << LOD_FRUSTUM_PLANES) - 1)
 	if _lod_buffer != _lod_uploaded_buffer:
 		RenderingServer.multimesh_set_buffer(_lod_multimesh, _lod_buffer)
 		_lod_uploaded_buffer = _lod_buffer.duplicate()
@@ -998,46 +1024,62 @@ func _update_lod_grid() -> void:
 ## Splits a node while it comes within the next finer level's range. A node may
 ## end up drawn at a finer level than its distance needs; its vertices are then
 ## fully morphed, which matches the coarser neighbours exactly.
-func _select_lod_node(origin : Vector2, level : int) -> void:
-	var size := mesh_base_cell_size * LOD_GRID * float(1 << level)
-	var camera_xz := Vector2(_lod_camera_position.x, _lod_camera_position.z)
-	var nearest := Vector2(clampf(camera_xz.x, origin.x, origin.x + size), clampf(camera_xz.y, origin.y, origin.y + size))
-	var nearest_horizontal := nearest.distance_to(camera_xz)
-	if nearest_horizontal > _lod_radius:
+##
+## Runs for a few hundred nodes every frame, so it works on plain floats.
+## plane_mask holds the frustum planes the node's bounds may still cross: a
+## child's bounds lie inside its parent's, so planes the parent is fully inside
+## are skipped for all its descendants.
+func _select_lod_node(origin_x : float, origin_z : float, size : float, level : int, plane_mask : int) -> void:
+	var nearest_dx := clampf(_lod_camera_x, origin_x, origin_x + size) - _lod_camera_x
+	var nearest_dz := clampf(_lod_camera_z, origin_z, origin_z + size) - _lod_camera_z
+	var nearest_horizontal_squared := nearest_dx * nearest_dx + nearest_dz * nearest_dz
+	if nearest_horizontal_squared > _lod_radius_squared:
 		return
-	# Lowered by the curvature between the node's nearest and farthest points.
-	var farthest := Vector2(maxf(absf(camera_xz.x - origin.x), absf(camera_xz.x - origin.x - size)), maxf(absf(camera_xz.y - origin.y), absf(camera_xz.y - origin.y - size)))
-	var top := global_position.y + LOD_WAVE_MARGIN - _get_curvature_drop(nearest_horizontal)
-	var bottom := global_position.y - LOD_WAVE_MARGIN - _get_curvature_drop(farthest.length())
-	var bounds := AABB(Vector3(origin.x - LOD_WAVE_MARGIN, bottom, origin.y - LOD_WAVE_MARGIN), Vector3(size + 2.0 * LOD_WAVE_MARGIN, top - bottom, size + 2.0 * LOD_WAVE_MARGIN))
-	if not _is_in_lod_frustum(bounds):
-		return
+	if plane_mask != 0:
+		# Bounds lowered by the curvature between the node's nearest and farthest
+		# points (_get_curvature_drop(), inlined).
+		var farthest_x := maxf(absf(_lod_camera_x - origin_x), absf(_lod_camera_x - origin_x - size))
+		var farthest_z := maxf(absf(_lod_camera_z - origin_z), absf(_lod_camera_z - origin_z - size))
+		var min_x := origin_x - LOD_WAVE_MARGIN
+		var max_x := origin_x + size + LOD_WAVE_MARGIN
+		var min_y := _lod_water_y - LOD_WAVE_MARGIN - (farthest_x * farthest_x + farthest_z * farthest_z) * 0.5 / EARTH_RADIUS
+		var max_y := _lod_water_y + LOD_WAVE_MARGIN - nearest_horizontal_squared * 0.5 / EARTH_RADIUS
+		var min_z := origin_z - LOD_WAVE_MARGIN
+		var max_z := origin_z + size + LOD_WAVE_MARGIN
+		for plane in LOD_FRUSTUM_PLANES:
+			if plane_mask & (1 << plane) == 0:
+				continue
+			var i := plane * 4
+			var normal_x := _lod_planes[i]
+			var normal_y := _lod_planes[i + 1]
+			var normal_z := _lod_planes[i + 2]
+			var d := _lod_planes[i + 3]
+			# Planes point outward: the corner least along the normal is the
+			# innermost, the one most along it the outermost.
+			var innermost := normal_x * (max_x if normal_x < 0.0 else min_x) + normal_y * (max_y if normal_y < 0.0 else min_y) + normal_z * (max_z if normal_z < 0.0 else min_z)
+			if innermost > d:
+				return
+			var outermost := normal_x * (min_x if normal_x < 0.0 else max_x) + normal_y * (min_y if normal_y < 0.0 else max_y) + normal_z * (min_z if normal_z < 0.0 else max_z)
+			if outermost <= d:
+				plane_mask &= ~(1 << plane)
 	# The shader measures morph distances to the undisplaced vertex; this is the
 	# nearest such point of the node, so it never overestimates them.
-	var nearest_distance := _lod_camera_position.distance_to(Vector3(nearest.x, global_position.y, nearest.y))
-	if level > 0 and nearest_distance < _lod_ranges[level - 1]:
-		var half := size * 0.5
-		for child in 4:
-			_select_lod_node(origin + Vector2(child & 1, child >> 1) * half, level - 1)
-		return
+	if level > 0:
+		var finer_range := _lod_ranges[level - 1]
+		if nearest_horizontal_squared + _lod_height_squared < finer_range * finer_range:
+			var half := size * 0.5
+			_select_lod_node(origin_x, origin_z, half, level - 1, plane_mask)
+			_select_lod_node(origin_x + half, origin_z, half, level - 1, plane_mask)
+			_select_lod_node(origin_x, origin_z + half, half, level - 1, plane_mask)
+			_select_lod_node(origin_x + half, origin_z + half, half, level - 1, plane_mask)
+			return
 	assert(_lod_node_count < MAX_LOD_NODES, "Ocean LOD node budget exceeded; raise mesh_base_cell_size or lower the camera's far plane.")
 	var offset := _lod_node_count * LOD_INSTANCE_FLOATS + 12
-	_lod_buffer[offset] = origin.x
-	_lod_buffer[offset + 1] = origin.y
+	_lod_buffer[offset] = origin_x
+	_lod_buffer[offset + 1] = origin_z
 	_lod_buffer[offset + 2] = size / LOD_GRID
 	_lod_buffer[offset + 3] = level
 	_lod_node_count += 1
-
-func _is_in_lod_frustum(bounds : AABB) -> bool:
-	for plane in _lod_frustum:
-		# The AABB corner farthest along the plane's normal (planes point outward).
-		var corner := bounds.position + Vector3(
-			bounds.size.x if plane.normal.x < 0.0 else 0.0,
-			bounds.size.y if plane.normal.y < 0.0 else 0.0,
-			bounds.size.z if plane.normal.z < 0.0 else 0.0)
-		if plane.is_point_over(corner):
-			return false
-	return true
 
 ## How far below the camera's tangent plane the drawn water is at a horizontal
 ## distance (meters), as the shader's earth_curvature_drop().

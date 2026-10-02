@@ -408,8 +408,10 @@ ocean is a quadtree of nodes on a fixed world grid; every node is the same
 
 - start from top-level nodes covering the radius out to the horizon (below),
   capped by the camera's far plane;
-- skip nodes outside that radius or the camera frustum (bounds grown by
-  `LOD_WAVE_MARGIN` for displaced waves and lowered by the curvature);
+- skip nodes outside that radius or the camera frustum (all planes but the
+  far one; bounds grown by `LOD_WAVE_MARGIN` for displaced waves and lowered
+  by the curvature). A child's bounds lie inside its parent's, so planes a
+  parent is fully inside are not tested again below it;
 - split a node while it comes within the next finer level's range
   (`range(L) = 3 × node size(L)`, 3D distance), else draw it.
 

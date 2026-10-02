@@ -73,10 +73,14 @@ Every frame, when enabled and controlled:
    highest) pitch interval where the height error at the aim distance changes
    sign and bisects it; with no sign change it accepts the closest sample only
    if it is within `impact_height_tolerance`. Unreachable launchers keep their
-   last valid direction.
+   last valid direction. Cost: the low-arc scan stops at the first sign change,
+   and when an upper bound on the trajectory (drag can only lower it: along
+   the path `y'' = -g / vx²` and `vx ≤ vx0·e^(-kx)`) passes below the target
+   at every sampled pitch, nothing is simulated (aiming beyond range).
 3. Yaws each launcher's yaw target toward the aim point around the body's up
    axis, with `yaw_smoothing`.
-4. Draws a ring marker coloured by reachability (an internal node).
+4. Moves a ring marker, coloured by reachability, to the aim point (an
+   internal node; its mesh is rebuilt only when the marker shape changes).
 
 On `fire_action` (default `fire_projectile`) in `_unhandled_input` it calls
 `fire()`: every launcher fires along `get_launch_direction_for_launcher()` (this
