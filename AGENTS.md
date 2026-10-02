@@ -62,7 +62,10 @@ before touching its code; this file only records what is easy to get wrong.
     frame. Optional `get_cloud_cubemap()` returns a cubemap (rgb premultiplied
     cloud radiance, a opacity; `null` = no clouds) with a full mip chain, that
     the water composites into its sky reflection as `sky * (1 - a) + rgb`,
-    reading the mip that matches its roughness.
+    reading the mip that matches its roughness. Optional haze getters
+    (`get_haze_density/scale_height/anisotropy/light_direction/light_color/
+    ambient_color()`, `density` 0 = none) describe the haze over the sea that
+    the water puts over its sky reflection.
   - Hull cutouts: `HullWaterFootprint` nodes (group `ocean_hull`) with a baked
     `HullProfile`. Profiles are editor-baked and saved as `.tres`; never
     hand-edit their image. At most 8 hulls near the camera are cut out.
@@ -92,7 +95,12 @@ before touching its code; this file only records what is easy to get wrong.
   grid nodes set as the instance base through the RenderingServer, selected
   every frame around the active camera (`_update_lod_grid`). The vertex shader
   morphs vertices onto coarser lattices; `LOD_RANGE_FACTOR` must stay above
-  ~2.8 or nodes two levels apart touch and crack. In the editor the ocean
+  ~2.8 or nodes two levels apart touch and crack. The water is drawn on the
+  earth's curve (`EARTH_RADIUS`, vertex drop `d²/2R`, normal tilted by `d/R`)
+  out to the horizon, capped by the camera's far plane; keep the cameras' far
+  planes beyond the horizon (the demo uses 60 km). Only the drawing curves:
+  `water_world_position` and everything physical (queries, buoyancy, hulls,
+  planar reflections, the simulation) stay flat. In the editor the ocean
   shows the shared `editor_water_preview_mesh.tres` instead. Never save a
   generated mesh into a scene, and don't rotate or scale the ocean node.
 - `OceanSystem` renders with a private duplicate of `water_material`, applied
@@ -214,6 +222,21 @@ before touching its code; this file only records what is easy to get wrong.
 - Clouds assume the camera is below the cloud base (`CloudRenderer` clamps
   its altitude). After editing `cloud_noise.glslinc` reimport
   `cloud_noise_bake.glsl` and `cloud_weather.glsl`.
+
+## Haze invariants
+- The haze model lives in `sky_system/shaders/haze.gdshaderinc` (sky and
+  starfield) with copies in `SkyHazeEffect.HAZE_SHADER`, `SkySystem`'s
+  `_get_haze_optical_depth()` (light transmittance) and the ocean's
+  `water.gdshader` (its sky reflection, across the addon boundary). Change all
+  of them together.
+- Haze settings are weather: `CloudPreset.haze_*`, listed in
+  `BLENDED_PROPERTIES` (`haze_visibility` also in
+  `GEOMETRIC_BLENDED_PROPERTIES`). `SkySystem.sea_level` must match the
+  ocean's water height.
+- `SkyHazeEffect` sits in `sky_system.tscn`'s WorldEnvironment compositor and
+  has no exported state (SkySystem sets its parameters), so nothing runtime is
+  saved. It runs after the transparent pass (MSAA resolves over earlier
+  writes). Keep Godot's Environment fog off.
 
 ## Physics layers
 - Layer 2 `Projectile`, layer 3 `Hitbox` (bit values 2 and 4). Launchers put

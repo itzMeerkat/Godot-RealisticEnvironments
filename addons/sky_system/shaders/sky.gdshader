@@ -1,5 +1,7 @@
 shader_type sky;
 
+#include "res://addons/sky_system/shaders/haze.gdshaderinc"
+
 uniform vec4 sky_top_color : source_color = vec4(0.12, 0.42, 0.78, 1.0);
 uniform vec4 sky_horizon_color : source_color = vec4(0.58, 0.78, 0.94, 1.0);
 uniform vec4 ground_bottom_color : source_color = vec4(0.01, 0.02, 0.03, 1.0);
@@ -8,6 +10,9 @@ uniform vec4 ground_horizon_color : source_color = vec4(0.16, 0.24, 0.28, 1.0);
 uniform vec3 sun_direction = vec3(1.0, 0.0, 0.0);
 uniform vec4 sun_color : source_color = vec4(1.0, 0.92, 0.72, 1.0);
 uniform float sun_visibility : hint_range(0.0, 1.0) = 1.0;
+// The sun's light above the haze, color * energy * pi (irradiance in the units of the
+// scene's lights). The disk shows it spread over its solid angle.
+uniform vec3 sun_irradiance = vec3(3.0);
 uniform float sun_disk_size : hint_range(0.001, 0.05) = 0.00465;
 uniform float sun_halo_size : hint_range(0.01, 0.5) = 0.075;
 uniform float radiance_sun_disk_strength : hint_range(0.0, 3.0) = 0.16;
@@ -65,10 +70,15 @@ float moon_lighting(vec3 view_direction, vec3 body_direction, vec3 light_directi
 }
 
 void sky() {
-	float horizon_blend = smoothstep(-0.08, 0.45, EYEDIR.y);
+	// The sea's horizon is below eye level (the earth curves away): the sky reaches
+	// down to it, and the gradients run from it rather than from eye level.
+	float camera_height = POSITION.y - sea_level;
+	float horizon_dip = sqrt(2.0 * max(camera_height, 0.0) / HAZE_EARTH_RADIUS);
+	float elevation = EYEDIR.y + horizon_dip;
+	float horizon_blend = smoothstep(-0.08, 0.45, elevation);
 	vec3 upper_sky = mix(sky_horizon_color.rgb, sky_top_color.rgb, horizon_blend);
-	vec3 lower_sky = mix(ground_horizon_color.rgb, ground_bottom_color.rgb, 1.0 - smoothstep(-0.55, 0.0, EYEDIR.y));
-	vec3 sky_color = mix(lower_sky, upper_sky, step(0.0, EYEDIR.y));
+	vec3 lower_sky = mix(ground_horizon_color.rgb, ground_bottom_color.rgb, 1.0 - smoothstep(-0.55, 0.0, elevation));
+	vec3 sky_color = mix(lower_sky, upper_sky, step(0.0, elevation));
 
 	float sun_disk = body_disk(EYEDIR, sun_direction, sun_disk_size);
 	float sun_halo = body_halo(EYEDIR, sun_direction, sun_halo_size) * 0.32;
@@ -76,18 +86,27 @@ void sky() {
 	float moon_halo = body_halo(EYEDIR, moon_direction, 0.08) * 0.08;
 	float moon_lit = moon_lighting(EYEDIR, moon_direction, sun_direction, moon_disk_size);
 
-	float sun_disk_strength = 3.0;
-	float sun_halo_strength = 1.0;
+	// The disk at its real radiance: the sun's irradiance over the disk's solid angle,
+	// far brighter than anything around it, the haze's glow included; that glow is the
+	// sun's halo (haze.gdshaderinc). The radiance map (ambient light and reflections)
+	// keeps a faint disk and halo instead: a disk that bright would sparkle in every
+	// glossy reflection.
+	vec3 sun_disk_color = sun_irradiance / (PI * sun_disk_size * sun_disk_size);
+	float sun_halo_strength = 0.0;
 	if (AT_CUBEMAP_PASS) {
-		sun_disk_strength = radiance_sun_disk_strength;
+		sun_disk_color = sun_color.rgb * radiance_sun_disk_strength;
 		sun_halo_strength = radiance_sun_halo_strength;
 	}
 
-	sky_color += sun_color.rgb * (sun_disk * sun_disk_strength + sun_halo * sun_halo_strength) * sun_visibility;
+	sky_color += (sun_disk_color * sun_disk + sun_color.rgb * sun_halo * sun_halo_strength) * sun_visibility;
 	sky_color += moon_color.rgb * (moon_disk * moon_lit * 0.9 + moon_halo * moon_phase) * moon_visibility;
 	if (clouds_enabled) {
 		vec4 cloud = texture(cloud_cubemap, EYEDIR);
 		sky_color = sky_color * (1.0 - cloud.a) + cloud.rgb;
+	}
+	// Clouds sit above the haze, so it lies over them too.
+	if (haze_density > 0.0) {
+		sky_color = haze_apply(sky_color, EYEDIR, haze_optical_depth(camera_height, EYEDIR, haze_ray_length(camera_height, EYEDIR)));
 	}
 	COLOR = sky_color;
 }

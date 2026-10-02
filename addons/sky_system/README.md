@@ -1,13 +1,15 @@
 # Sky System
 
 Day/night sky with astronomically positioned sun and moon, directional lights,
-a procedural sky shader, a rotating starfield, volumetric clouds with weather
-presets, and getters that other systems (the ocean) read for lighting.
+a procedural sky shader, a rotating starfield, volumetric clouds and haze over
+the sea with weather presets, and getters that other systems (the ocean) read
+for lighting.
 
 ## Quick start
 
 Instance `sky_system.tscn`. It contains a `WorldEnvironment` with the sky
-material, `SunLight` / `MoonLight` (`DirectionalLight3D`), optional
+material and a compositor holding the haze effect (`SkyHazeEffect`),
+`SunLight` / `MoonLight` (`DirectionalLight3D`), optional
 `SunVisual` / `MoonVisual` meshes and a `Starfield` sphere. Remove any other
 `WorldEnvironment` or directional light from the scene.
 
@@ -27,8 +29,15 @@ To drive the ocean, set `OceanSystem.sky_source_path` to this node.
   horizon colours) and curves (sun/moon/ambient energy, star visibility).
   Missing entries are filled with built-in defaults.
 - **Visuals** — `render_bodies_in_sky` draws sun/moon disks in the sky shader
-  (default) instead of the billboard meshes; `follow_active_camera` keeps the
-  starfield and meshes centred on the camera.
+  (default) instead of the billboard meshes. The sun disk has its real
+  radiance (the sun light's irradiance over the disk's solid angle), so it is
+  the brightest thing in view; its glow comes from the haze. The radiance map
+  that lights and reflects the scene keeps a faint disk and halo
+  (`radiance_sun_disk_strength`, `radiance_sun_halo_strength`), as a disk that
+  bright would sparkle in glossy reflections; `follow_active_camera` keeps the
+  starfield and meshes centred on the camera. `sea_level`: world height of the
+  sea. The sea's horizon is `√(2h/R)` below eye level for a camera `h` above it,
+  and the sky reaches down to there; the haze is densest at it.
 
 ## Clouds
 
@@ -39,7 +48,8 @@ and in the ocean's sky reflection. They need a RenderingDevice (Forward+ or
 Mobile renderer).
 
 - `clouds_enabled`, `cloud_preset` (a `CloudPreset`). Presets ship in
-  `cloud_presets/`: `clear`, `fair`, `cloudy`, `overcast`, `rain`, `storm`.
+  `cloud_presets/`: `clear`, `fair`, `cloudy`, `overcast`, `rain`, `storm`,
+  `sea_fog`.
 - In the editor a new `cloud_preset` applies at once. At runtime it blends in
   over `cloud_transition_seconds`; `transition_clouds_to(preset, seconds)`
   does the same with an explicit duration. Every `CloudPreset` field
@@ -58,6 +68,40 @@ Mobile renderer).
 - `get_cloud_cubemap()` returns the cloud texture (or `null` while clouds are
   off) for other shaders, with a full mip chain for blurred lookups; `get_cloud_state()` the blended weather on screen.
 
+## Haze
+
+Aerosol haze or fog over the sea, part of the weather: every `CloudPreset`
+has `haze_visibility` (m, at sea level: clear marine air 50–70 km, mist 1–5 km,
+fog under 1 km; it also sets how bright the glow around the sun is),
+`haze_scale_height` (m over which it thins to 1/e: about 1 km for haze, 150 m
+for sea fog) and `haze_anisotropy` (how small the glow around the sun is). It
+blends with the rest of the weather, the visibility geometrically, and works
+with clouds disabled too.
+
+- Model (`shaders/haze.gdshaderinc`): extinction `3.912 / visibility` at sea
+  level, falling off exponentially with height. A ray's optical depth follows
+  its height above the curved sea, so the horizon itself is fully hazed while
+  the sky overhead stays clear. Light scattered toward the eye: the sun (or the
+  moon at night, as the clouds pick it) with a sharp forward lobe of
+  Henyey-Greenstein `g = haze_anisotropy` (about 0.97) holding 75 % of the
+  scattering plus 25 % isotropic, the shape of Mie scattering by sea salt and
+  droplets (mean g about 0.73), which is the glow around the sun; plus an
+  isotropic part, the sky profile's horizon colour (the light a thick
+  horizontal path of lit air sends) and the light the haze took out of the
+  sunbeam, scattered on many times. Single scattering; the haze is grey.
+- Where it applies: the sky shader puts it over the sky and clouds along each
+  view ray to infinity; the starfield dims through it; `SkyHazeEffect` (in the
+  WorldEnvironment's compositor) puts it over every opaque pixel by its depth;
+  the sun and moon lights are dimmed by the haze between the sea and space
+  (a hazy low sun gets weak); consumers that draw their own sky read it with
+  the haze getters (the ocean's sky reflection).
+- `SkyHazeEffect` runs after the transparent pass (with MSAA the transparent
+  pass resolves over anything written earlier), so transparent surfaces are
+  hazed by the opaque depth behind them. It costs about 0.1 ms at 2580 × 1080.
+  It needs a RenderingDevice; the Compatibility renderer shows the sky's haze
+  only. Godot's own Environment fog stays off: its height fog depends only on
+  a pixel's height, not its distance.
+
 ### Limits
 
 - Clouds are drawn as seen from below the cloud base: the camera altitude is
@@ -73,7 +117,12 @@ Mobile renderer).
 the body), `get_sun_color()`, `get_sky_top_color()`, `get_sky_horizon_color()`,
 `get_sky_ground_horizon_color()`, `get_sky_ground_bottom_color()`,
 `get_sun_visibility()`, `get_moon_visibility()`, `get_moon_phase()`,
-`get_night_factor()`, `get_star_visibility()`, `get_time_of_day()`.
+`get_night_factor()`, `get_star_visibility()`, `get_time_of_day()`. Haze:
+`get_haze_density()` (extinction at sea level, 1/m; 0 = none),
+`get_haze_scale_height()`, `get_haze_anisotropy()`,
+`get_haze_light_direction()`, `get_haze_light_color()` (radiance per unit
+phase function) and `get_haze_ambient_color()`, as `shaders/haze.gdshaderinc`
+uses them.
 
 Signals: `time_of_day_changed(time_of_day)`, `lighting_changed`.
 
@@ -152,5 +201,6 @@ the runtime texture is never stored in `materials/*.tres`.
 `sky_system.gd` / `.tscn`, `sky_profile.gd` (`SkyProfile`),
 `cloud_preset.gd` (`CloudPreset`), `cloud_presets/*.tres`,
 `cloud_renderer.gd` (`CloudRenderer`), `shaders/compute/cloud_*.glsl` and
-`cloud_noise.glslinc`, `shaders/sky.gdshader`, `shaders/starfield.gdshader`,
+`cloud_noise.glslinc`, `sky_haze_effect.gd` (`SkyHazeEffect`),
+`shaders/haze.gdshaderinc`, `shaders/sky.gdshader`, `shaders/starfield.gdshader`,
 `shaders/celestial_disk.gdshader`, `materials/*.tres`.

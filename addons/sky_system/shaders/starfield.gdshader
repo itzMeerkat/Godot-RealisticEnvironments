@@ -1,6 +1,8 @@
 shader_type spatial;
 render_mode unshaded, cull_front, depth_draw_never, blend_add;
 
+#include "res://addons/sky_system/shaders/haze.gdshaderinc"
+
 uniform float star_visibility : hint_range(0.0, 8.0) = 0.0;
 uniform float star_brightness : hint_range(0.0, 8.0) = 1.0;
 uniform float star_density : hint_range(16.0, 512.0) = 72.0;
@@ -45,6 +47,11 @@ void fragment() {
 	float intensity = is_star * star_shape * twinkle * horizon_fade * star_visibility * star_brightness;
 	if (clouds_enabled) {
 		intensity *= 1.0 - texture(cloud_cubemap, dir).a;
+	}
+	// Dimmed by the haze in front (its own glow is in the sky behind).
+	if (haze_density > 0.0) {
+		float camera_height = CAMERA_POSITION_WORLD.y - sea_level;
+		intensity *= exp(-haze_optical_depth(camera_height, dir, haze_ray_length(camera_height, dir)));
 	}
 	vec3 star_color = mix(vec3(0.62, 0.72, 1.0), vec3(1.0, 0.92, 0.72), hash12(cell + 7.31));
 	ALBEDO = star_color * intensity;

@@ -10,6 +10,11 @@ render_mode world_vertex_coords, cull_disabled;
  * Light under the surface follows the water's optical properties (water_absorption,
  * water_scattering): the deep-water color (water_body_albedo()) and the light that
  * crosses thin wave crests and scatters toward the eye (crest_scatter(), in light()).
+ *
+ * The water is drawn on the earth's curve (earth_curvature_drop()), so it ends at a real
+ * horizon. Everything else about the surface (waves, queries, hulls, planar reflections)
+ * stays flat: water_world_position is the flat position, and only the drawn vertex and
+ * the shading normal follow the curve.
  */
 
 #define MAX_CASCADES 8
@@ -17,6 +22,8 @@ render_mode world_vertex_coords, cull_disabled;
 #define MAX_LOD_LEVELS 16
 // Solid angle (sr) of the sun's (and the moon's) disk, about 0.53 degrees across.
 #define LIGHT_DISK_SOLID_ANGLE 6.8e-5
+// Radius (m) of the sphere the water is drawn on (OceanSystem.EARTH_RADIUS).
+#define EARTH_RADIUS 6371000.0
 #define WATER_IOR 1.333
 // Scattering by water molecules (1/m; Morel: 0.00193 (550 nm / lambda)^4.32 at the sRGB
 // primaries' wavelengths), and the share particles scatter backward (Petzold, about 1.8%).
@@ -33,6 +40,11 @@ render_mode world_vertex_coords, cull_disabled;
 #define FOAM_TRANSMISSION_POWER 4.0
 // Refinement steps of the planar reflection hit along a pixel's reflected ray.
 #define PLANAR_REFLECTION_STEPS 3
+// Haze over the reflected sky (sky_haze_*), as the sky system's haze.gdshaderinc.
+#define HAZE_STEPS 12
+#define HAZE_TOP_SCALE_HEIGHTS 12.0
+#define HAZE_MAX_RAY_LENGTH 1000000.0
+#define HAZE_FORWARD_SHARE 0.75
 
 uniform vec4 foam_color : source_color;
 // Optical properties of the water, per sRGB channel (1/m): absorption, and scattering by
@@ -61,6 +73,13 @@ uniform float sky_sun_visibility : hint_range(0.0, 1.0) = 1.0;
 // radiance, a opacity, with a mip chain for rough reflections. Set at runtime by OceanSystem.
 uniform bool sky_clouds_enabled = false;
 uniform samplerCube sky_cloud_cubemap : filter_linear_mipmap;
+// Haze over the sea from the sky source (SkySystem.get_haze_*()); 0 density = none.
+uniform float sky_haze_density = 0.0; // extinction at sea level (1/m)
+uniform float sky_haze_scale_height = 1000.0;
+uniform float sky_haze_anisotropy = 0.97; // Henyey-Greenstein g of the forward lobe
+uniform vec3 sky_haze_light_direction = vec3(0.0, 1.0, 0.0);
+uniform vec3 sky_haze_light_color = vec3(0.0); // radiance per unit phase function (1/sr)
+uniform vec3 sky_haze_ambient_color = vec3(0.0); // isotropic in-scattered radiance
 uniform bool sky_reflection_enabled = true;
 uniform float sky_reflection_strength : hint_range(0.0, 2.0) = 1.0;
 uniform float sky_reflection_f0 : hint_range(0.0, 0.12) = 0.02;
@@ -120,6 +139,7 @@ uniform sampler2DArray normals_b : hint_normal, filter_linear_mipmap, repeat_ena
 uniform vec4 wave_frame_blends[MAX_CASCADES]; // x: weight of map B (OceanSystem._get_cascade_frame_blend())
 
 varying float foam_factor;
+// Flat (uncurved) world position of the displaced surface.
 varying vec3 water_world_position;
 // Fragment -> light(): multiplies the specular highlight (foam covers it).
 varying float light_specular_scale;
@@ -130,6 +150,74 @@ varying float crest_transmission;
 varying vec4 glitter_random;
 // Facets in a fine and in a coarse cell, fine-to-coarse blend, current-to-next pattern blend.
 varying vec4 glitter_cells;
+
+/**
+ * How far the water at world XZ is drawn below the plane touching the sphere under
+ * the camera (distance^2 / 2R, exact to well below a millimeter within 100 km).
+ */
+float earth_curvature_drop(vec2 xz, vec3 camera_position) {
+	vec2 offset = xz - camera_position.xz;
+	return dot(offset, offset) * (0.5 / EARTH_RADIUS);
+}
+
+/**
+ * Turns a direction from the flat frame at world XZ into the world: the sphere's
+ * surface there is tilted away from the camera by (distance / R) radians.
+ */
+vec3 earth_curvature_tilt(vec3 direction, vec2 xz, vec3 camera_position) {
+	vec2 offset = xz - camera_position.xz;
+	float distance_xz = length(offset);
+	vec2 radial = distance_xz > 0.0 ? offset / distance_xz : vec2(0.0);
+	float angle = distance_xz / EARTH_RADIUS;
+	float s = sin(angle);
+	float c = cos(angle);
+	float along = dot(direction.xz, radial);
+	// Rotation in the (radial, up) plane that takes up to (sin, cos).
+	float tilted_along = along * c + direction.y * s;
+	float tilted_up = direction.y * c - along * s;
+	vec2 horizontal = direction.xz + radial * (tilted_along - along);
+	return vec3(horizontal.x, tilted_up, horizontal.y);
+}
+
+// Haze, copied from the sky system's haze.gdshaderinc (change them together): density
+// falls off exponentially with height above the curved sea.
+float haze_mean_density(float height_a, float height_b) {
+	float a = max(height_a, 0.0) / sky_haze_scale_height;
+	float x = max(height_b, 0.0) / sky_haze_scale_height - a;
+	float density_a = exp(-a);
+	return abs(x) < 1e-4 ? density_a * (1.0 - 0.5 * x) : density_a * (1.0 - exp(-x)) / x;
+}
+
+float haze_optical_depth(float start_height, vec3 direction, float ray_length) {
+	float curvature = (1.0 - direction.y * direction.y) * (0.5 / EARTH_RADIUS);
+	float step_length = ray_length / float(HAZE_STEPS);
+	float previous_height = start_height;
+	float sum = 0.0;
+	for (int i = 1; i <= HAZE_STEPS; ++i) {
+		float t = step_length * float(i);
+		float height = start_height + t * (direction.y + t * curvature);
+		sum += haze_mean_density(previous_height, height);
+		previous_height = height;
+	}
+	return sky_haze_density * step_length * sum;
+}
+
+float haze_ray_length(float start_height, vec3 direction) {
+	float curvature = (1.0 - direction.y * direction.y) * (0.5 / EARTH_RADIUS);
+	float rise = max(HAZE_TOP_SCALE_HEIGHTS * sky_haze_scale_height - start_height, 0.0);
+	float denominator = direction.y + sqrt(direction.y * direction.y + 4.0 * curvature * rise);
+	return min(2.0 * rise / max(denominator, 1e-9), HAZE_MAX_RAY_LENGTH);
+}
+
+/** The sky seen from the sea surface along direction, through the haze. */
+vec3 haze_apply_to_sky(vec3 sky, vec3 direction) {
+	float transmittance = exp(-haze_optical_depth(0.0, direction, haze_ray_length(0.0, direction)));
+	float g = sky_haze_anisotropy;
+	float denominator = 1.0 + g * g - 2.0 * g * dot(direction, sky_haze_light_direction);
+	float lobe = (1.0 - g * g) / (4.0 * PI * denominator * sqrt(denominator));
+	float phase = mix(1.0 / (4.0 * PI), lobe, HAZE_FORWARD_SHARE);
+	return sky * transmittance + (sky_haze_light_color * phase + sky_haze_ambient_color) * (1.0 - transmittance);
+}
 
 /** 1 inside the interaction window, fading to 0 before its absorbing border. */
 float interaction_fade(vec2 xz) {
@@ -199,6 +287,7 @@ void vertex() {
 		VERTEX.y += sample_interaction(VERTEX.xz).x * interaction_fade(VERTEX.xz);
 	}
 	water_world_position = VERTEX;
+	VERTEX.y -= earth_curvature_drop(VERTEX.xz, CAMERA_POSITION_WORLD);
 }
 
 /** Filter weights for a cubic B-spline. */
@@ -639,8 +728,9 @@ void fragment() {
 		gradient = (gradient + interaction_gradient) * normal_strength;
 		slope_variance *= normal_strength * normal_strength;
 		world_normal = normalize(vec3(-gradient.x, 1.0, -gradient.y));
-		NORMAL = (VIEW_MATRIX * vec4(world_normal, 0.0)).xyz;
 	}
+	world_normal = earth_curvature_tilt(world_normal, water_world_position.xz, CAMERA_POSITION_WORLD);
+	NORMAL = (VIEW_MATRIX * vec4(world_normal, 0.0)).xyz;
 	float foam_coverage = max(max(foam_factor, hull_edge_foam), interaction_foam);
 	// Reveal the coverage as foam lace: white where the pattern exceeds 1 - coverage,
 	// with a narrow edge. On the rest-position grid (UV), so the lace rides with the
@@ -657,7 +747,8 @@ void fragment() {
 	float foam_opacity = mix(0.35, 1.0, foam_coverage);
 	foam_factor = mix(revealed_foam, foam_coverage, saturate(detail_lod * 0.25)) * foam_opacity;
 
-	vec3 view_direction_world = safe_normalize_vec3(CAMERA_POSITION_WORLD - water_world_position, vec3(0.0, 0.0, 1.0));
+	vec3 drawn_position = water_world_position - vec3(0.0, earth_curvature_drop(water_world_position.xz, CAMERA_POSITION_WORLD), 0.0);
+	vec3 view_direction_world = safe_normalize_vec3(CAMERA_POSITION_WORLD - drawn_position, vec3(0.0, 0.0, 1.0));
 	vec3 sun_dir = safe_normalize_vec3(sky_sun_direction, vec3(0.0, 0.2, -1.0));
 	vec3 reflection_direction = reflect(-view_direction_world, world_normal);
 	// A ray reflected below the horizon hits the next wave and goes on upward;
@@ -687,6 +778,11 @@ void fragment() {
 	sky_reflection_amount = saturate(sky_reflection_strength * sky_fresnel * clear_water_mask);
 	if (sky_reflection_enabled) {
 		reflected_sky_color = sample_rough_procedural_environment(reflection_direction, effective_reflection_roughness);
+		// The water is at the bottom of the haze; the camera's own path to the water
+		// is hazed afterwards, with the rest of the scene (SkyHazeEffect).
+		if (sky_haze_density > 0.0) {
+			reflected_sky_color = haze_apply_to_sky(reflected_sky_color, reflection_direction);
+		}
 	}
 	vec3 reflected_color = reflected_sky_color;
 

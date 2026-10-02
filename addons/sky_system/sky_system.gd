@@ -19,6 +19,11 @@ const CLOUD_MOONLIGHT_SUN_HEIGHT := -0.12
 ## Share of the horizon colour that lights cloud bases from below (sea and
 ## horizon glow). Dimmed further by CloudPreset.ambient_light_scale.
 const CLOUD_BASE_AMBIENT := 0.4
+## As shaders/haze.gdshaderinc.
+const HAZE_EARTH_RADIUS := 6371000.0
+const HAZE_STEPS := 12
+const HAZE_TOP_SCALE_HEIGHTS := 12.0
+const HAZE_MAX_RAY_LENGTH := 1000000.0
 
 ## Normalized day time. 0 is midnight, 0.25 sunrise, 0.5 noon, 0.75 sunset.
 @export_range(0.0, 1.0, 0.001) var time_of_day := 0.35 :
@@ -80,6 +85,13 @@ const CLOUD_BASE_AMBIENT := 0.4
 		_update_sky()
 
 @export_group("Visuals")
+## World height of the sea surface. The sea's horizon lies below eye level by
+## sqrt(2 h / R) for a camera h meters above it (earth radius R), and the sky
+## shows down to there. The haze (CloudPreset haze_*) is densest here.
+@export var sea_level := 0.0 :
+	set(value):
+		sea_level = value
+		_update_sky()
 ## Keeps starfield and optional body meshes centered around the active camera.
 @export var follow_active_camera := true
 ## Renders sun/moon disks directly in the sky shader instead of using mesh billboards.
@@ -190,6 +202,19 @@ var _star_visibility := 0.0
 var _sun_color := Color.WHITE
 var _sky_top_color := Color.WHITE
 var _sky_horizon_color := Color.WHITE
+## pi * sun color * energy above the haze and clouds (the sky shader's disk).
+var _sun_irradiance := Color.BLACK
+# Haze over the sea, from the weather (CloudPreset haze_*), recomputed by _update_sky().
+## Extinction at sea level (1/m); 0 without a cloud_preset.
+var _haze_density := 0.0
+var _haze_scale_height := 1000.0
+var _haze_anisotropy := 0.97
+## The light scattered by the haze: the sun, or the moon at night (as the clouds).
+var _haze_light_direction := Vector3.UP
+## Radiance per unit phase function (1/sr): pi * light color * energy after the haze.
+var _haze_light_color := Color.BLACK
+## Isotropic in-scattered radiance.
+var _haze_ambient_color := Color.BLACK
 
 ## Null while clouds are disabled or unavailable.
 var _cloud_renderer : CloudRenderer
@@ -245,6 +270,8 @@ func _process(delta : float) -> void:
 	_elapsed_time += delta
 	_update_visual_positions()
 	_update_starfield_time()
+	if _cloud_transition_duration > 0.0:
+		_process_weather_transition(delta)
 	if _cloud_renderer:
 		_process_clouds(delta)
 
@@ -333,6 +360,39 @@ func get_cloud_state() -> CloudPreset:
 	return _cloud_state if _cloud_renderer else null
 
 
+## Haze over the sea for consumers that draw their own sky (the ocean's sky
+## reflection), as shaders/haze.gdshaderinc: extinction at sea level (1/m), 0
+## when there is none.
+func get_haze_density() -> float:
+	return _haze_density
+
+
+## Height (m) over which the haze thins to 1/e.
+func get_haze_scale_height() -> float:
+	return _haze_scale_height
+
+
+## Henyey-Greenstein g of the haze's forward lobe (75 % of its scattering; the
+## rest is isotropic).
+func get_haze_anisotropy() -> float:
+	return _haze_anisotropy
+
+
+## Toward the light the haze scatters (the sun, or the moon at night).
+func get_haze_light_direction() -> Vector3:
+	return _haze_light_direction
+
+
+## Radiance the haze scatters from that light per unit phase function (1/sr).
+func get_haze_light_color() -> Color:
+	return _haze_light_color
+
+
+## Isotropic radiance the haze scatters (skylight and multiply scattered light).
+func get_haze_ambient_color() -> Color:
+	return _haze_ambient_color
+
+
 ## Makes preset the cloud_preset, blending to it over seconds (0 = at once).
 func transition_clouds_to(preset : CloudPreset, seconds : float) -> void:
 	_next_cloud_transition_seconds = seconds
@@ -366,13 +426,118 @@ func _update_sky() -> void:
 		return
 	var active_profile = _get_profile()
 	var cloud_light_scale := _get_cloud_sun_light_scale()
-	_update_light(_sun_light, _sun_direction, _sun_color, active_profile.sample_sun_energy(_profile_sample_time) * _solar_energy_from_height(_sun_direction.y) * sun_energy_multiplier * cloud_light_scale)
-	_update_light(_moon_light, _moon_direction, active_profile.sample_moon_color(_profile_sample_time), active_profile.sample_moon_energy(_profile_sample_time) * _moon_visibility * _moon_phase * _night_factor * moon_energy_multiplier * cloud_light_scale)
+	_update_haze_medium()
+	var clear_sun_energy : float = active_profile.sample_sun_energy(_profile_sample_time) * _solar_energy_from_height(_sun_direction.y) * sun_energy_multiplier
+	var sun_energy := clear_sun_energy * cloud_light_scale
+	# The disk is drawn behind the clouds and the haze, which dim it themselves.
+	_sun_irradiance = _sun_color * (clear_sun_energy * PI)
+	var moon_color : Color = active_profile.sample_moon_color(_profile_sample_time)
+	var moon_energy : float = active_profile.sample_moon_energy(_profile_sample_time) * _moon_visibility * _moon_phase * _night_factor * moon_energy_multiplier * cloud_light_scale
+	# The lights reach the scene through the haze between the sea and space.
+	var sun_transmittance := _get_haze_transmittance_to_space(_sun_direction)
+	var moon_transmittance := _get_haze_transmittance_to_space(_moon_direction)
+	_update_light(_sun_light, _sun_direction, _sun_color, sun_energy * sun_transmittance)
+	_update_light(_moon_light, _moon_direction, moon_color, moon_energy * moon_transmittance)
+	if _sun_direction.y >= CLOUD_MOONLIGHT_SUN_HEIGHT:
+		_update_haze_lighting(_sun_direction, _sun_color * sun_energy, sun_transmittance)
+	else:
+		_update_haze_lighting(_moon_direction, moon_color * moon_energy, moon_transmittance)
 	_update_environment(active_profile, _sun_direction, _moon_direction, _sun_visibility, _moon_visibility)
+	_push_haze_parameters()
 	_update_starfield_visibility(active_profile.sample_star_visibility(_star_visibility) * star_brightness)
 	_update_visual_colors(active_profile, _sun_visibility, _moon_visibility)
 	_update_visual_positions()
 	lighting_changed.emit()
+
+
+## The haze of the current weather (none without a cloud_preset).
+func _update_haze_medium() -> void:
+	if _cloud_state == null:
+		_haze_density = 0.0
+		return
+	_haze_density = 3.912 / _cloud_state.haze_visibility
+	_haze_scale_height = _cloud_state.haze_scale_height
+	_haze_anisotropy = _cloud_state.haze_anisotropy
+
+
+## In-scattering of a light whose color * energy above the haze is irradiance and
+## which reaches the sea with transmittance.
+func _update_haze_lighting(direction : Vector3, irradiance : Color, transmittance : float) -> void:
+	_haze_light_direction = direction
+	_haze_light_color = irradiance * (PI * transmittance)
+	# Isotropic part. The sky profile's horizon color is the light an optically thick
+	# horizontal path of lit air sends toward the eye, which the haze, being thick
+	# along such paths, sends too. On top: the light the haze took out of the beam,
+	# scattered on many times, about half of it upward.
+	var cloud_ambient_scale := _cloud_state.ambient_light_scale if _cloud_renderer else 1.0
+	_haze_ambient_color = _sky_horizon_color * cloud_ambient_scale + irradiance * (0.5 * maxf(direction.y, 0.0) * (1.0 - transmittance))
+
+
+## Share of a light from direction that crosses the haze down to the sea.
+func _get_haze_transmittance_to_space(direction : Vector3) -> float:
+	if _haze_density <= 0.0:
+		return 1.0
+	return exp(-_get_haze_optical_depth(0.0, direction, _get_haze_ray_length(0.0, direction)))
+
+
+## As haze_optical_depth() in shaders/haze.gdshaderinc.
+func _get_haze_optical_depth(start_height : float, direction : Vector3, ray_length : float) -> float:
+	var curvature := (1.0 - direction.y * direction.y) * (0.5 / HAZE_EARTH_RADIUS)
+	var step_length := ray_length / HAZE_STEPS
+	var previous_height := start_height
+	var sum := 0.0
+	for i in range(1, HAZE_STEPS + 1):
+		var t := step_length * i
+		var height := start_height + t * (direction.y + t * curvature)
+		var a := maxf(previous_height, 0.0) / _haze_scale_height
+		var x := maxf(height, 0.0) / _haze_scale_height - a
+		sum += exp(-a) * (1.0 - 0.5 * x if absf(x) < 1e-4 else (1.0 - exp(-x)) / x)
+		previous_height = height
+	return _haze_density * step_length * sum
+
+
+## As haze_ray_length() in shaders/haze.gdshaderinc.
+func _get_haze_ray_length(start_height : float, direction : Vector3) -> float:
+	var curvature := (1.0 - direction.y * direction.y) * (0.5 / HAZE_EARTH_RADIUS)
+	var rise := maxf(HAZE_TOP_SCALE_HEIGHTS * _haze_scale_height - start_height, 0.0)
+	var denominator := direction.y + sqrt(direction.y * direction.y + 4.0 * curvature * rise)
+	return minf(2.0 * rise / maxf(denominator, 1e-9), HAZE_MAX_RAY_LENGTH)
+
+
+## Haze uniforms of the sky and starfield (shaders/haze.gdshaderinc) and the
+## parameters of the WorldEnvironment's SkyHazeEffect.
+func _push_haze_parameters() -> void:
+	var materials : Array[Material] = []
+	if _world_environment and _world_environment.environment and _world_environment.environment.sky and _world_environment.environment.sky.sky_material:
+		materials.push_back(_world_environment.environment.sky.sky_material)
+	if _starfield and _starfield.material_override:
+		materials.push_back(_starfield.material_override)
+	for material in materials:
+		material.set(&"shader_parameter/sea_level", sea_level)
+		material.set(&"shader_parameter/haze_density", _haze_density)
+		material.set(&"shader_parameter/haze_scale_height", _haze_scale_height)
+		material.set(&"shader_parameter/haze_anisotropy", _haze_anisotropy)
+		material.set(&"shader_parameter/haze_light_direction", _haze_light_direction)
+		material.set(&"shader_parameter/haze_light_color", Vector3(_haze_light_color.r, _haze_light_color.g, _haze_light_color.b))
+		material.set(&"shader_parameter/haze_ambient_color", Vector3(_haze_ambient_color.r, _haze_ambient_color.g, _haze_ambient_color.b))
+	var effect := _get_haze_effect()
+	if effect:
+		effect.sea_level = sea_level
+		effect.haze_density = _haze_density
+		effect.haze_scale_height = _haze_scale_height
+		effect.haze_anisotropy = _haze_anisotropy
+		effect.light_direction = _haze_light_direction
+		effect.light_color = _haze_light_color
+		effect.ambient_color = _haze_ambient_color
+
+
+func _get_haze_effect() -> SkyHazeEffect:
+	if _world_environment == null or _world_environment.compositor == null:
+		return null
+	for effect in _world_environment.compositor.compositor_effects:
+		if effect is SkyHazeEffect:
+			return effect
+	return null
 
 
 func _update_light(light : DirectionalLight3D, direction : Vector3, color : Color, energy : float) -> void:
@@ -405,6 +570,7 @@ func _update_environment(active_profile, sun_direction : Vector3, moon_direction
 			shader_material.set_shader_parameter(&"ground_horizon_color", horizon_color.darkened(0.25))
 			shader_material.set_shader_parameter(&"sun_direction", sun_direction)
 			shader_material.set_shader_parameter(&"sun_color", sun_color)
+			shader_material.set_shader_parameter(&"sun_irradiance", Vector3(_sun_irradiance.r, _sun_irradiance.g, _sun_irradiance.b))
 			shader_material.set_shader_parameter(&"sun_visibility", sun_visibility if render_bodies_in_sky else 0.0)
 			shader_material.set_shader_parameter(&"radiance_sun_disk_strength", radiance_sun_disk_strength)
 			shader_material.set_shader_parameter(&"radiance_sun_halo_strength", radiance_sun_halo_strength)
@@ -642,14 +808,16 @@ func _start_cloud_transition() -> void:
 	_cloud_transition_duration = seconds
 
 
+func _process_weather_transition(delta : float) -> void:
+	_cloud_transition_elapsed += delta
+	var weight := clampf(_cloud_transition_elapsed / _cloud_transition_duration, 0.0, 1.0)
+	_cloud_state.blend(_cloud_transition_from, cloud_preset, smoothstep(0.0, 1.0, weight))
+	if weight >= 1.0:
+		_cloud_transition_duration = 0.0
+	_update_sky()
+
+
 func _process_clouds(delta : float) -> void:
-	if _cloud_transition_duration > 0.0:
-		_cloud_transition_elapsed += delta
-		var weight := clampf(_cloud_transition_elapsed / _cloud_transition_duration, 0.0, 1.0)
-		_cloud_state.blend(_cloud_transition_from, cloud_preset, smoothstep(0.0, 1.0, weight))
-		if weight >= 1.0:
-			_cloud_transition_duration = 0.0
-		_update_sky()
 	_cloud_wind_offset += _get_cloud_wind_velocity() * delta
 	_cloud_evolution_time += _cloud_state.evolution_speed * delta
 

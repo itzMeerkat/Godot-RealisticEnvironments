@@ -1,7 +1,8 @@
 @tool
 class_name CloudPreset
 extends Resource
-## One cloud weather state (clear, overcast, storm, ...) for SkySystem.
+## One weather state (clear, overcast, storm, sea fog, ...) for SkySystem: the
+## clouds and the haze over the sea.
 ## SkySystem crossfades between presets by interpolating every field, so all of
 ## them must stay plain numbers.
 
@@ -12,7 +13,11 @@ const BLENDED_PROPERTIES : Array[StringName] = [
 	&"shape_scale", &"detail_scale", &"detail_erosion",
 	&"density", &"density_variation", &"scattering_albedo",
 	&"evolution_speed", &"sun_light_scale", &"ambient_light_scale",
+	&"haze_visibility", &"haze_scale_height", &"haze_anisotropy",
 ]
+## Blended fields interpolated geometrically: haze_visibility, so that the haze
+## thickens evenly through a transition from clear air to fog.
+const GEOMETRIC_BLENDED_PROPERTIES : Array[StringName] = [&"haze_visibility"]
 
 @export_group("Coverage")
 ## Average share of the sky covered by cloud. 1 is overcast.
@@ -61,8 +66,28 @@ const BLENDED_PROPERTIES : Array[StringName] = [
 ## Multiplies the environment ambient light under this cloud cover.
 @export_range(0.0, 2.0, 0.01) var ambient_light_scale := 1.0
 
+@export_group("Haze")
+## Visibility at sea level in meters: how far a dark object stays visible (2 %
+## contrast; the haze's extinction there is 3.912 / visibility). Clear marine air
+## 50-70 km, haze 5-20 km, mist 1-5 km, fog below 1 km. It also sets how bright
+## the glow around the sun is.
+@export_range(100.0, 100000.0, 10.0, "or_greater", "exp") var haze_visibility := 50000.0
+## Height (m) over which the haze thins to 1/e: about 1 km for the haze of the
+## marine boundary layer, 100-200 m for sea fog.
+@export_range(10.0, 5000.0, 1.0, "or_greater") var haze_scale_height := 1000.0
+## How sharply the haze scatters light forward: Henyey-Greenstein g of the
+## forward lobe that holds 75 % of its scattering (the rest is isotropic), so the
+## mean g is 0.75 times this; about 0.97 for marine haze (coarse sea salt), 0.98
+## for fog droplets. Higher makes the glow around the sun smaller.
+@export_range(0.0, 0.99, 0.01) var haze_anisotropy := 0.97
+
 
 ## Sets every blended field to the interpolation between two presets.
 func blend(from : CloudPreset, to : CloudPreset, weight : float) -> void:
 	for property in BLENDED_PROPERTIES:
-		set(property, lerpf(from.get(property), to.get(property), weight))
+		var from_value : float = from.get(property)
+		var to_value : float = to.get(property)
+		if property in GEOMETRIC_BLENDED_PROPERTIES:
+			set(property, exp(lerpf(log(from_value), log(to_value), weight)))
+		else:
+			set(property, lerpf(from_value, to_value, weight))

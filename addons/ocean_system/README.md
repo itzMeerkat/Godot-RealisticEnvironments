@@ -91,7 +91,8 @@ Heights match the rendered mesh:
 - **Sky Reflection** — procedural sky reflection, `sun_specular_strength`, sun
   glitter; `manual_*` values are used when no sky source is set or the source
   lacks a value. A sky source with `get_cloud_cubemap()` (SkySystem) also puts
-  its clouds into the reflection.
+  its clouds into the reflection, and one with `get_haze_density()` its haze
+  (see Lighting below).
 - **Planar Reflections** — mirrored-camera reflection of scene geometry,
   resolution, strength, and clipping of submerged pixels.
 - **External Wind** — `use_external_wind`, `wind_source_path`.
@@ -100,9 +101,11 @@ Heights match the rendered mesh:
   `max_wave_phase_step` (default 0.1: how far, as a share of its shortest
   wavelength, a cascade's waves may travel between FFT updates; sets each
   cascade's update rate).
-- **Mesh** — `mesh_base_cell_size` (vertex spacing nearest the camera) and
-  `mesh_extent` (radius of rendered water, default 7 km). Nothing fades with
-  distance: geometry, normals and foam are filtered by their mip chains.
+- **Mesh** — `mesh_base_cell_size` (vertex spacing nearest the camera). The
+  water is drawn on the earth's curve out to the horizon (see Mesh below), as
+  far as the camera's far plane allows: keep that beyond the horizon (the demo
+  cameras use 60 km). Nothing fades with distance: geometry, normals and foam
+  are filtered by their mip chains.
 
 ## Wave cascades (`WaveCascadeParameters`)
 
@@ -394,9 +397,10 @@ ocean is a quadtree of nodes on a fixed world grid; every node is the same
 16 × 16 quad grid, `mesh_base_cell_size × 16 × 2^level` meters wide. Each frame
 `_update_lod_grid()` selects nodes around the active camera:
 
-- start from top-level nodes covering `mesh_extent`;
-- skip nodes outside `mesh_extent` or the camera frustum (bounds grown by
-  `LOD_WAVE_MARGIN` for displaced waves);
+- start from top-level nodes covering the radius out to the horizon (below),
+  capped by the camera's far plane;
+- skip nodes outside that radius or the camera frustum (bounds grown by
+  `LOD_WAVE_MARGIN` for displaced waves and lowered by the curvature);
 - split a node while it comes within the next finer level's range
   (`range(L) = 3 × node size(L)`, 3D distance), else draw it.
 
@@ -413,6 +417,19 @@ without cracks. The same continuous vertex spacing picks the displacement mip
 (texels as wide as the spacing): coarse vertices read prefiltered waves instead
 of aliasing them, and nothing slides because vertices never move with the
 camera.
+
+**Earth curvature.** The vertex shader lowers every vertex by `d² / 2R`
+(`d` horizontal distance from the camera, `R` = `EARTH_RADIUS`, 6371 km), so the
+water lies on a sphere touching the sea under the camera, and the fragment
+shader tilts the normal by `d / R` to match. The sea then ends at a real
+horizon, `√(2Rh)` away and `√(2h/R)` below eye level for a camera `h` above
+the water (5 km at 2 m, 23 km at 40 m), with the sky behind it (SkySystem's
+sky continues down to there, see its `sea_level`). The mesh radius is that
+distance plus `√(2R · LOD_WAVE_MARGIN)`, how far beyond it a crest still
+shows. Near the camera the drop is tiny (3 mm at 200 m, 8 cm at 1 km). Only
+the drawing curves: `water_world_position`, surface queries, buoyancy,
+hull cutouts, planar reflections and the interaction simulation stay flat,
+so objects far away float slightly above the drawn sea (0.3 m at 2 km).
 
 ### Water shader (`shaders/spatial/water.gdshader`)
 
@@ -491,8 +508,14 @@ Lighting:
 - `SPECULAR` is 0, which turns off the engine's sky reflection; the shader
   adds its own as `EMISSION`: procedural sky reflection (Fresnel, blurred by
   the same roughness; the sky gradient over three directions, clouds from the
-  cloud cubemap's mip whose blur matches the reflection lobe) and planar
-  reflection.
+  cloud cubemap's mip whose blur matches the reflection lobe, then the haze
+  between the water and the sky) and planar reflection.
+- Haze (`haze_apply_to_sky()`): with a sky source that has the haze getters
+  (SkySystem), the reflected sky is seen through the haze along the reflected
+  ray, from the sea surface. It is a copy of the sky system's
+  `shaders/haze.gdshaderinc`; change both together. The haze between the
+  camera and the water is not the water's: the sky system's compositor effect
+  puts it over the whole scene.
 - Reflections use one reflectance: Fresnel averaged over the same slopes as the
   roughness (Bruneton et al. 2010, mean normal plus slope deviation
   `alpha / √2`). Schlick on the filtered normal would make distant water a

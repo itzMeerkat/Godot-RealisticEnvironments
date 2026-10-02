@@ -24,6 +24,10 @@ const MAX_LOD_NODES := 1024
 const LOD_INSTANCE_FLOATS := 16
 ## Room for displaced waves around a node, for frustum culling (m).
 const LOD_WAVE_MARGIN := 12.0
+## The water is drawn on a sphere of this radius (meters) touching the camera's
+## sea-level point (water.gdshader, EARTH_RADIUS), so it ends at a real horizon.
+## Only the drawing: surface queries, buoyancy and the simulation stay flat.
+const EARTH_RADIUS := 6371000.0
 const SURFACE_QUERY_BYTES_PER_CASCADE := OceanSurfaceQueries.BYTES_PER_CASCADE
 const WATER_DEBUG_VIEW_NORMAL := 0
 
@@ -394,9 +398,6 @@ const WATER_DEBUG_VIEW_NORMAL := 0
 ## level doubles it, about every 3 * 16 * spacing meters of distance. Smaller
 ## values give smoother near displacement but more vertices.
 @export_range(0.25, 16.0, 0.25) var mesh_base_cell_size := 1.0
-## Radius of the rendered water around the camera in meters. The edge follows
-## the mesh's nodes, so it is only roughly circular.
-@export_range(256.0, 20000.0, 1.0, "or_greater") var mesh_extent := 7000.0
 
 ## How far, as a share of its shortest wavelength, a cascade's waves may travel
 ## between two FFT updates; frames in between blend the two. Each cascade gets
@@ -461,8 +462,10 @@ var _lod_node_count := 0
 var _lod_ranges := PackedFloat32Array()
 var _lod_morph_starts := PackedFloat32Array()
 var _lod_top_level := 0
-## mesh_base_cell_size and mesh_extent the ranges were built for.
-var _lod_ranges_key := Vector2.ZERO
+## mesh_base_cell_size the ranges were built for.
+var _lod_ranges_key := 0.0
+## Radius of the water drawn this frame (see _update_lod_grid()).
+var _lod_radius := 0.0
 var _lod_camera_position := Vector3.ZERO
 var _lod_frustum : Array[Plane] = []
 
@@ -520,7 +523,7 @@ func _push_all_shader_parameters() -> void:
 	_set_water_shader_parameter(&'foam_detail_tile_size', foam_detail_tile_size)
 	_update_sky_shading_static_parameters()
 	_update_sky_lighting_shader_parameters()
-	_lod_ranges_key = Vector2.ZERO
+	_lod_ranges_key = 0.0
 	_update_lod_ranges()
 	_update_scales_uniform()
 	_bind_wave_textures()
@@ -822,6 +825,18 @@ func _update_sky_lighting_shader_parameters() -> void:
 	var cloud_cubemap : Texture = sky_source.call(&'get_cloud_cubemap') if sky_source != null and sky_source.has_method(&'get_cloud_cubemap') else null
 	_set_water_shader_parameter(&'sky_clouds_enabled', cloud_cubemap != null)
 	_set_water_shader_parameter(&'sky_cloud_cubemap', cloud_cubemap)
+	# Optional haze over the sea, put over the reflected sky; a source without it
+	# lacks the methods.
+	var has_haze := sky_source != null and sky_source.has_method(&'get_haze_density')
+	_set_water_shader_parameter(&'sky_haze_density', float(sky_source.call(&'get_haze_density')) if has_haze else 0.0)
+	if has_haze:
+		_set_water_shader_parameter(&'sky_haze_scale_height', float(sky_source.call(&'get_haze_scale_height')))
+		_set_water_shader_parameter(&'sky_haze_anisotropy', float(sky_source.call(&'get_haze_anisotropy')))
+		_set_water_shader_parameter(&'sky_haze_light_direction', sky_source.call(&'get_haze_light_direction'))
+		var light_color : Color = sky_source.call(&'get_haze_light_color')
+		var ambient_color : Color = sky_source.call(&'get_haze_ambient_color')
+		_set_water_shader_parameter(&'sky_haze_light_color', Vector3(light_color.r, light_color.g, light_color.b))
+		_set_water_shader_parameter(&'sky_haze_ambient_color', Vector3(ambient_color.r, ambient_color.g, ambient_color.b))
 
 # The sky source is duck-typed and may provide only some values; missing ones
 # fall back to the manual_* exports.
@@ -928,9 +943,18 @@ func _update_lod_grid() -> void:
 	_lod_camera_position = camera.global_position
 	_lod_frustum = camera.get_frustum()
 	_lod_node_count = 0
+	# Out to the horizon: the farthest point of the sphere visible from the camera's
+	# height, plus how far beyond it a wave crest LOD_WAVE_MARGIN high still shows.
+	# Nothing past the far plane is drawn anyway.
+	var height := maxf(_lod_camera_position.y - global_position.y, 0.0)
+	_lod_radius = minf(sqrt(2.0 * EARTH_RADIUS * height) + sqrt(2.0 * EARTH_RADIUS * LOD_WAVE_MARGIN), camera.far)
+	var top_level := _get_lod_top_level(_lod_radius)
+	if top_level != _lod_top_level:
+		_lod_top_level = top_level
+		_set_water_shader_parameter(&'lod_top_level', _lod_top_level)
 	var top_size := mesh_base_cell_size * LOD_GRID * float(1 << _lod_top_level)
-	var first := ((Vector2(_lod_camera_position.x, _lod_camera_position.z) - Vector2.ONE * mesh_extent) / top_size).floor()
-	var root_count := int(ceil(2.0 * mesh_extent / top_size)) + 1
+	var first := ((Vector2(_lod_camera_position.x, _lod_camera_position.z) - Vector2.ONE * _lod_radius) / top_size).floor()
+	var root_count := int(ceil(2.0 * _lod_radius / top_size)) + 1
 	for iz in root_count:
 		for ix in root_count:
 			_select_lod_node((first + Vector2(ix, iz)) * top_size, _lod_top_level)
@@ -940,7 +964,8 @@ func _update_lod_grid() -> void:
 	RenderingServer.multimesh_set_visible_instances(_lod_multimesh, _lod_node_count)
 	# Instance transforms are identity, so culling needs explicit bounds (local space).
 	var center := to_local(_lod_camera_position)
-	RenderingServer.multimesh_set_custom_aabb(_lod_multimesh, AABB(Vector3(center.x - mesh_extent, -LOD_WAVE_MARGIN, center.z - mesh_extent), Vector3(2.0 * mesh_extent, 2.0 * LOD_WAVE_MARGIN, 2.0 * mesh_extent)))
+	var drop := _get_curvature_drop(_lod_radius)
+	RenderingServer.multimesh_set_custom_aabb(_lod_multimesh, AABB(Vector3(center.x - _lod_radius, -LOD_WAVE_MARGIN - drop, center.z - _lod_radius), Vector3(2.0 * _lod_radius, 2.0 * LOD_WAVE_MARGIN + drop, 2.0 * _lod_radius)))
 
 ## Splits a node while it comes within the next finer level's range. A node may
 ## end up drawn at a finer level than its distance needs; its vertices are then
@@ -949,9 +974,14 @@ func _select_lod_node(origin : Vector2, level : int) -> void:
 	var size := mesh_base_cell_size * LOD_GRID * float(1 << level)
 	var camera_xz := Vector2(_lod_camera_position.x, _lod_camera_position.z)
 	var nearest := Vector2(clampf(camera_xz.x, origin.x, origin.x + size), clampf(camera_xz.y, origin.y, origin.y + size))
-	if nearest.distance_to(camera_xz) > mesh_extent:
+	var nearest_horizontal := nearest.distance_to(camera_xz)
+	if nearest_horizontal > _lod_radius:
 		return
-	var bounds := AABB(Vector3(origin.x - LOD_WAVE_MARGIN, global_position.y - LOD_WAVE_MARGIN, origin.y - LOD_WAVE_MARGIN), Vector3(size + 2.0 * LOD_WAVE_MARGIN, 2.0 * LOD_WAVE_MARGIN, size + 2.0 * LOD_WAVE_MARGIN))
+	# Lowered by the curvature between the node's nearest and farthest points.
+	var farthest := Vector2(maxf(absf(camera_xz.x - origin.x), absf(camera_xz.x - origin.x - size)), maxf(absf(camera_xz.y - origin.y), absf(camera_xz.y - origin.y - size)))
+	var top := global_position.y + LOD_WAVE_MARGIN - _get_curvature_drop(nearest_horizontal)
+	var bottom := global_position.y - LOD_WAVE_MARGIN - _get_curvature_drop(farthest.length())
+	var bounds := AABB(Vector3(origin.x - LOD_WAVE_MARGIN, bottom, origin.y - LOD_WAVE_MARGIN), Vector3(size + 2.0 * LOD_WAVE_MARGIN, top - bottom, size + 2.0 * LOD_WAVE_MARGIN))
 	if not _is_in_lod_frustum(bounds):
 		return
 	# The shader measures morph distances to the undisplaced vertex; this is the
@@ -962,7 +992,7 @@ func _select_lod_node(origin : Vector2, level : int) -> void:
 		for child in 4:
 			_select_lod_node(origin + Vector2(child & 1, child >> 1) * half, level - 1)
 		return
-	assert(_lod_node_count < MAX_LOD_NODES, "Ocean LOD node budget exceeded; raise mesh_base_cell_size or lower mesh_extent.")
+	assert(_lod_node_count < MAX_LOD_NODES, "Ocean LOD node budget exceeded; raise mesh_base_cell_size or lower the camera's far plane.")
 	var offset := _lod_node_count * LOD_INSTANCE_FLOATS + 12
 	_lod_buffer[offset] = origin.x
 	_lod_buffer[offset + 1] = origin.y
@@ -981,17 +1011,26 @@ func _is_in_lod_frustum(bounds : AABB) -> bool:
 			return false
 	return true
 
-## Rebuilds the level ranges when mesh_base_cell_size or mesh_extent changed.
-func _update_lod_ranges() -> void:
-	var key := Vector2(mesh_base_cell_size, mesh_extent)
-	if key == _lod_ranges_key:
-		return
-	_lod_ranges_key = key
+## How far below the camera's tangent plane the drawn water is at a horizontal
+## distance (meters), as the shader's earth_curvature_drop().
+func _get_curvature_drop(distance : float) -> float:
+	return distance * distance * 0.5 / EARTH_RADIUS
+
+## The coarsest level whose range covers the radius.
+func _get_lod_top_level(radius : float) -> int:
 	var base_range := LOD_RANGE_FACTOR * mesh_base_cell_size * LOD_GRID
-	_lod_top_level = 0
-	while base_range * float(1 << _lod_top_level) < mesh_extent:
-		_lod_top_level += 1
-	assert(_lod_top_level < MAX_LOD_LEVELS, "Too many ocean LOD levels for mesh_extent / mesh_base_cell_size.")
+	var level := 0
+	while base_range * float(1 << level) < radius:
+		level += 1
+	assert(level < MAX_LOD_LEVELS, "Too many ocean LOD levels for the camera's far plane / mesh_base_cell_size.")
+	return level
+
+## Rebuilds the level ranges when mesh_base_cell_size changed.
+func _update_lod_ranges() -> void:
+	if mesh_base_cell_size == _lod_ranges_key:
+		return
+	_lod_ranges_key = mesh_base_cell_size
+	var base_range := LOD_RANGE_FACTOR * mesh_base_cell_size * LOD_GRID
 	_lod_ranges.resize(MAX_LOD_LEVELS)
 	_lod_morph_starts.resize(MAX_LOD_LEVELS)
 	for level in MAX_LOD_LEVELS:

@@ -3,7 +3,7 @@ extends CanvasLayer
 
 const RESOLUTIONS := [128, 256, 512, 1024]
 const CLOUD_PRESET_DIR := "res://addons/sky_system/cloud_presets/"
-const CLOUD_PRESET_NAMES : Array[String] = ["clear", "fair", "cloudy", "overcast", "rain", "storm"]
+const CLOUD_PRESET_NAMES : Array[String] = ["clear", "fair", "cloudy", "overcast", "rain", "storm", "sea_fog"]
 const PANEL_SIZE := Vector2(420, 560)
 
 var water : OceanSystem
@@ -307,11 +307,11 @@ func _add_mesh_controls(parent : VBoxContainer) -> void:
 	title.add_theme_font_size_override("font_size", 15)
 	parent.add_child(title)
 
-	var extent := _add_float_row(parent, "Mesh Extent", "Radius of the rendered water around the camera.", 256.0, 20000.0, 10.0, true)
-	extent.name = "MeshExtent"
-	extent.value_changed.connect(func(value : float) -> void:
+	var cell_size := _add_float_row(parent, "Base Cell Size", "Vertex spacing (m) of the finest mesh level, nearest the camera. The water reaches the horizon at any value.", 0.25, 16.0, 0.25, false)
+	cell_size.name = "MeshBaseCellSize"
+	cell_size.value_changed.connect(func(value : float) -> void:
 		if not _is_syncing and water:
-			water.mesh_extent = value
+			water.mesh_base_cell_size = value
 	)
 
 
@@ -435,7 +435,7 @@ func _add_sky_controls(parent : VBoxContainer) -> void:
 			sky_system.clouds_enabled = is_pressed
 	)
 
-	var cloud_preset := _add_option_row(parent, "Cloud Weather", "Cloud preset; blends in over Cloud Transition seconds.")
+	var cloud_preset := _add_option_row(parent, "Weather", "Weather preset (clouds and haze); blends in over Cloud Transition seconds.")
 	cloud_preset.name = "SkyCloudPreset"
 	for i in CLOUD_PRESET_NAMES.size():
 		cloud_preset.add_item(CLOUD_PRESET_NAMES[i].capitalize(), i)
@@ -526,7 +526,7 @@ func _populate_values() -> void:
 	_set_named_spin("SkyHorizonBoost", water.sky_horizon_boost)
 	_set_named_spin("SunSpecularStrength", water.sun_specular_strength)
 	_set_named_spin("SunGlitterDensity", water.sun_glitter_density)
-	_set_named_spin("MeshExtent", water.mesh_extent)
+	_set_named_spin("MeshBaseCellSize", water.mesh_base_cell_size)
 	_set_named_check("UseExternalWind", water.use_external_wind)
 	if wind_source:
 		_set_named_spin("ExternalWindSpeed", _get_wind_source_speed())

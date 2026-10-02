@@ -4,7 +4,7 @@
 
 [resource]
 script = ExtResource("1_cloud_preset")
-coverage = 0.3
+coverage = 0.2
 coverage_variation = 0.3
 weather_scale = 25000.0
 cloud_type = 0.45
@@ -20,6 +20,6 @@ scattering_albedo = 0.97
 evolution_speed = 0.003
 sun_light_scale = 1.0
 ambient_light_scale = 1.0
-haze_visibility = 70000.0
-haze_scale_height = 1000.0
-haze_anisotropy = 0.97
+haze_visibility = 700.0
+haze_scale_height = 150.0
+haze_anisotropy = 0.98

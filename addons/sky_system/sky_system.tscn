@@ -6,6 +6,7 @@
 [ext_resource type="Shader" uid="uid://c06rajf110qna" path="res://addons/sky_system/shaders/celestial_disk.gdshader" id="3_disk_shader"]
 [ext_resource type="Material" path="res://addons/sky_system/materials/starfield.tres" id="4_starfield"]
 [ext_resource type="Resource" path="res://addons/sky_system/cloud_presets/fair.tres" id="5_cloud_preset"]
+[ext_resource type="Script" uid="uid://fi3uxaroikar" path="res://addons/sky_system/sky_haze_effect.gd" id="6_haze_effect"]
 
 [sub_resource type="Curve" id="Curve_2q5k3"]
 _limits = [0.0, 2.0, 0.0, 1.0]
@@ -62,7 +63,7 @@ background_mode = 2
 sky = SubResource("Sky_dynamic")
 ambient_light_color = Color(0.281, 0.546, 0.83599997, 1)
 ambient_light_energy = 0.6494806
-tonemap_mode = 2
+tonemap_mode = 4
 ssr_enabled = true
 ssao_enabled = true
 ssil_enabled = true
@@ -71,6 +72,18 @@ sdfgi_min_cell_size = 0.1953125
 sdfgi_y_scale = 0
 sdfgi_energy = 0.7
 adjustment_enabled = true
+
+[sub_resource type="CompositorEffect" id="CompositorEffect_haze"]
+resource_local_to_scene = false
+resource_name = ""
+enabled = true
+effect_callback_type = 4
+needs_motion_vectors = false
+needs_normal_roughness = false
+script = ExtResource("6_haze_effect")
+
+[sub_resource type="Compositor" id="Compositor_haze"]
+compositor_effects = Array[CompositorEffect]([SubResource("CompositorEffect_haze")])
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_sun_disk"]
 render_priority = -5
@@ -105,11 +118,12 @@ cloud_preset = ExtResource("5_cloud_preset")
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=1481807339]
 environment = SubResource("Environment_dynamic")
+compositor = SubResource("Compositor_haze")
 
 [node name="SunLight" type="DirectionalLight3D" parent="." unique_id=1793493974]
-transform = Transform3D(0.3846633, -0.44443837, 0.809017, 0, 0.8764538, 0.48148546, -0.92305696, -0.18520975, 0.33713973, 0, 0, 0)
+transform = Transform3D(0.3846633, -0.44443837, 0.809017, 0, 0.8764538, 0.48148546, -0.92305696, -0.18520974, 0.33713973, 0, 0, 0)
 light_color = Color(1, 0.96, 0.82, 1)
-light_energy = 0.8988355
+light_energy = 0.7258925
 shadow_enabled = true
 shadow_bias = 0.0
 shadow_normal_bias = 6.464

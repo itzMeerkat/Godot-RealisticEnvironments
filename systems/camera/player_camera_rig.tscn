@@ -18,4 +18,4 @@ shape = SubResource("SphereShape3D_camera_collision")
 
 [node name="Camera3D" type="Camera3D" parent="YawPivot/PitchPivot/SpringArm3D"]
 current = true
-far = 8000.0
+far = 60000.0
