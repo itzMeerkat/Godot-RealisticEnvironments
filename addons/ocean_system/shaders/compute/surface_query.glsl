@@ -6,12 +6,13 @@
  * would be far too expensive.
  *
  * Heights include the interaction simulation's eta = h + p rather than the
- * visible h, so a hull's own rest depression (h = -p) never costs buoyancy, and
- * only outside hulls (render .w = hull coverage). Under a hull, eta is mostly
- * the water that hull radiated itself; fed back into its buoyancy after the
- * readback delay it acts as a lagging spring and pumps energy into heave. Hulls
- * feel the incident (FFT) waves; bodies without a hull footprint also feel
- * wakes and splashes.
+ * visible h, so a hull's own rest depression (h = -p) never costs buoyancy,
+ * and only outside hulls (render .w = hull coverage): under a hull, eta is not
+ * a surface anything floats on. Points whose w is 0 leave the simulation out:
+ * OceanSystem.submit_surface_query() clears it for owners on a body that makes
+ * waves itself, since the simulation is one summed field and that body's own
+ * waves, read back after the query delay, act as a lagging spring and drive
+ * it. Such bodies feel the incident (FFT) waves only.
  */
 
 #define WORKGROUP_SIZE 64U
@@ -43,7 +44,7 @@ struct SurfaceSample {
 };
 
 layout(std430, set = 0, binding = 0) restrict readonly buffer PointBuffer {
-	vec4 points[];
+	vec4 points[]; // xyz = world position, w = 1 to include the interaction simulation
 };
 
 layout(std430, set = 0, binding = 2) restrict writeonly buffer SampleBuffer {
@@ -80,8 +81,8 @@ float sample_interaction_eta(vec2 p) {
 	return mix(mix(e00, e10, f.x), mix(e01, e11, f.x), f.y) * fade;
 }
 
-float sample_total_height(vec2 p) {
-	return ocean_sample_surface_height(p) + sample_interaction_eta(p);
+float sample_total_height(vec2 p, bool with_interaction) {
+	return ocean_sample_surface_height(p) + (with_interaction ? sample_interaction_eta(p) : 0.0);
 }
 
 void main() {
@@ -91,17 +92,20 @@ void main() {
 	}
 
 	vec2 p = points[index].xz;
+	bool with_interaction = points[index].w > 0.5;
 	vec2 source = ocean_invert_horizontal_displacement(p);
 	vec3 visual_displacement;
 	vec3 velocity;
 	ocean_sample_displacement_and_velocity(source, visual_displacement, velocity);
-	visual_displacement.y += sample_interaction_eta(p);
+	if (with_interaction) {
+		visual_displacement.y += sample_interaction_eta(p);
+	}
 
 	float e = max(normal_sample_distance, 0.001);
-	float h_l = sample_total_height(p + vec2(-e, 0.0));
-	float h_r = sample_total_height(p + vec2( e, 0.0));
-	float h_b = sample_total_height(p + vec2(0.0, -e));
-	float h_f = sample_total_height(p + vec2(0.0,  e));
+	float h_l = sample_total_height(p + vec2(-e, 0.0), with_interaction);
+	float h_r = sample_total_height(p + vec2( e, 0.0), with_interaction);
+	float h_b = sample_total_height(p + vec2(0.0, -e), with_interaction);
+	float h_f = sample_total_height(p + vec2(0.0,  e), with_interaction);
 	vec3 normal = normalize(vec3(h_l - h_r, 2.0 * e, h_b - h_f));
 
 	samples[index].displacement_height = vec4(visual_displacement, water_level + visual_displacement.y);

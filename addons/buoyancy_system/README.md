@@ -54,7 +54,9 @@ cache is rebuilt when volumes are collected and whenever a volume emits
 edited). Probes must therefore stay rigid relative to the body.
 
 Each `_physics_process` it transforms the cached positions by the body
-transform, submits them with `ocean.submit_surface_query(self, points)`, reads
+transform, submits them with `ocean.submit_surface_query(self, points, rigid_body)`
+(so a body that pushes water through a `HullWaterFootprint` does not read its
+own simulated waves back), reads
 the latest completed result, and for every physical probe applies at the probe
 position:
 

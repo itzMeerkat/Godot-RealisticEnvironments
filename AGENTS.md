@@ -181,9 +181,13 @@ before touching its code; this file only records what is easy to get wrong.
   its own `RenderingContext` on the main `RenderingDevice`. It simulates
   `η = h + p` (wave deviation from the hull-conforming rest state), not the raw
   height `h`. Its render texture is `(h, η, foam, hull coverage)`: the water
-  shader adds `h` and foam; surface queries add `η · (1 − coverage)`. Never
-  feed a hull's own `η` back into its buoyancy: with the readback delay it
-  makes boats oscillate by themselves on still water. It steps once per
+  shader adds `h` and foam; surface queries add `η · (1 − coverage)`, except
+  for owners on a body that makes waves (a `PhysicsBody3D` carrying a
+  footprint that pushes water; `OceanSystem.submit_surface_query`'s `body`).
+  Those read the FFT waves only: `η` is one summed field, so a body cannot
+  separate its own waves, and with the readback delay they make it oscillate
+  by itself. Don't reintroduce a geometric own-wave mask for buoyancy (probes
+  are not guaranteed to sit inside hull coverage). It steps once per
   physics tick (`OceanSystem._physics_process`). Its operator is an exact FFT
   of `g·|k|`; `interaction_grid_size` must stay a power of two (the FFT pass
   holds one 1024-wide line in shared memory).

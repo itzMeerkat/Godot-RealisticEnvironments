@@ -36,7 +36,7 @@ var _device : RenderingDevice
 var _shader : RID
 var _pipeline : RID
 var _slots : Array[QuerySlot] = []
-var _queued := {}   # owner_id -> PackedVector3Array
+var _queued := {}   # owner_id -> [PackedVector3Array points, bool include interaction]
 var _owners := {}   # owner_id -> true, for owners that have not been released
 var _results := {}  # owner_id -> WaterSurfaceQueryResult
 var _retired := false
@@ -72,11 +72,12 @@ func _init(device : RenderingDevice) -> void:
 	_displacement_sampler = _device.sampler_create(create_displacement_sampler_state())
 
 
-func submit(owner_id : int, points : PackedVector3Array) -> void:
+## include_interaction adds the interaction simulation's waves to the heights.
+func submit(owner_id : int, points : PackedVector3Array, include_interaction : bool) -> void:
 	assert(not _retired, "Surface query submitted after the ocean was freed.")
 	assert(not points.is_empty(), "Surface queries need at least one point.")
 	_owners[owner_id] = true
-	_queued[owner_id] = points
+	_queued[owner_id] = [points, include_interaction]
 
 
 ## Returns null until the first result for owner_id has been read back.
@@ -112,13 +113,13 @@ func dispatch(displacement_a : RID, displacement_b : RID, cascade_data : PackedB
 	var points := PackedVector3Array()
 	var requests : Array[Dictionary] = []
 	for owner_id in _queued:
-		var owner_points : PackedVector3Array = _queued[owner_id]
-		requests.push_back({"owner_id": owner_id, "offset": points.size(), "count": owner_points.size()})
+		var owner_points : PackedVector3Array = _queued[owner_id][0]
+		requests.push_back({"owner_id": owner_id, "offset": points.size(), "count": owner_points.size(), "interaction": _queued[owner_id][1]})
 		points.append_array(owner_points)
 	_queued.clear()
 
 	_ensure_slot_capacity(slot, points.size(), cascade_data.size())
-	var point_data := _pack_points(points)
+	var point_data := _pack_points(points, requests)
 	_device.buffer_update(slot.point_buffer, 0, point_data.size(), point_data)
 	_device.buffer_update(slot.cascade_buffer, 0, cascade_data.size(), cascade_data)
 
@@ -255,16 +256,19 @@ func _make_sampled_uniform(binding : int, texture : RID) -> RDUniform:
 	return uniform
 
 
-func _pack_points(points : PackedVector3Array) -> PackedByteArray:
+## xyz = position, w = 1 to include the interaction simulation (per request).
+func _pack_points(points : PackedVector3Array, requests : Array[Dictionary]) -> PackedByteArray:
 	var data := PackedByteArray()
 	data.resize(points.size() * BYTES_PER_POINT)
-	for i in points.size():
-		var offset := i * BYTES_PER_POINT
-		var point := points[i]
-		data.encode_float(offset, point.x)
-		data.encode_float(offset + 4, point.y)
-		data.encode_float(offset + 8, point.z)
-		data.encode_float(offset + 12, 0.0)
+	for request in requests:
+		var interaction := 1.0 if request["interaction"] else 0.0
+		for i in range(request["offset"], request["offset"] + request["count"]):
+			var offset := i * BYTES_PER_POINT
+			var point := points[i]
+			data.encode_float(offset, point.x)
+			data.encode_float(offset + 4, point.y)
+			data.encode_float(offset + 8, point.z)
+			data.encode_float(offset + 12, interaction)
 	return data
 
 

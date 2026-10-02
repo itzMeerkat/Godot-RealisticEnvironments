@@ -335,7 +335,7 @@ func _rebuild_probe_cache() -> void:
 func _submit_points(body_transform : Transform3D) -> void:
 	for i in _points.size():
 		_points[i] = body_transform * _body_offsets[i]
-	ocean.submit_surface_query(self, _points)
+	ocean.submit_surface_query(self, _points, rigid_body)
 
 
 func _update_state(state : BuoyancyProbeState, position : Vector3, sample : WaterSurfaceSample, water_height : float, applied_force : Vector3, submersion : float, now : float) -> void:

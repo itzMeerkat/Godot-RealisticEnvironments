@@ -639,6 +639,18 @@ wake-enabled footprint now makes foam, not only the player's.
   and `get_interaction_dropped_time()` removed); and grid-scale modes were
   barely damped, now a viscous term `ν·∇²(η_n − η_{n−1})`
   (`interaction_viscosity`, default 0.1 m²/s).
+- **Own waves in buoyancy (2026-10-02).** Coverage did not keep the caravel's
+  own `η` out: its generated probes sit at the widest beam, ~1 m outside its
+  waterline, and read up to 1.2 m of its own waves (stern probes ~90%).
+  `submit_surface_query` now leaves `η` out for owners on a body that carries
+  a footprint pushing water (its `body` argument, default the owner's nearest
+  `PhysicsBody3D`). Since `η` is one summed field, wave-making bodies feel no
+  simulated waves at all, including other ships'; bodies that make none
+  still ride wakes and splashes. Measured: both boats' queries read 0 m of `η`.
+  Not addressed: incident FFT waves passing under a hull that does not follow
+  them change `p` and are re-radiated (caravel: 0.5–1 m around it in the
+  demo sea, spikes to 2 m). Candidate fix: measure the draft against a plane
+  fitted to the incident surface over the hull, not the surface per cell.
 - **Cutout height.** `HullProfile` gained a B channel (station top) and
   `HullWaterFootprint.cutout_height_offset` extends the cutout above each
   station's top with the width at the top. All profiles were re-baked.

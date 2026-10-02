@@ -25,7 +25,7 @@ an error and disables itself.
 
 | Member | Purpose |
 | --- | --- |
-| `submit_surface_query(owner: Object, points: PackedVector3Array)` | Queue points for this frame's GPU surface query. The latest submission per owner wins. |
+| `submit_surface_query(owner: Object, points: PackedVector3Array, body: PhysicsBody3D = null)` | Queue points for this frame's GPU surface query. The latest submission per owner wins. Heights leave the interaction simulation out when `body` (default: the owner's nearest `PhysicsBody3D`) makes waves itself. |
 | `get_surface_query_result(owner: Object) -> WaterSurfaceQueryResult` | Latest completed result for `owner`, or `null` before the first one arrives. |
 | `release_surface_query(owner: Object)` | Forget an owner (call from `_exit_tree`). |
 | `get_skipped_surface_query_dispatch_count()` | Frames whose dispatch waited because all readback slots were busy. |
@@ -75,9 +75,14 @@ Heights match the rendered mesh:
 - Normals come from central differences of the resulting height field (0.25 m
   step).
 - The interaction simulation's `η` is added outside hulls (see
-  [Interaction simulation](#interaction-simulation-wakes)): wakes and splashes
-  lift bodies without a hull footprint, while hulls feel only the incident
-  (FFT) waves.
+  [Interaction simulation](#interaction-simulation-wakes)), except for owners
+  on a body that makes waves itself: `submit_surface_query(owner, points, body)`
+  leaves `η` out when `body` (default: the owner's nearest `PhysicsBody3D`)
+  carries a `HullWaterFootprint` that pushes water. `η` is one summed field, so
+  such a body cannot tell its own waves from others'; read back a few frames
+  late, its own waves act as a lagging spring and drive it. Wave-making bodies
+  feel the incident (FFT) waves only; bodies that make no waves (no footprint,
+  or `wake_enabled` off) also ride wakes and splashes.
 
 ## Inspector groups
 
@@ -226,8 +231,8 @@ What it produces:
   hulls radiate Kelvin wakes and bow waves.
 - `add_water_impulse(position, radius, amplitude)` queues a splash.
 - The water shader adds the simulated height, slope and foam.
-- Surface queries include it outside hulls, so bodies without a hull footprint
-  feel wakes and splashes.
+- Surface queries include it outside hulls for bodies that make no waves
+  themselves, so floating debris rides wakes and splashes.
 - It does not run in the editor.
 
 Settings: the **Interaction** export group (grid size, cell size, damping,
@@ -262,8 +267,12 @@ How it works:
   oscillated with growing amplitude. So the pressure pass also writes hull
   coverage (1 inside the waterline and up to one `wake_edge_softness` outside
   it, where edge probes sit, fading out by two), and queries weight `η` by
-  `1 − coverage`. Hulls feel the incident waves; their own radiation is
-  approximated by `BuoyantBody.heave_damping`.
+  `1 − coverage`. Coverage alone did not keep a hull's own `η` out of its
+  buoyancy: the caravel's generated probes sit at its widest beam, about 1 m
+  outside its waterline, and read up to 1.2 m of its own waves. So bodies that
+  make waves now skip `η` entirely (see [Query semantics](#query-semantics));
+  coverage still keeps the water under a hull from lifting anything else.
+  Their own radiation is approximated by `BuoyantBody.heave_damping`.
 - **Step** (once per physics tick, from `OceanSystem._physics_process`, so each
   step sees exactly one new pose of every hull; stepping per frame made hull
   motion stutter into the forcing and ring at grid scale):
@@ -565,7 +574,8 @@ plus cached uniform sets), and the shader and pipeline, directly on the main
   simply cleared.
 
 The shader runs one thread per point and writes height, displacement, normal
-and velocity (48 bytes per sample). Displacement sampling lives in
+and velocity (48 bytes per sample). Points are `vec4`s: xyz the position, w 1
+to add the interaction simulation (set per owner by `submit_surface_query`). Displacement sampling lives in
 `shaders/compute/ocean_sampling.glslinc`, shared through `#include`. It covers:
 
 - the cascade buffer and displacement texture declarations (sampled through a

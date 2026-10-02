@@ -622,9 +622,18 @@ func get_cascade_update_interval(params : WaveCascadeParameters) -> float:
 ## Queues points for this frame's surface query. Call it every tick with the
 ## current points; the latest submission per owner wins. Owners must call
 ## release_surface_query() when they stop querying (e.g. in _exit_tree).
-func submit_surface_query(owner: Object, points: PackedVector3Array) -> void:
+##
+## Heights include the interaction simulation's waves, except for owners on a
+## body that makes waves itself (a HullWaterFootprint that pushes water sits on
+## it). The simulation is one summed field, so such a body cannot tell its own
+## waves from others'; read back after the query delay, its own waves act as a
+## lagging spring and drive it. body defaults to the owner's nearest
+## PhysicsBody3D (itself or an ancestor).
+func submit_surface_query(owner: Object, points: PackedVector3Array, body: PhysicsBody3D = null) -> void:
 	assert(owner != null, "Surface queries need a stable owner object.")
-	_surface_queries.submit(owner.get_instance_id(), points)
+	if body == null and owner is Node:
+		body = _find_physics_body(owner)
+	_surface_queries.submit(owner.get_instance_id(), points, not _makes_waves(body))
 
 ## Latest completed query for owner, or null until the first readback arrives
 ## (a few frames after the first submit). The result's points may differ from
@@ -754,8 +763,7 @@ func _pack_interaction_hulls(camera_position : Vector3) -> PackedFloat32Array:
 	var candidates : Array[Dictionary] = []
 	for node in get_tree().get_nodes_in_group(&"ocean_hull"):
 		var footprint := node as HullWaterFootprint
-		# Footprints without a baked profile report their own error and contribute nothing.
-		if footprint.profile == null or not footprint.wake_enabled or not footprint.is_visible_in_tree():
+		if not _pushes_water(footprint):
 			continue
 		var sphere := footprint.get_world_bounding_sphere()
 		var distance := Vector2(sphere.x - camera_position.x, sphere.z - camera_position.z).length() - sphere.w
@@ -779,6 +787,26 @@ func _pack_interaction_hulls(camera_position : Vector3) -> PackedFloat32Array:
 		_append_vector4(data, Vector4(center_velocity.x, center_velocity.y, center_velocity.z, 0.0))
 		_append_vector4(data, Vector4(footprint.angular_velocity.x, footprint.angular_velocity.y, footprint.angular_velocity.z, 0.0))
 	return data
+
+## Whether a footprint forces the interaction simulation (when near enough).
+## Footprints without a baked profile report their own error and contribute nothing.
+func _pushes_water(footprint : HullWaterFootprint) -> bool:
+	return footprint.profile != null and footprint.wake_enabled and footprint.is_visible_in_tree()
+
+## Whether body carries a footprint that pushes water.
+func _makes_waves(body : PhysicsBody3D) -> bool:
+	if body == null or _interaction == null:
+		return false
+	for node in get_tree().get_nodes_in_group(&"ocean_hull"):
+		var footprint := node as HullWaterFootprint
+		if _pushes_water(footprint) and _find_physics_body(footprint) == body:
+			return true
+	return false
+
+static func _find_physics_body(node : Node) -> PhysicsBody3D:
+	while node != null and not node is PhysicsBody3D:
+		node = node.get_parent()
+	return node as PhysicsBody3D
 
 ## Rows of the footprint's world-to-local affine transform: xyz = basis row, w = origin.
 func _get_world_to_local_rows(footprint : HullWaterFootprint) -> Array[Vector4]:
