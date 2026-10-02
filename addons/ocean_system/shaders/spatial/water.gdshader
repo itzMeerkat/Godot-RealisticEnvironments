@@ -115,13 +115,15 @@ group_uniforms cascade_data;
 uniform vec4 map_scales[MAX_CASCADES];               // Scales for displacement/normal maps. Packed: [uv scale, displacement scale, normal scale]
 uniform vec4 spectrum_blend_states[MAX_CASCADES];    // Packed: [active layer, pending layer, active weight, pending weight]; pending weight is 0 unless a spectrum crossfade is running
 uniform int num_cascades = 0;
+// Two maps of each kind, A and B, hold every cascade's two latest FFT frames in either order
+// (WaveGenerator); wave_frame_blends[i].x is cascade i's weight of B for the current time.
 // Displacement maps carry mip chains: coarse vertices read prefiltered waves.
-uniform sampler2DArray displacements : filter_linear_mipmap, repeat_enable; // Each layer represents one wave cascade.
+uniform sampler2DArray displacements_a : filter_linear_mipmap, repeat_enable; // Each layer represents one wave cascade.
+uniform sampler2DArray displacements_b : filter_linear_mipmap, repeat_enable;
 // Normal maps: xy mean slope, z mean squared slope, w foam; full mip chain (mip_downsample.glsl).
-uniform sampler2DArray normals : hint_normal, filter_linear_mipmap, repeat_enable; // Each layer represents one wave cascade.
-uniform sampler2DArray previous_displacements : filter_linear_mipmap, repeat_enable;
-uniform sampler2DArray previous_normals : hint_normal, filter_linear_mipmap, repeat_enable;
-uniform float wave_blend_alpha = 1.0;
+uniform sampler2DArray normals_a : hint_normal, filter_linear_mipmap, repeat_enable;
+uniform sampler2DArray normals_b : hint_normal, filter_linear_mipmap, repeat_enable;
+uniform vec4 wave_frame_blends[MAX_CASCADES]; // x: weight of map B (OceanSystem._get_cascade_frame_blend())
 
 varying float foam_factor;
 varying vec3 water_world_position;
@@ -182,7 +184,7 @@ void vertex() {
 	// Read displacements from displacement maps, prefiltered to the vertex spacing
 	// (a mip whose texels are as wide as the spacing): waves shorter than the
 	// mesh can show are averaged away instead of aliasing.
-	float map_size = float(textureSize(displacements, 0).x);
+	float map_size = float(textureSize(displacements_a, 0).x);
 	vec3 displacement = vec3(0);
 	for (uint i = 0U; i < uint(num_cascades); ++i) {
 		vec4 scales = map_scales[i];
@@ -191,11 +193,12 @@ void vertex() {
 		float lod = log2(max(vertex_spacing * map_size * max(scales.x, scales.y), 1.0));
 		vec4 blend_state = spectrum_blend_states[i];
 		vec3 active_coords = vec3(UV*scales.xy, blend_state.x);
-		vec3 cascade_displacement = mix(textureLod(previous_displacements, active_coords, lod).xyz, textureLod(displacements, active_coords, lod).xyz, wave_blend_alpha) * blend_state.z;
+		float b_weight = wave_frame_blends[i].x;
+		vec3 cascade_displacement = mix(textureLod(displacements_a, active_coords, lod).xyz, textureLod(displacements_b, active_coords, lod).xyz, b_weight) * blend_state.z;
 		// Uniform branch: the pending spectrum is only sampled during a crossfade.
 		if (blend_state.w > 0.0) {
 			vec3 pending_coords = vec3(UV*scales.xy, blend_state.y);
-			cascade_displacement += mix(textureLod(previous_displacements, pending_coords, lod).xyz, textureLod(displacements, pending_coords, lod).xyz, wave_blend_alpha) * blend_state.w;
+			cascade_displacement += mix(textureLod(displacements_a, pending_coords, lod).xyz, textureLod(displacements_b, pending_coords, lod).xyz, b_weight) * blend_state.w;
 		}
 		displacement += cascade_displacement * scales.z;
 	}
@@ -240,26 +243,26 @@ vec4 texture_bicubic(in sampler2DArray sampler, in vec3 uvw) {
 }
 
 /**
- * One spectrum layer's (mean slope xy, unresolved slope variance, foam), blended between the
- * previous and current FFT output. Trilinear at mip lod (explicit, so it may run after the hull
- * discard). bilinear_weight 1 skips the bicubic filter (8 extra reads), which only helps under
- * magnification.
+ * One spectrum layer's (mean slope xy, unresolved slope variance, foam), blended between its two
+ * FFT frames in maps A and B by b_weight. Trilinear at mip lod (explicit, so it may run after the
+ * hull discard). bilinear_weight 1 skips the bicubic filter (8 extra reads), which only helps
+ * under magnification.
  */
-vec4 sample_normal_layer(vec3 coords, float lod, float bilinear_weight) {
-	vec4 previous_sample = textureLod(previous_normals, coords, lod);
-	vec4 current_sample = textureLod(normals, coords, lod);
+vec4 sample_normal_layer(vec3 coords, float lod, float bilinear_weight, float b_weight) {
+	vec4 sample_a = textureLod(normals_a, coords, lod);
+	vec4 sample_b = textureLod(normals_b, coords, lod);
 	if (use_bicubic_normals && bilinear_weight < 1.0) {
-		previous_sample = mix(texture_bicubic(previous_normals, coords), previous_sample, bilinear_weight);
-		current_sample = mix(texture_bicubic(normals, coords), current_sample, bilinear_weight);
+		sample_a = mix(texture_bicubic(normals_a, coords), sample_a, bilinear_weight);
+		sample_b = mix(texture_bicubic(normals_b, coords), sample_b, bilinear_weight);
 	}
 	// Slopes the filter averaged away: E|g|^2 - |E g|^2 (mip_downsample.glsl), per frame, as
 	// blending two frames' slopes is not roughness. Interpolating texels with different slopes
 	// also raises it, but while a pixel covers less than a texel that spread is drawn (the
 	// interpolated slope varies across pixels), not missed: count it from one texel up.
-	float previous_variance = max(previous_sample.z - dot(previous_sample.xy, previous_sample.xy), 0.0);
-	float current_variance = max(current_sample.z - dot(current_sample.xy, current_sample.xy), 0.0);
-	vec4 blended = mix(previous_sample, current_sample, wave_blend_alpha);
-	blended.z = mix(previous_variance, current_variance, wave_blend_alpha) * min(lod, 1.0);
+	float variance_a = max(sample_a.z - dot(sample_a.xy, sample_a.xy), 0.0);
+	float variance_b = max(sample_b.z - dot(sample_b.xy, sample_b.xy), 0.0);
+	vec4 blended = mix(sample_a, sample_b, b_weight);
+	blended.z = mix(variance_a, variance_b, b_weight) * min(lod, 1.0);
 	return blended;
 }
 
@@ -523,7 +526,7 @@ void fragment() {
 	vec3 macro_world_normal = vec3(0.0, 1.0, 0.0);
 
 	if (num_cascades > 0) {
-		float map_size = float(textureSize(normals, 0).x);
+		float map_size = float(textureSize(normals_a, 0).x);
 		// Read foam and normal information from normal maps.
 		uint cascade_count = min(uint(num_cascades), uint(fragment_cascade_limit));
 		for (uint i = 0U; i < cascade_count; ++i) {
@@ -540,13 +543,14 @@ void fragment() {
 			// a grazing footprint as round blur, which turns the water milky.
 			float footprint = sqrt(length(uv_dx * scales.xy) * length(uv_dy * scales.xy)) * map_size;
 			float lod = log2(max(footprint, 1.0));
-			vec4 active_sample = sample_normal_layer(vec3(UV*scales.xy, blend_state.x), lod, bilinear_weight);
+			float b_weight = wave_frame_blends[i].x;
+			vec4 active_sample = sample_normal_layer(vec3(UV*scales.xy, blend_state.x), lod, bilinear_weight, b_weight);
 			vec2 cascade_gradient = active_sample.xy * blend_state.z;
 			float cascade_variance = active_sample.z * blend_state.z * blend_state.z;
 			float cascade_foam = active_sample.w;
 			// Uniform branch: the pending spectrum is only sampled during a crossfade.
 			if (blend_state.w > 0.0) {
-				vec4 pending_sample = sample_normal_layer(vec3(UV*scales.xy, blend_state.y), lod, bilinear_weight);
+				vec4 pending_sample = sample_normal_layer(vec3(UV*scales.xy, blend_state.y), lod, bilinear_weight, b_weight);
 				cascade_gradient += pending_sample.xy * blend_state.w;
 				// The two spectra are independent, so their variances add with squared weights.
 				cascade_variance += pending_sample.z * blend_state.w * blend_state.w;

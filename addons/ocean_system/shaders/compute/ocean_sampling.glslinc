@@ -4,12 +4,12 @@
  *
  * Before `#include "ocean_sampling.glslinc"`, the including shader must:
  *   - define OCEAN_SAMPLING_SET, OCEAN_CASCADE_BUFFER_BINDING,
- *     OCEAN_CURRENT_DISPLACEMENT_BINDING and OCEAN_PREVIOUS_DISPLACEMENT_BINDING;
- *   - declare `uint cascade_count`, `float wave_blend_alpha` and
- *     `float water_level` (usually as push-constant members).
+ *     OCEAN_DISPLACEMENT_A_BINDING and OCEAN_DISPLACEMENT_B_BINDING;
+ *   - declare `uint cascade_count` and `float water_level` (usually as
+ *     push-constant members).
  *
  * Godot does not track include dependencies: after editing this file, reimport
- * every .glsl that includes it (surface_query.glsl).
+ * every .glsl that includes it (surface_query.glsl, iwave_pressure.glsl).
  */
 
 #define OCEAN_MAX_CASCADES 8U
@@ -18,6 +18,10 @@
 struct OceanCascade {
 	vec4 map_scales;  // [uv scale xy, displacement scale, normal scale]
 	vec4 blend_state; // [active layer, pending layer, active weight, pending weight]
+	// x: weight of map B (map A gets the rest) for the current time; y (1/s) turns
+	// B - A into a velocity. Each cascade updates at its own rate into whichever
+	// map does not hold its newest frame (OceanSystem._get_cascade_frame_blend()).
+	vec4 frame_blend;
 };
 
 layout(std430, set = OCEAN_SAMPLING_SET, binding = OCEAN_CASCADE_BUFFER_BINDING) restrict readonly buffer OceanCascadeBuffer {
@@ -26,45 +30,48 @@ layout(std430, set = OCEAN_SAMPLING_SET, binding = OCEAN_CASCADE_BUFFER_BINDING)
 
 // Bound with a repeat, linear sampler (the maps have mip chains; this reads mip 0):
 // the same hardware bilinear filtering as the water material's vertex shader.
-layout(set = OCEAN_SAMPLING_SET, binding = OCEAN_CURRENT_DISPLACEMENT_BINDING) uniform sampler2DArray ocean_current_displacements;
-layout(set = OCEAN_SAMPLING_SET, binding = OCEAN_PREVIOUS_DISPLACEMENT_BINDING) uniform sampler2DArray ocean_previous_displacements;
+layout(set = OCEAN_SAMPLING_SET, binding = OCEAN_DISPLACEMENT_A_BINDING) uniform sampler2DArray ocean_displacements_a;
+layout(set = OCEAN_SAMPLING_SET, binding = OCEAN_DISPLACEMENT_B_BINDING) uniform sampler2DArray ocean_displacements_b;
 
-vec3 ocean_load_current_bilinear(int layer, vec2 uv) {
-	return textureLod(ocean_current_displacements, vec3(uv, float(layer)), 0.0).xyz;
-}
-
-vec3 ocean_load_previous_bilinear(int layer, vec2 uv) {
-	return textureLod(ocean_previous_displacements, vec3(uv, float(layer)), 0.0).xyz;
-}
-
-// Summed cascade displacement at the undisplaced (source) position xz, for the
-// previous and current FFT outputs.
-void ocean_sample_displacements(vec2 xz, out vec3 previous, out vec3 current) {
-	previous = vec3(0.0);
-	current = vec3(0.0);
-	uint count = min(cascade_count, OCEAN_MAX_CASCADES);
-	for (uint i = 0U; i < count; ++i) {
-		OceanCascade cascade = ocean_cascades[i];
-		vec2 uv = xz * cascade.map_scales.xy;
-		int active_layer = int(cascade.blend_state.x + 0.5);
-		vec3 cascade_previous = ocean_load_previous_bilinear(active_layer, uv) * cascade.blend_state.z;
-		vec3 cascade_current = ocean_load_current_bilinear(active_layer, uv) * cascade.blend_state.z;
-		if (cascade.blend_state.w > 0.0) {
-			int pending_layer = int(cascade.blend_state.y + 0.5);
-			cascade_previous += ocean_load_previous_bilinear(pending_layer, uv) * cascade.blend_state.w;
-			cascade_current += ocean_load_current_bilinear(pending_layer, uv) * cascade.blend_state.w;
-		}
-		previous += cascade_previous * cascade.map_scales.z;
-		current += cascade_current * cascade.map_scales.z;
+// One cascade's spectrum-weighted displacement in maps A and B at uv.
+void ocean_sample_cascade(OceanCascade cascade, vec2 uv, out vec3 a, out vec3 b) {
+	vec3 active_coords = vec3(uv, cascade.blend_state.x);
+	a = textureLod(ocean_displacements_a, active_coords, 0.0).xyz * cascade.blend_state.z;
+	b = textureLod(ocean_displacements_b, active_coords, 0.0).xyz * cascade.blend_state.z;
+	if (cascade.blend_state.w > 0.0) {
+		vec3 pending_coords = vec3(uv, cascade.blend_state.y);
+		a += textureLod(ocean_displacements_a, pending_coords, 0.0).xyz * cascade.blend_state.w;
+		b += textureLod(ocean_displacements_b, pending_coords, 0.0).xyz * cascade.blend_state.w;
 	}
 }
 
-// Displacement as rendered this frame at source position xz.
+// Displacement as rendered at source position xz, and its rate of change.
+void ocean_sample_displacement_and_velocity(vec2 xz, out vec3 displacement, out vec3 velocity) {
+	displacement = vec3(0.0);
+	velocity = vec3(0.0);
+	uint count = min(cascade_count, OCEAN_MAX_CASCADES);
+	for (uint i = 0U; i < count; ++i) {
+		OceanCascade cascade = ocean_cascades[i];
+		vec3 a;
+		vec3 b;
+		ocean_sample_cascade(cascade, xz * cascade.map_scales.xy, a, b);
+		displacement += mix(a, b, cascade.frame_blend.x) * cascade.map_scales.z;
+		velocity += (b - a) * cascade.frame_blend.y * cascade.map_scales.z;
+	}
+}
+
+// Displacement as rendered at source position xz.
 vec3 ocean_sample_visual_displacement(vec2 xz) {
-	vec3 previous;
-	vec3 current;
-	ocean_sample_displacements(xz, previous, current);
-	return mix(previous, current, wave_blend_alpha);
+	vec3 displacement = vec3(0.0);
+	uint count = min(cascade_count, OCEAN_MAX_CASCADES);
+	for (uint i = 0U; i < count; ++i) {
+		OceanCascade cascade = ocean_cascades[i];
+		vec3 a;
+		vec3 b;
+		ocean_sample_cascade(cascade, xz * cascade.map_scales.xy, a, b);
+		displacement += mix(a, b, cascade.frame_blend.x) * cascade.map_scales.z;
+	}
+	return displacement;
 }
 
 // The mesh moves the vertex that starts at x to x + D.xz(x). Returns the source

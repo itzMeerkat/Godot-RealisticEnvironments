@@ -513,13 +513,12 @@ const WATER_DEBUG_VIEW_NORMAL := 0
 ## the mesh's nodes, so it is only roughly circular.
 @export_range(256.0, 20000.0, 1.0, "or_greater") var mesh_extent := 7000.0
 
-## Target number of accepted wave simulation updates per second. Lower values
-## reduce GPU FFT work
-## Set to 0 for uncapped updates.
-@export_range(0, 60) var updates_per_second := 20.0 :
-	set(value):
-		next_update_time = next_update_time - (1.0/(updates_per_second + 1e-10) - 1.0/(value + 1e-10))
-		updates_per_second = value
+## How far, as a share of its shortest wavelength, a cascade's waves may travel
+## between two FFT updates; frames in between blend the two. Each cascade gets
+## its own rate from this (small tiles more often, up to every frame, which needs
+## no blend). Blending frames whose waves moved too far washes the ripples out
+## and back every update. Lower is smoother and costs more GPU time.
+@export_range(0.02, 0.5, 0.01) var max_wave_phase_step := 0.1
 
 @export_group('Water Queries')
 ## Still-water height in world units. Visual displacement, point queries, planar
@@ -558,7 +557,6 @@ var wave_generator : WaveGenerator :
 			add_child(wave_generator)
 var rng = RandomNumberGenerator.new()
 var time := 0.0
-var next_update_time := 0.0
 var wind_source : Node
 var sky_source : Node
 ## True when sky_source has no lighting_changed signal and must be read every frame.
@@ -566,16 +564,20 @@ var _sky_source_polled := false
 ## Set by the sky source's lighting_changed signal.
 var _sky_lighting_dirty := false
 
-var displacement_maps := Texture2DArrayRD.new()
-var normal_maps := Texture2DArrayRD.new()
-var previous_displacement_maps := Texture2DArrayRD.new()
-var previous_normal_maps := Texture2DArrayRD.new()
+## The generator's maps A and B (see WaveGenerator), bound to the water material.
+var displacement_maps_a := Texture2DArrayRD.new()
+var displacement_maps_b := Texture2DArrayRD.new()
+var normal_maps_a := Texture2DArrayRD.new()
+var normal_maps_b := Texture2DArrayRD.new()
 var _material : ShaderMaterial
 var _surface_queries : OceanSurfaceQueries
+## True once every cascade has a frame.
 var _has_wave_output := false
-var _last_wave_output_time := 0.0
-var _wave_blend_start_time := 0.0
-var _wave_blend_duration := 1.0 / 60.0
+## Per cascade: ocean time of its newest and of its previous frame, and how many
+## frames it has computed (see _update_waves()).
+var _cascade_frame_times := PackedFloat64Array()
+var _cascade_previous_frame_times := PackedFloat64Array()
+var _cascade_frame_counts := PackedInt32Array()
 var _reflection_renderer : OceanReflectionRenderer
 var _hull_profiles : Texture2DArray
 ## Instance ids of the profiles in _hull_profiles, in layer order.
@@ -583,7 +585,6 @@ var _hull_profile_ids := PackedInt64Array()
 ## Null while interaction_enabled is off, in the editor, or before _ready.
 var _interaction : WaterInteractionSim
 var _interaction_texture := Texture2DRD.new()
-var _last_wave_blend_alpha_sent := -1.0
 ## Runtime mesh (see _setup_water_mesh); unused in the editor.
 var _lod_grid_mesh : ArrayMesh
 var _lod_multimesh : RID
@@ -628,14 +629,11 @@ func _process(delta : float) -> void:
 	_update_hull_cutouts()
 	if _sky_source_polled or _sky_lighting_dirty:
 		_update_sky_lighting_shader_parameters()
-	# Update waves once every 1.0/updates_per_second. No generator means no cascades: a flat ocean.
-	if wave_generator != null and (updates_per_second == 0 or time >= next_update_time):
-		var target_update_delta := 1.0 / (updates_per_second + 1e-10)
-		var update_delta := delta if updates_per_second == 0 else target_update_delta + (time - next_update_time)
-		next_update_time = time + target_update_delta
-		_update_water(update_delta)
 	time += delta
-	_update_wave_blend_alpha()
+	# No generator means no cascades: a flat ocean.
+	if wave_generator != null:
+		_update_waves(delta)
+		_update_frame_blend_uniform()
 	_dispatch_surface_queries()
 
 ## The interaction simulation steps with physics: one step per tick sees exactly
@@ -662,8 +660,7 @@ func _push_all_shader_parameters() -> void:
 	_update_lod_ranges()
 	_update_scales_uniform()
 	_bind_wave_textures()
-	_last_wave_blend_alpha_sent = -1.0
-	_set_wave_blend_alpha(_get_wave_blend_alpha())
+	_update_frame_blend_uniform()
 	_hull_profile_ids = PackedInt64Array()
 	_update_hull_cutouts()
 	_update_planar_reflection_settings()
@@ -674,12 +671,16 @@ func _setup_wave_generator() -> void:
 	if _interaction != null:
 		_interaction.clear_uniform_set_cache()
 	_has_wave_output = false
+	_cascade_frame_times.resize(parameters.size())
+	_cascade_previous_frame_times.resize(parameters.size())
+	_cascade_frame_counts.resize(parameters.size())
+	_cascade_frame_counts.fill(0)
 	if parameters.is_empty():
 		wave_generator = null
-		_set_texture_rid(displacement_maps, RID())
-		_set_texture_rid(normal_maps, RID())
-		_set_texture_rid(previous_displacement_maps, RID())
-		_set_texture_rid(previous_normal_maps, RID())
+		_set_texture_rid(displacement_maps_a, RID())
+		_set_texture_rid(displacement_maps_b, RID())
+		_set_texture_rid(normal_maps_a, RID())
+		_set_texture_rid(normal_maps_b, RID())
 		_bind_wave_textures()
 		return
 	for param in parameters:
@@ -687,24 +688,22 @@ func _setup_wave_generator() -> void:
 
 	wave_generator = WaveGenerator.new()
 	wave_generator.map_size = simulation_map_size
-	# The output ping-pong path expects at least two texture-array layers.
-	wave_generator.init_gpu(maxi(2, parameters.size()))
-	wave_generator.output_maps_swapped.connect(_on_wave_output_maps_swapped)
+	wave_generator.init_gpu(parameters.size())
 
-	_set_texture_rid(displacement_maps, wave_generator.descriptors[&'displacement_map'].rid)
-	_set_texture_rid(normal_maps, wave_generator.descriptors[&'normal_map'].rid)
-	_set_texture_rid(previous_displacement_maps, wave_generator.descriptors[&'previous_displacement_map'].rid)
-	_set_texture_rid(previous_normal_maps, wave_generator.descriptors[&'previous_normal_map'].rid)
+	_set_texture_rid(displacement_maps_a, wave_generator.descriptors[&'displacement_map_a'].rid)
+	_set_texture_rid(displacement_maps_b, wave_generator.descriptors[&'displacement_map_b'].rid)
+	_set_texture_rid(normal_maps_a, wave_generator.descriptors[&'normal_map_a'].rid)
+	_set_texture_rid(normal_maps_b, wave_generator.descriptors[&'normal_map_b'].rid)
 	_bind_wave_textures()
-	_set_wave_blend_alpha(1.0)
+	_update_frame_blend_uniform()
 	_update_spectrum_blend_uniform()
 
 func _bind_wave_textures() -> void:
 	_set_water_shader_parameter(&'num_cascades', parameters.size() if wave_generator != null else 0)
-	_set_water_shader_parameter(&'displacements', displacement_maps)
-	_set_water_shader_parameter(&'normals', normal_maps)
-	_set_water_shader_parameter(&'previous_displacements', previous_displacement_maps)
-	_set_water_shader_parameter(&'previous_normals', previous_normal_maps)
+	_set_water_shader_parameter(&'displacements_a', displacement_maps_a)
+	_set_water_shader_parameter(&'displacements_b', displacement_maps_b)
+	_set_water_shader_parameter(&'normals_a', normal_maps_a)
+	_set_water_shader_parameter(&'normals_b', normal_maps_b)
 
 func _update_scales_uniform() -> void:
 	var map_scales : PackedVector4Array; map_scales.resize(parameters.size())
@@ -721,11 +720,37 @@ func _update_spectrum_blend_uniform() -> void:
 		spectrum_blend_states[i] = parameters[i].get_spectrum_blend_state(i)
 	_set_water_shader_parameter(&'spectrum_blend_states', spectrum_blend_states)
 
-func _update_water(delta : float) -> void:
+## Updates every cascade whose newest frame the display has reached. A cascade
+## computes its next frame one update interval ahead of now, so blending from
+## its newest frame to that one shows the waves at the current time.
+func _update_waves(frame_delta : float) -> void:
 	var external_speed := get_external_wind_speed() if use_external_wind else 0.0
 	var external_direction := get_external_wind_direction() if use_external_wind else 0.0
-	wave_generator.update(delta, parameters, external_speed, external_direction, use_external_wind)
+	var all_have_frames := true
+	for i in parameters.size():
+		var count := _cascade_frame_counts[i]
+		if count > 0 and time < _cascade_frame_times[i]:
+			continue
+		var interval := get_cascade_update_interval(parameters[i])
+		if interval <= frame_delta:
+			interval = 0.0 # Every frame: shown as computed, no blend.
+		var frame_time := time + interval
+		parameters[i].advance(frame_time - _cascade_frame_times[i] if count > 0 else 0.0, external_speed, external_direction, use_external_wind)
+		wave_generator.update_cascade(i, parameters[i])
+		_cascade_previous_frame_times[i] = _cascade_frame_times[i]
+		_cascade_frame_times[i] = frame_time
+		_cascade_frame_counts[i] = count + 1
+	for count in _cascade_frame_counts:
+		all_have_frames = all_have_frames and count > 0
+	_has_wave_output = all_have_frames
 	_update_spectrum_blend_uniform()
+
+## Seconds between a cascade's FFT updates: its shortest wave (two texels) may
+## travel max_wave_phase_step of its length, at deep-water phase speed
+## sqrt(g lambda / 2 pi).
+func get_cascade_update_interval(params : WaveCascadeParameters) -> float:
+	var shortest_wavelength := 2.0 * minf(params.tile_length.x, params.tile_length.y) / simulation_map_size
+	return max_wave_phase_step * sqrt(TAU * shortest_wavelength / WaveGenerator.G)
 
 ## Queues points for this frame's surface query. Call it every tick with the
 ## current points; the latest submission per owner wins. Owners must call
@@ -849,9 +874,8 @@ func _step_interaction(delta : float) -> void:
 		_pack_surface_query_cascades(),
 		parameters.size(),
 		water_level,
-		_get_wave_blend_alpha(),
-		wave_generator.descriptors[&'displacement_map'].rid,
-		wave_generator.descriptors[&'previous_displacement_map'].rid,
+		wave_generator.descriptors[&'displacement_map_a'].rid,
+		wave_generator.descriptors[&'displacement_map_b'].rid,
 		hull_profiles_rd
 	)
 	_set_water_shader_parameter(&'interaction_window', _get_interaction_window())
@@ -1260,13 +1284,11 @@ func _dispatch_surface_queries() -> void:
 	if not _has_wave_output:
 		return
 	_surface_queries.dispatch(
-		wave_generator.descriptors[&'displacement_map'].rid,
-		wave_generator.descriptors[&'previous_displacement_map'].rid,
+		wave_generator.descriptors[&'displacement_map_a'].rid,
+		wave_generator.descriptors[&'displacement_map_b'].rid,
 		_pack_surface_query_cascades(),
 		parameters.size(),
 		water_level,
-		_get_wave_blend_alpha(),
-		_wave_blend_duration,
 		time,
 		_interaction.render_texture if _interaction != null else RID(),
 		_get_interaction_window(),
@@ -1290,51 +1312,45 @@ func _pack_surface_query_cascades() -> PackedByteArray:
 		data.encode_float(offset + 20, blend_state.y)
 		data.encode_float(offset + 24, blend_state.z)
 		data.encode_float(offset + 28, blend_state.w)
+		var frame_blend := _get_cascade_frame_blend(i)
+		data.encode_float(offset + 32, frame_blend.x)
+		data.encode_float(offset + 36, frame_blend.y)
 	return data
 
 func _set_texture_rid(texture: Texture2DArrayRD, rid: RID) -> void:
 	texture.texture_rd_rid = RID()
 	texture.texture_rd_rid = rid
 
-func _on_wave_output_maps_swapped(current_displacement: RID, previous_displacement: RID, current_normal: RID, previous_normal: RID) -> void:
-	_set_texture_rid(displacement_maps, current_displacement)
-	_set_texture_rid(normal_maps, current_normal)
-	if _has_wave_output:
-		_set_texture_rid(previous_displacement_maps, previous_displacement)
-		_set_texture_rid(previous_normal_maps, previous_normal)
-		_wave_blend_duration = maxf(time - _last_wave_output_time, 1.0 / 60.0)
-		_wave_blend_start_time = time
-		_set_wave_blend_alpha(0.0)
-	else:
-		_set_texture_rid(previous_displacement_maps, current_displacement)
-		_set_texture_rid(previous_normal_maps, current_normal)
-		_has_wave_output = true
-		_wave_blend_start_time = time
-		_set_wave_blend_alpha(1.0)
-	_last_wave_output_time = time
-	_bind_wave_textures()
+## Per cascade: x = weight of map B (A gets the rest) at the current time, y =
+## factor (1/s) turning B - A into a velocity. The water shader, surface queries
+## and the interaction simulation all blend with it.
+func _get_cascade_frame_blend(cascade_index : int) -> Vector4:
+	var count := _cascade_frame_counts[cascade_index]
+	if count == 0:
+		return Vector4.ZERO
+	var newest_weight := 1.0
+	var rate := 0.0
+	var span := _cascade_frame_times[cascade_index] - _cascade_previous_frame_times[cascade_index]
+	# A first frame has nothing to blend from; neither has a paused clock.
+	if count > 1 and span > 0.0:
+		newest_weight = clampf((time - _cascade_previous_frame_times[cascade_index]) / span, 0.0, 1.0)
+		rate = 1.0 / span
+	if wave_generator.cascade_newest_output[cascade_index] == 1:
+		return Vector4(newest_weight, rate, 0.0, 0.0)
+	return Vector4(1.0 - newest_weight, -rate, 0.0, 0.0)
 
-func _update_wave_blend_alpha() -> void:
-	_set_wave_blend_alpha(_get_wave_blend_alpha())
-
-func _get_wave_blend_alpha() -> float:
-	if not _has_wave_output:
-		return 1.0
-	return clampf((time - _wave_blend_start_time) / maxf(_wave_blend_duration, 1e-5), 0.0, 1.0)
-
-
-func _set_wave_blend_alpha(value : float) -> void:
-	if is_equal_approx(_last_wave_blend_alpha_sent, value):
-		return
-	_last_wave_blend_alpha_sent = value
-	_set_water_shader_parameter(&'wave_blend_alpha', value)
+func _update_frame_blend_uniform() -> void:
+	var frame_blends : PackedVector4Array; frame_blends.resize(parameters.size())
+	for i in parameters.size():
+		frame_blends[i] = _get_cascade_frame_blend(i) if wave_generator != null else Vector4.ZERO
+	_set_water_shader_parameter(&'wave_frame_blends', frame_blends)
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_PREDELETE:
-		displacement_maps.texture_rd_rid = RID()
-		normal_maps.texture_rd_rid = RID()
-		previous_displacement_maps.texture_rd_rid = RID()
-		previous_normal_maps.texture_rd_rid = RID()
+		displacement_maps_a.texture_rd_rid = RID()
+		displacement_maps_b.texture_rd_rid = RID()
+		normal_maps_a.texture_rd_rid = RID()
+		normal_maps_b.texture_rd_rid = RID()
 		# Null when interaction is off, in the editor, or the ocean was disabled.
 		if _interaction != null:
 			_interaction_texture.texture_rd_rid = RID()

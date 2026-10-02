@@ -156,7 +156,7 @@ func clear_uniform_set_cache() -> void:
 
 ## Moves the window to the camera and advances the simulation by one step of
 ## dt seconds. hull_data holds hull_count SimHull records (FLOATS_PER_HULL floats each).
-func step(dt : float, camera_position : Vector3, hull_data : PackedFloat32Array, hull_count : int, cascade_data : PackedByteArray, cascade_count : int, water_level : float, wave_blend_alpha : float, current_displacement : RID, previous_displacement : RID, hull_profiles : RID) -> void:
+func step(dt : float, camera_position : Vector3, hull_data : PackedFloat32Array, hull_count : int, cascade_data : PackedByteArray, cascade_count : int, water_level : float, displacement_a : RID, displacement_b : RID, hull_profiles : RID) -> void:
 	assert(hull_count <= MAX_HULLS, "At most %d hulls can force the interaction simulation." % MAX_HULLS)
 	var new_origin := Vector2i(floori(camera_position.x / cell_size), floori(camera_position.z / cell_size)) - Vector2i.ONE * (grid_size / 2)
 	var scroll := _has_window and new_origin != window_origin
@@ -182,8 +182,8 @@ func step(dt : float, camera_position : Vector3, hull_data : PackedFloat32Array,
 	if impulse_count > 0:
 		_dispatch(compute_list, 'iwave_impulse', _impulse_sets[_current], [window_origin.x, window_origin.y, grid_size, cell_size, impulse_count], Vector3i(groups, groups, 1))
 		_device.compute_list_add_barrier(compute_list)
-	_dispatch(compute_list, 'iwave_pressure', _get_pressure_set(_current, profiles, current_displacement, previous_displacement),
-		[window_origin.x, window_origin.y, grid_size, cell_size, hull_count, cascade_count, water_level, wave_blend_alpha], Vector3i(groups, groups, 1))
+	_dispatch(compute_list, 'iwave_pressure', _get_pressure_set(_current, profiles, displacement_a, displacement_b),
+		[window_origin.x, window_origin.y, grid_size, cell_size, hull_count, cascade_count, water_level], Vector3i(groups, groups, 1))
 	_device.compute_list_add_barrier(compute_list)
 	_dispatch_fft(compute_list, false, -1.0)
 	_dispatch_fft(compute_list, true, -1.0)
@@ -222,8 +222,8 @@ func _dispatch(compute_list : int, shader_name : String, uniform_set : RID, push
 	_device.compute_list_dispatch(compute_list, groups.x, groups.y, groups.z)
 
 
-func _get_pressure_set(state_index : int, hull_profiles : RID, current_displacement : RID, previous_displacement : RID) -> RID:
-	var key := "%d:%d:%d:%d" % [state_index, hull_profiles.get_id(), current_displacement.get_id(), previous_displacement.get_id()]
+func _get_pressure_set(state_index : int, hull_profiles : RID, displacement_a : RID, displacement_b : RID) -> RID:
+	var key := "%d:%d:%d:%d" % [state_index, hull_profiles.get_id(), displacement_a.get_id(), displacement_b.get_id()]
 	if _pressure_sets.has(key):
 		return _pressure_sets[key]
 	# Drop entries whose textures (old profile arrays, rebuilt generators) are gone.
@@ -237,8 +237,8 @@ func _get_pressure_set(state_index : int, hull_profiles : RID, current_displacem
 		_uniform(3, RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER, [_hull_buffer]),
 		_uniform(4, RenderingDevice.UNIFORM_TYPE_SAMPLER_WITH_TEXTURE, [_profile_sampler, hull_profiles]),
 		_uniform(5, RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER, [_cascade_buffer]),
-		_uniform(6, RenderingDevice.UNIFORM_TYPE_SAMPLER_WITH_TEXTURE, [_displacement_sampler, current_displacement]),
-		_uniform(7, RenderingDevice.UNIFORM_TYPE_SAMPLER_WITH_TEXTURE, [_displacement_sampler, previous_displacement]),
+		_uniform(6, RenderingDevice.UNIFORM_TYPE_SAMPLER_WITH_TEXTURE, [_displacement_sampler, displacement_a]),
+		_uniform(7, RenderingDevice.UNIFORM_TYPE_SAMPLER_WITH_TEXTURE, [_displacement_sampler, displacement_b]),
 	], _shaders['iwave_pressure'], 0)
 	_pressure_sets[key] = uniform_set
 	return uniform_set

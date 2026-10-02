@@ -30,13 +30,12 @@ layout(push_constant) restrict readonly uniform PushConstants {
 	uint hull_count;
 	uint cascade_count;
 	float water_level;
-	float wave_blend_alpha;
 };
 
 #define OCEAN_SAMPLING_SET 0
 #define OCEAN_CASCADE_BUFFER_BINDING 5
-#define OCEAN_CURRENT_DISPLACEMENT_BINDING 6
-#define OCEAN_PREVIOUS_DISPLACEMENT_BINDING 7
+#define OCEAN_DISPLACEMENT_A_BINDING 6
+#define OCEAN_DISPLACEMENT_B_BINDING 7
 #include "ocean_sampling.glslinc"
 
 struct SimHull {

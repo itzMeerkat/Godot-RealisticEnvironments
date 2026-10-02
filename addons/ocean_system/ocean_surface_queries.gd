@@ -11,7 +11,7 @@ const SHADER_PATH := 'res://addons/ocean_system/shaders/compute/surface_query.gl
 const SLOT_COUNT := 3
 const WORKGROUP_SIZE := 64
 const BYTES_PER_POINT := 16
-const BYTES_PER_CASCADE := 32
+const BYTES_PER_CASCADE := 48
 const BYTES_PER_SAMPLE := 48
 const NORMAL_SAMPLE_DISTANCE := 0.25
 
@@ -101,7 +101,7 @@ func clear_uniform_set_cache() -> void:
 ## interaction_texture is the interaction simulation's render texture, or an
 ## invalid RID when the simulation is off. interaction_window is (center x,
 ## center z, fade start, fade end), see OceanSystem._get_interaction_window().
-func dispatch(current_displacement : RID, previous_displacement : RID, cascade_data : PackedByteArray, cascade_count : int, water_level : float, wave_blend_alpha : float, wave_blend_duration : float, time : float, interaction_texture : RID, interaction_window : Vector4, interaction_cell_size : float) -> void:
+func dispatch(displacement_a : RID, displacement_b : RID, cascade_data : PackedByteArray, cascade_count : int, water_level : float, time : float, interaction_texture : RID, interaction_window : Vector4, interaction_cell_size : float) -> void:
 	if _queued.is_empty():
 		return
 	var slot := _get_idle_slot()
@@ -127,8 +127,6 @@ func dispatch(current_displacement : RID, previous_displacement : RID, cascade_d
 		points.size(),
 		cascade_count,
 		water_level,
-		wave_blend_alpha,
-		maxf(wave_blend_duration, 1.0 / 60.0),
 		NORMAL_SAMPLE_DISTANCE,
 		interaction_window.x,
 		interaction_window.y,
@@ -140,7 +138,7 @@ func dispatch(current_displacement : RID, previous_displacement : RID, cascade_d
 	var interaction := interaction_texture if interaction_enabled else _no_interaction_texture
 	var compute_list := _device.compute_list_begin()
 	_device.compute_list_bind_compute_pipeline(compute_list, _pipeline)
-	_device.compute_list_bind_uniform_set(compute_list, _get_uniform_set(slot, current_displacement, previous_displacement, interaction), 0)
+	_device.compute_list_bind_uniform_set(compute_list, _get_uniform_set(slot, displacement_a, displacement_b, interaction), 0)
 	_device.compute_list_set_push_constant(compute_list, push_constant, push_constant.size())
 	_device.compute_list_dispatch(compute_list, ceili(float(points.size()) / float(WORKGROUP_SIZE)), 1, 1)
 	_device.compute_list_end()
@@ -223,16 +221,16 @@ func _free_slot_buffers(slot : QuerySlot) -> void:
 	slot.capacity = 0
 
 
-func _get_uniform_set(slot : QuerySlot, current_displacement : RID, previous_displacement : RID, interaction : RID) -> RID:
-	var key := "%d:%d:%d" % [current_displacement.get_id(), previous_displacement.get_id(), interaction.get_id()]
+func _get_uniform_set(slot : QuerySlot, displacement_a : RID, displacement_b : RID, interaction : RID) -> RID:
+	var key := "%d:%d:%d" % [displacement_a.get_id(), displacement_b.get_id(), interaction.get_id()]
 	if slot.uniform_sets.has(key):
 		return slot.uniform_sets[key]
 	var uniforms : Array[RDUniform] = [
 		_make_uniform(0, RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER, slot.point_buffer),
 		_make_uniform(1, RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER, slot.cascade_buffer),
 		_make_uniform(2, RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER, slot.sample_buffer),
-		_make_sampled_uniform(3, current_displacement),
-		_make_sampled_uniform(4, previous_displacement),
+		_make_sampled_uniform(3, displacement_a),
+		_make_sampled_uniform(4, displacement_b),
 		_make_uniform(5, RenderingDevice.UNIFORM_TYPE_IMAGE, interaction),
 	]
 	var uniform_set := _device.uniform_set_create(uniforms, _shader, 0)

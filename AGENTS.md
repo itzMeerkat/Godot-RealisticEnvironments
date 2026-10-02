@@ -148,9 +148,15 @@ before touching its code; this file only records what is easy to get wrong.
   (`null` at first), `release_surface_query(owner)` in `_exit_tree`. Results lag
   a few frames — extrapolate with `extrapolated_height()` — and belong to the
   point set of their dispatch.
-- Anything that samples wave displacement must match the vertex shader:
-  previous/current blend by `wave_blend_alpha`, spectrum blend by the weights
-  in `spectrum_blend_states` (`.zw`), pending layer skipped when `.w == 0`.
+- Cascades update at their own rates (`max_wave_phase_step`), each into
+  whichever of the fixed output maps A/B does not hold its newest frame.
+  Anything that samples wave displacement must match the vertex shader:
+  per-cascade frame blend (weight of B, `OceanSystem._get_cascade_frame_blend()`;
+  `wave_frame_blends` in the material, the cascade buffer's third vec4 in
+  compute), spectrum blend by the weights in `spectrum_blend_states` (`.zw`),
+  pending layer skipped when `.w == 0`. The cascade buffer is 48 bytes per
+  cascade (`OceanSurfaceQueries.BYTES_PER_CASCADE`, `ocean_sampling.glslinc`);
+  change both together.
   Compute shaders get this from `shaders/compute/ocean_sampling.glslinc`, and
   surface heights also invert the horizontal displacement. Queries read mip 0,
   which matches the mesh where its vertices are at least as dense as the

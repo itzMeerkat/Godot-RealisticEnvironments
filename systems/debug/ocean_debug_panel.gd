@@ -158,16 +158,16 @@ func _add_ocean_controls(parent : VBoxContainer) -> void:
 
 	var update_spin := _add_float_row(
 		parent,
-		"Updates per Second",
-		"Denotes how many times wave spectrums will be updated per second.\n(0 is uncapped)",
-		0.0,
-		60.0,
-		1.0,
+		"Wave Phase Step",
+		"Share of its shortest wavelength a cascade's waves may travel between FFT updates; sets each cascade's update rate (lower: smoother ripples, more GPU).",
+		0.02,
+		0.5,
+		0.01,
 		false,
 	)
 	update_spin.value_changed.connect(func(value : float) -> void:
 		if not _is_syncing and water:
-			water.updates_per_second = value
+			water.max_wave_phase_step = value
 	)
 
 	var cell_size := _add_float_row(parent, "Mesh Cell Size", "Vertex spacing of the finest mesh level near the camera; each coarser level doubles it.", 0.25, 16.0, 0.25, false)
@@ -218,7 +218,7 @@ func _add_ocean_controls(parent : VBoxContainer) -> void:
 			water.foam_intensity = value
 	)
 
-	update_spin.name = "UpdatesPerSecond"
+	update_spin.name = "MaxWavePhaseStep"
 	cell_size.name = "MeshBaseCellSize"
 	water_color.name = "WaterColor"
 	water_scatter_color.name = "WaterScatterColor"
@@ -594,7 +594,7 @@ func _populate_values() -> void:
 			_map_size_option.select(i)
 			break
 
-	_set_named_spin("UpdatesPerSecond", water.updates_per_second)
+	_set_named_spin("MaxWavePhaseStep", water.max_wave_phase_step)
 	_set_named_spin("MeshBaseCellSize", water.mesh_base_cell_size)
 	_set_named_color("WaterColor", water.water_color)
 	_set_named_color("WaterScatterColor", water.water_scatter_color)

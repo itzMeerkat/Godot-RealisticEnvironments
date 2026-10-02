@@ -68,8 +68,8 @@ Queries are asynchronous (`OceanSurfaceQueries`):
 
 Heights match the rendered mesh:
 
-- The query uses the same previous/current and spectrum blending as the vertex
-  shader.
+- The query uses the same per-cascade frame blending (maps A/B) and spectrum
+  blending as the vertex shader; its velocity comes from the same frame pair.
 - It undoes the horizontal "choppy" displacement: 3 fixed-point iterations find
   the source point whose displaced vertex lands on the query point.
 - Normals come from central differences of the resulting height field (0.25 m
@@ -96,7 +96,9 @@ Heights match the rendered mesh:
 - **External Wind** — `use_external_wind`, `wind_source_path`.
 - **`parameters`** — the ordered `Array[WaveCascadeParameters]` (at most 8).
 - **Performance** — `simulation_map_size` (128–1024, default 512),
-  `updates_per_second` (FFT updates per second, default 20; 0 = every frame).
+  `max_wave_phase_step` (default 0.1: how far, as a share of its shortest
+  wavelength, a cascade's waves may travel between FFT updates; sets each
+  cascade's update rate).
 - **Mesh** — `mesh_base_cell_size` (vertex spacing nearest the camera) and
   `mesh_extent` (radius of rendered water, default 7 km).
 - **Far Ocean LOD** — distance fade of the sun scatter shading
@@ -304,9 +306,10 @@ Known limits:
 2. gathers near-camera hull cutouts into shader arrays;
 3. pushes sky lighting when the sky source emitted `lighting_changed` (every
    frame for a source without that signal);
-4. every `1 / updates_per_second` seconds, calls `WaveGenerator.update()` with
-   the external wind;
-5. advances `wave_blend_alpha` and dispatches the queued surface queries.
+4. updates every cascade whose newest frame the display has reached
+   (`_update_waves()`, see below);
+5. pushes the per-cascade frame blend and dispatches the queued surface
+   queries.
 
 `_physics_process` steps the interaction simulation once per physics tick.
 
@@ -344,18 +347,33 @@ Per cascade, per spectrum slot:
 Each pass reads what the previous one wrote, and dispatches inside one compute
 list are not ordered, so every pass is followed by `compute_list_add_barrier`.
 The FFT buffer has one region per spectrum slot rather than per layer, since
-only one cascade is transformed per frame. Output maps are cleared to zero on
-creation: until the second pass completes, the "previous" maps sampled by the
-interaction simulation and surface queries have never been written.
+cascades are transformed one after another. Output maps are cleared to zero on
+creation: until a cascade's second update, its other map (sampled with weight 0
+by the interaction simulation and surface queries) was never written.
 
-`update()` advances every cascade's clock, direction and crossfade state
-(`WaveCascadeParameters.advance()`), then schedules one cascade per frame to
-spread GPU cost. Each cascade propagates its active slot, plus the pending slot
-while a crossfade runs; a slot's spectrum is regenerated from that slot's own
-inputs only when it is dirty. When all cascades are done the two output texture
-arrays swap (ping-pong) and `output_maps_swapped` fires. `OceanSystem` then
-binds current + previous maps and ramps `wave_blend_alpha` 0→1 over the measured
-update interval, so a 20 Hz simulation still animates smoothly.
+**Per-cascade update rates.** Frames between two FFT updates blend the two, and
+blending frames whose waves moved far apart washes the ripples out and back
+every update (a 20 Hz pulse on an 8 m tile's 3 cm waves, which move a third of
+a wavelength in 50 ms). So each cascade updates on its own schedule
+(`OceanSystem.get_cascade_update_interval()`): its shortest wave (two texels)
+may travel `max_wave_phase_step` of its length at deep-water phase speed
+`√(gλ/2π)`. With 512 maps that is about 18 Hz for a 128 m tile, 35 Hz for 32 m,
+and every frame for 8 m (no blend).
+
+A due cascade advances its clock and state (`WaveCascadeParameters.advance()`)
+to one interval *ahead* of now, and `WaveGenerator.update_cascade()` computes
+that frame; blending from its newest frame to that one then shows the waves at
+the current time, with no lag. Each update propagates the active slot, plus the
+pending slot while a crossfade runs; a slot's spectrum is regenerated from that
+slot's own inputs only when it is dirty.
+
+There are two fixed output arrays of each kind, A and B. A cascade writes into
+whichever does not hold its newest frame (`cascade_newest_output`), so A and B
+hold every cascade's two latest frames, in either order. Per cascade,
+`OceanSystem._get_cascade_frame_blend()` gives the weight of B for the current
+time and a factor turning `B − A` into a velocity; the water shader
+(`wave_frame_blends`), the surface queries and the interaction simulation (the
+cascade buffer's third vec4) all blend with it.
 
 Texture arrays hold `cascades × 2` layers: an active and a pending spectrum per
 cascade. `spectrum_blend_states[i]` is `[active layer, pending layer, active
@@ -511,7 +529,8 @@ and velocity (48 bytes per sample). Displacement sampling lives in
 - the cascade buffer and displacement texture declarations (sampled through a
   repeat, linear sampler at mip 0: the same hardware bilinear filtering as the
   vertex shader);
-- previous/current and spectrum blending;
+- per-cascade frame (maps A/B) and spectrum blending, and the velocity from
+  the frame pair;
 - horizontal-displacement inversion.
 
 Godot doesn't track include dependencies: reimport `surface_query.glsl` and

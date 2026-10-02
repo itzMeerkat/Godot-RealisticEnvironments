@@ -22,8 +22,6 @@ layout(push_constant) restrict readonly uniform PushConstants {
 	uint point_count;
 	uint cascade_count;
 	float water_level;
-	float wave_blend_alpha;
-	float wave_blend_duration;
 	float normal_sample_distance;
 	vec2 interaction_center;      // world XZ of the simulation window center
 	float interaction_cell_size;
@@ -34,8 +32,8 @@ layout(push_constant) restrict readonly uniform PushConstants {
 
 #define OCEAN_SAMPLING_SET 0
 #define OCEAN_CASCADE_BUFFER_BINDING 1
-#define OCEAN_CURRENT_DISPLACEMENT_BINDING 3
-#define OCEAN_PREVIOUS_DISPLACEMENT_BINDING 4
+#define OCEAN_DISPLACEMENT_A_BINDING 3
+#define OCEAN_DISPLACEMENT_B_BINDING 4
 #include "ocean_sampling.glslinc"
 
 struct SurfaceSample {
@@ -94,10 +92,9 @@ void main() {
 
 	vec2 p = points[index].xz;
 	vec2 source = ocean_invert_horizontal_displacement(p);
-	vec3 previous_displacement;
-	vec3 current_displacement;
-	ocean_sample_displacements(source, previous_displacement, current_displacement);
-	vec3 visual_displacement = mix(previous_displacement, current_displacement, wave_blend_alpha);
+	vec3 visual_displacement;
+	vec3 velocity;
+	ocean_sample_displacement_and_velocity(source, visual_displacement, velocity);
 	visual_displacement.y += sample_interaction_eta(p);
 
 	float e = max(normal_sample_distance, 0.001);
@@ -106,7 +103,6 @@ void main() {
 	float h_b = sample_total_height(p + vec2(0.0, -e));
 	float h_f = sample_total_height(p + vec2(0.0,  e));
 	vec3 normal = normalize(vec3(h_l - h_r, 2.0 * e, h_b - h_f));
-	vec3 velocity = (current_displacement - previous_displacement) / max(wave_blend_duration, 1.0 / 60.0);
 
 	samples[index].displacement_height = vec4(visual_displacement, water_level + visual_displacement.y);
 	samples[index].normal_data = vec4(normal, 0.0);
