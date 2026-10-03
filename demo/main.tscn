@@ -11,8 +11,8 @@
 [ext_resource type="PackedScene" uid="uid://ckdc57htjsaad" path="res://addons/sky_system/sky_system.tscn" id="11_sky"]
 [ext_resource type="PackedScene" uid="uid://cr5sv0avc8dug" path="res://demo/buoy.tscn" id="13_fdg1k"]
 [ext_resource type="PackedScene" uid="uid://b2pleaxvcdai8" path="res://demo/floating_box.tscn" id="13_floating_box"]
-[ext_resource type="PackedScene" uid="uid://cu6jvrb4ikqbo" path="res://demo/rowboat.tscn" id="15_rowboat"]
 [ext_resource type="Script" uid="uid://b372vvbghwlxx" path="res://systems/hud/compass_hud.gd" id="14_compass"]
+[ext_resource type="PackedScene" uid="uid://cu6jvrb4ikqbo" path="res://demo/rowboat.tscn" id="15_rowboat"]
 
 [sub_resource type="Curve" id="Curve_fdg1k"]
 _limits = [0.0, 2.0, 0.0, 1.0]
@@ -129,10 +129,10 @@ gi_mode = 0
 mesh = ExtResource("8_fdg1k")
 skeleton = NodePath("")
 sky_source_path = NodePath("../SkySystem")
+interaction_viscosity = 0.05
 use_external_wind = true
 wind_source_path = NodePath("../WindSystem")
 parameters = Array[ExtResource("2_pw5n6")]([SubResource("Resource_adqv5"), SubResource("Resource_luhq0"), SubResource("Resource_83u3u")])
-simulation_map_size = 512
 mesh_base_cell_size = 1.0
 
 [node name="OceanDebugPanel" parent="." unique_id=900526538 instance=ExtResource("9_gb4mm")]
@@ -163,4 +163,3 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 146.46655, 2.0000153, -97.326
 
 [node name="Caravel" parent="." unique_id=1779372444 instance=ExtResource("13_floating_box")]
 transform = Transform3D(0.63730067, 0, -0.7706152, 0, 1, 0, 0.7706152, 0, 0.63730067, -13.774445, 0, -15.14146)
-debug_enabled = true
