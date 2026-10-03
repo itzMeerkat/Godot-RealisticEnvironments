@@ -259,7 +259,11 @@ vec4 march_clouds(vec3 direction, vec2 noise_position) {
 			float next_transmittance = transmittance * step_transmittance;
 			weighted_depth += t * (transmittance - next_transmittance);
 			transmittance = next_transmittance;
+			// The rest of the ray is taken as opaque: the sun disk behind is so
+			// bright that even 1 % of it would show through as a bright spot.
 			if (transmittance < 0.01) {
+				weighted_depth += t * transmittance;
+				transmittance = 0.0;
 				break;
 			}
 		}

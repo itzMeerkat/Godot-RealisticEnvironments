@@ -38,6 +38,10 @@ before touching its code; this file only records what is easy to get wrong.
 - Buoyancy probes are generated **in the editor** and saved into the scene.
   Runtime generation is refused on purpose; a volume with no saved probes only
   warns. The template has no probes; each boat generates its own.
+- No `/** ... */` doc comments in `.gdshader` / `.gdshaderinc` files; use `/*`
+  or `//`. The Godot 4.7 editor extracts shader docs on every
+  `Shader.get_shader_uniform_list()`, which made the water shader take 3.4 s per
+  call and stalled the editor for ~13 s whenever the ocean node was selected.
 - Debug helpers (probe debug draw, position trail, aim marker, health panel)
   are internal child nodes created at runtime. Never save them into a scene.
 
@@ -64,7 +68,7 @@ before touching its code; this file only records what is easy to get wrong.
     the water composites into its sky reflection as `sky * (1 - a) + rgb`,
     reading the mip that matches its roughness. Optional haze getters
     (`get_haze_density/scale_height/anisotropy/light_direction/light_color/
-    ambient_color()`, `density` 0 = none) describe the haze over the sea that
+    ambient_color/cloud_shadow_strength()`, `density` 0 = none) describe the haze over the sea that
     the water puts over its sky reflection.
   - Hull cutouts: `HullWaterFootprint` nodes (group `ocean_hull`) with a baked
     `HullProfile`. Profiles are editor-baked and saved as `.tres`; never
@@ -207,7 +211,8 @@ before touching its code; this file only records what is easy to get wrong.
   (sky shader, starfield, water) all composite `sky * (1 - a) + rgb`; change
   the encoding in all of them together. The mip chain is rebuilt every frame
   after the raymarch (`cloud_mip_downsample.glsl`, 2×2 box per face); the sky
-  and starfield read mip 0 (`filter_linear`), the water blurred mips.
+  and starfield show mip 0, the water blurred mips, and every haze copy a
+  blurred mip toward the light to shade the haze.
 - The sky and starfield cloud uniforms (`clouds_enabled`, `cloud_cubemap`)
   are set only through `RenderingServer.material_set_param`, never
   `set_shader_parameter`, so the runtime texture is never saved into
@@ -232,7 +237,11 @@ before touching its code; this file only records what is easy to get wrong.
   starfield) with copies in `SkyHazeEffect.HAZE_SHADER`, `SkySystem`'s
   `_get_haze_optical_depth()` (light transmittance) and the ocean's
   `water.gdshader` (its sky reflection, across the addon boundary). Change all
-  of them together.
+  of them together. Clouds shade the haze: its direct-light term is multiplied
+  by `haze_cloud_light_transmittance()` (cloud cubemap opacity toward the haze
+  light, times `SkySystem.cloud_haze_shadow_strength`, clamped);
+  `SkySystem` hands `SkyHazeEffect.cloud_cubemap` the RD texture and must clear
+  it before releasing the clouds.
 - Haze settings are weather: `CloudPreset.haze_*`, listed in
   `BLENDED_PROPERTIES` (`haze_visibility` also in
   `GEOMETRIC_BLENDED_PROPERTIES`). `SkySystem.sea_level` must match the

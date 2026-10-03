@@ -89,6 +89,13 @@ with clouds disabled too.
   isotropic part, the sky profile's horizon colour (the light a thick
   horizontal path of lit air sends) and the light the haze took out of the
   sunbeam, scattered on many times. Single scattering; the haze is grey.
+- Clouds shade it: they lie above the haze, so the light it scatters
+  directly (not the isotropic part) is multiplied by the clouds' transmittance
+  toward the light, read from a blurred mip of the cloud cubemap
+  (`haze_cloud_light_transmittance()`, about 2.3° wide). A sun behind a cloud
+  loses its glow; one in a gap keeps it, over the clouds around it too.
+  `cloud_haze_shadow_strength` (Clouds → Cloud Lighting) multiplies that
+  opacity, clamped to 1, to tune how much the clouds block.
 - Where it applies: the sky shader puts it over the sky and clouds along each
   view ray to infinity; the starfield dims through it; `SkyHazeEffect` (in the
   WorldEnvironment's compositor) puts it over every opaque pixel by its depth;
@@ -121,8 +128,8 @@ the body), `get_sun_color()`, `get_sky_top_color()`, `get_sky_horizon_color()`,
 `get_haze_density()` (extinction at sea level, 1/m; 0 = none),
 `get_haze_scale_height()`, `get_haze_anisotropy()`,
 `get_haze_light_direction()`, `get_haze_light_color()` (radiance per unit
-phase function) and `get_haze_ambient_color()`, as `shaders/haze.gdshaderinc`
-uses them.
+phase function), `get_haze_ambient_color()` and
+`get_haze_cloud_shadow_strength()`, as `shaders/haze.gdshaderinc` uses them.
 
 Signals: `time_of_day_changed(time_of_day)`, `lighting_changed`.
 

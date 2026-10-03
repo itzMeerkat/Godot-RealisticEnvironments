@@ -1,6 +1,6 @@
 shader_type spatial;
 render_mode world_vertex_coords, cull_disabled;
-/**
+/*
  * Lights (the sun) shade the water in light(): Lambert diffuse and a GGX
  * specular highlight whose roughness includes the wave slopes a pixel does not
  * resolve, so glints are sharp up close and merge into a broad sun path in the
@@ -45,6 +45,7 @@ render_mode world_vertex_coords, cull_disabled;
 #define HAZE_TOP_SCALE_HEIGHTS 12.0
 #define HAZE_MAX_RAY_LENGTH 1000000.0
 #define HAZE_FORWARD_SHARE 0.75
+#define HAZE_CLOUD_SHADE_ANGLE 0.04
 
 uniform vec4 foam_color : source_color;
 // Optical properties of the water, per sRGB channel (1/m): absorption, and scattering by
@@ -80,6 +81,7 @@ uniform float sky_haze_anisotropy = 0.97; // Henyey-Greenstein g of the forward 
 uniform vec3 sky_haze_light_direction = vec3(0.0, 1.0, 0.0);
 uniform vec3 sky_haze_light_color = vec3(0.0); // radiance per unit phase function (1/sr)
 uniform vec3 sky_haze_ambient_color = vec3(0.0); // isotropic in-scattered radiance
+uniform float sky_haze_cloud_shadow_strength = 1.0; // multiplies the cloud opacity toward the haze light
 uniform bool sky_reflection_enabled = true;
 uniform float sky_reflection_strength : hint_range(0.0, 2.0) = 1.0;
 uniform float sky_reflection_f0 : hint_range(0.0, 0.12) = 0.02;
@@ -151,7 +153,7 @@ varying vec4 glitter_random;
 // Facets in a fine and in a coarse cell, fine-to-coarse blend, current-to-next pattern blend.
 varying vec4 glitter_cells;
 
-/**
+/*
  * How far the water at world XZ is drawn below the plane touching the sphere under
  * the camera (distance^2 / 2R, exact to well below a millimeter within 100 km).
  */
@@ -160,7 +162,7 @@ float earth_curvature_drop(vec2 xz, vec3 camera_position) {
 	return dot(offset, offset) * (0.5 / EARTH_RADIUS);
 }
 
-/**
+/*
  * Turns a direction from the flat frame at world XZ into the world: the sphere's
  * surface there is tilted away from the camera by (distance / R) radians.
  */
@@ -209,23 +211,34 @@ float haze_ray_length(float start_height, vec3 direction) {
 	return min(2.0 * rise / max(denominator, 1e-9), HAZE_MAX_RAY_LENGTH);
 }
 
-/** The sky seen from the sea surface along direction, through the haze. */
+/* Share of the haze's light that comes through the clouds (haze_cloud_light_transmittance()). */
+float haze_cloud_light_transmittance() {
+	if (!sky_clouds_enabled) {
+		return 1.0;
+	}
+	vec3 direction = normalize(vec3(sky_haze_light_direction.x, max(sky_haze_light_direction.y, HAZE_CLOUD_SHADE_ANGLE), sky_haze_light_direction.z));
+	float lod = log2(max(HAZE_CLOUD_SHADE_ANGLE * float(textureSize(sky_cloud_cubemap, 0).x) * 0.5, 1.0));
+	return 1.0 - clamp(textureLod(sky_cloud_cubemap, direction, lod).a * sky_haze_cloud_shadow_strength, 0.0, 1.0);
+}
+
+/* The sky seen from the sea surface along direction, through the haze. */
 vec3 haze_apply_to_sky(vec3 sky, vec3 direction) {
 	float transmittance = exp(-haze_optical_depth(0.0, direction, haze_ray_length(0.0, direction)));
 	float g = sky_haze_anisotropy;
 	float denominator = 1.0 + g * g - 2.0 * g * dot(direction, sky_haze_light_direction);
 	float lobe = (1.0 - g * g) / (4.0 * PI * denominator * sqrt(denominator));
 	float phase = mix(1.0 / (4.0 * PI), lobe, HAZE_FORWARD_SHARE);
-	return sky * transmittance + (sky_haze_light_color * phase + sky_haze_ambient_color) * (1.0 - transmittance);
+	vec3 inscattered = sky_haze_light_color * (haze_cloud_light_transmittance() * phase) + sky_haze_ambient_color;
+	return sky * transmittance + inscattered * (1.0 - transmittance);
 }
 
-/** 1 inside the interaction window, fading to 0 before its absorbing border. */
+/* 1 inside the interaction window, fading to 0 before its absorbing border. */
 float interaction_fade(vec2 xz) {
 	vec2 from_center = abs(xz - interaction_window.xy);
 	return 1.0 - smoothstep(interaction_window.z, interaction_window.w, max(from_center.x, from_center.y));
 }
 
-/** Interaction render texel at world XZ; repeat addressing matches the wrap-around grid. */
+/* Interaction render texel at world XZ; repeat addressing matches the wrap-around grid. */
 vec4 sample_interaction(vec2 xz) {
 	return textureLod(interaction_render, xz * interaction_inv_extent, 0.0);
 }
@@ -290,7 +303,7 @@ void vertex() {
 	VERTEX.y -= earth_curvature_drop(VERTEX.xz, CAMERA_POSITION_WORLD);
 }
 
-/** Filter weights for a cubic B-spline. */
+/* Filter weights for a cubic B-spline. */
 vec4 cubic_weights(float a) {
 	float a2 = a*a;
 	float a3 = a2*a;
@@ -302,7 +315,7 @@ vec4 cubic_weights(float a) {
 	return vec4(w0, w1, w2, w3) / 6.0;
 }
 
-/** Performs bicubic B-spline filtering on the provided sampler. */
+/* Performs bicubic B-spline filtering on the provided sampler. */
 // Source: https://developer.nvidia.com/gpugems/gpugems2/part-iii-high-quality-rendering/chapter-20-fast-third-order-texture-filtering
 vec4 texture_bicubic(in sampler2DArray sampler, in vec3 uvw) {
 	vec2 dims = vec2(textureSize(sampler, 0).xy);
@@ -322,7 +335,7 @@ vec4 texture_bicubic(in sampler2DArray sampler, in vec3 uvw) {
 		mix(textureLod(sampler, vec3(h.yz, uvw.z), 0.0), textureLod(sampler, vec3(h.xz, uvw.z), 0.0), w.x), w.y);
 }
 
-/**
+/*
  * One spectrum layer's (mean slope xy, unresolved slope variance, foam), blended between its two
  * FFT frames in maps A and B by b_weight. Trilinear at mip lod (explicit, so it may run after the
  * hull discard). bilinear_weight 1 skips the bicubic filter (8 extra reads), which only helps
@@ -361,7 +374,7 @@ float fresnel_schlick(float no_v, float f0) {
 	return f0 + (1.0 - f0) * pow(1.0 - saturate(no_v), 5.0);
 }
 
-/**
+/*
  * Fresnel reflectance averaged over a rough surface (Bruneton, Neyret, Holzschuch,
  * "Real-time Realistic Ocean Lighting using Seamless Transitions from Geometry to
  * BRDF", 2010), for the mean normal and an isotropic slope deviation sigma per
@@ -373,7 +386,7 @@ float rough_fresnel(float no_v, float sigma, float f0) {
 	return f0 + (1.0 - f0) * mean;
 }
 
-/** Sky gradient without clouds. */
+/* Sky gradient without clouds. */
 vec3 sample_sky_gradient(vec3 direction) {
 	float upper_blend = smoothstep(0.0, 0.55, direction.y);
 	vec3 upper_sky = mix(sky_horizon_color.rgb * sky_horizon_boost, sky_top_color.rgb, upper_blend);
@@ -385,7 +398,7 @@ vec3 sample_sky_gradient(vec3 direction) {
 	return mix(lower_sky, upper_sky, horizon_blend);
 }
 
-/**
+/*
  * Composites the sky source's clouds over a sky color seen in direction, blurred
  * over the reflection lobe of GGX roughness (perceptual).
  */
@@ -431,7 +444,7 @@ float ggx_distribution(float no_h, float roughness) {
 	return alpha2 / max(3.14159265 * denom * denom, 0.00001);
 }
 
-/** Height-correlated Smith visibility, G / (4 N.L N.V). */
+/* Height-correlated Smith visibility, G / (4 N.L N.V). */
 float smith_ggx_visibility(float no_v, float no_l, float roughness) {
 	float alpha = max(roughness * roughness, 0.0009);
 	float alpha2 = alpha * alpha;
@@ -440,7 +453,7 @@ float smith_ggx_visibility(float no_v, float no_l, float roughness) {
 	return 0.5 / max(lambda_v + lambda_l, 0.00001);
 }
 
-/** Specular BRDF of the water surface (GGX, Schlick Fresnel with the water's f0), without N.L. */
+/* Specular BRDF of the water surface (GGX, Schlick Fresnel with the water's f0), without N.L. */
 float water_specular_brdf(vec3 normal, vec3 view, vec3 light_direction, float roughness) {
 	vec3 half_vector = safe_normalize_vec3(view + light_direction, normal);
 	float no_v = max(dot(normal, view), 0.0001);
@@ -451,7 +464,7 @@ float water_specular_brdf(vec3 normal, vec3 view, vec3 light_direction, float ro
 	return distribution * visibility * fresnel;
 }
 
-/**
+/*
  * Albedo of optically deep water (radiance = albedo * irradiance / PI), from its optical
  * properties: the remote-sensing reflectance just below the surface, rrs = 0.0949 u + 0.0794 u^2
  * with u = bb / (a + bb) (Gordon et al. 1988), above it Rrs = 0.52 rrs / (1 - 1.7 rrs) (Lee et
@@ -464,13 +477,13 @@ vec3 water_body_albedo() {
 	return PI * 0.52 * subsurface / (1.0 - 1.7 * subsurface);
 }
 
-/** Henyey-Greenstein phase function (1/sr). */
+/* Henyey-Greenstein phase function (1/sr). */
 float henyey_greenstein(float cos_theta, float g) {
 	float g2 = g * g;
 	return (1.0 - g2) / (4.0 * PI * pow(max(1.0 + g2 - 2.0 * g * cos_theta, 1e-6), 1.5));
 }
 
-/**
+/*
  * Height of the FFT waves at rest position rest_xz, blended like the vertex shader and
  * prefiltered to `spacing` meters (wakes left out).
  */
@@ -495,7 +508,7 @@ float wave_height_at(vec2 rest_xz, float spacing) {
 	return height;
 }
 
-/**
+/*
  * Length (m) of water a ray toward the light crosses from the surface point at rest position
  * rest_xz (world height surface_y) before it leaves the water: marched along the heightfield
  * in steps doubling from 0.25 m. Short behind thin wave crests; CREST_PATH_MAX when the ray
@@ -518,7 +531,7 @@ float crest_light_path(vec2 rest_xz, float surface_y, vec3 to_light) {
 	return CREST_PATH_MAX;
 }
 
-/**
+/*
  * Light from direction to_light that enters the water, scatters once just under this surface
  * point and leaves toward the eye, per unit of the light's irradiance, before the view ray's own
  * Fresnel transmission. It is the glow of backlit wave crests: forward scattering is strong, so
@@ -552,7 +565,7 @@ vec3 crest_scatter(vec3 normal, vec3 view, vec3 to_light, vec2 rest_xz, float su
 	return unshadowed * transmission_in * exp(-extinction * light_path);
 }
 
-/** Uniform random number in [0, 1) for integer coordinates (PCG3D hash). */
+/* Uniform random number in [0, 1) for integer coordinates (PCG3D hash). */
 float hash_uniform(ivec3 key) {
 	uvec3 v = uvec3(key) * 1664525u + 1013904223u;
 	v.x += v.y * v.z; v.y += v.z * v.x; v.z += v.x * v.y;
@@ -561,7 +574,7 @@ float hash_uniform(ivec3 key) {
 	return float(v.x >> 8u) / 16777216.0;
 }
 
-/**
+/*
  * Glint multiplier of one cell with `facets` facets, of which a share `aligned_fraction` reflects
  * the light into the eye: the aligned count is Poisson distributed (drawn with uniform u), and
  * its ratio to the mean is the multiplier, so the mean highlight stays the GGX one.
@@ -589,7 +602,7 @@ float glint_cell(float facets, float aligned_fraction, float u) {
 	return count / mean;
 }
 
-/**
+/*
  * Stochastic sun glitter (after Zirr & Kaplanyan 2016 and Deliot & Belcour 2023). The GGX
  * highlight is the mean over many tiny facets; a pixel holds a finite number of them, and the
  * few that point the light's disk at the eye flash as glints. World cells about a pixel wide
@@ -607,7 +620,7 @@ float glitter_scale(vec3 normal, vec3 view, vec3 light_direction, float roughnes
 	return mix(fine, coarse, glitter_cells.z);
 }
 
-/**
+/*
  * Planar reflection texture coordinates of a world point (w = 1) or of a direction at
  * infinity (w = 0); z is 1 inside the image, else 0.
  */
@@ -894,7 +907,7 @@ void fragment() {
 	}
 }
 
-/**
+/*
  * Replaces Godot's per-light shading. LIGHT_COLOR includes PI, so these match the
  * engine's Lambert diffuse and specular conventions.
  */

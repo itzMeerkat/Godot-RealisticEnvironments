@@ -877,6 +877,7 @@ func _update_sky_lighting_shader_parameters() -> void:
 		var ambient_color : Color = sky_source.call(&'get_haze_ambient_color')
 		_set_water_shader_parameter(&'sky_haze_light_color', Vector3(light_color.r, light_color.g, light_color.b))
 		_set_water_shader_parameter(&'sky_haze_ambient_color', Vector3(ambient_color.r, ambient_color.g, ambient_color.b))
+		_set_water_shader_parameter(&'sky_haze_cloud_shadow_strength', float(sky_source.call(&'get_haze_cloud_shadow_strength')))
 
 # The sky source is duck-typed and may provide only some values; missing ones
 # fall back to the manual_* exports.

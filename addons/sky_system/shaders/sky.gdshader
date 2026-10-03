@@ -26,9 +26,10 @@ uniform float moon_phase : hint_range(0.0, 1.0) = 1.0;
 
 // Volumetric clouds rendered by CloudRenderer: rgb is premultiplied radiance,
 // a is opacity. SkySystem sets both through the RenderingServer so the runtime
-// texture is never saved into the material.
+// texture is never saved into the material. The sky shows mip 0; a blurred mip
+// shades the haze (haze_cloud_light_transmittance()).
 uniform bool clouds_enabled = false;
-uniform samplerCube cloud_cubemap : filter_linear;
+uniform samplerCube cloud_cubemap : filter_linear_mipmap;
 
 float body_disk(vec3 view_direction, vec3 body_direction, float disk_size) {
 	float alignment = dot(normalize(view_direction), normalize(body_direction));
@@ -101,12 +102,14 @@ void sky() {
 	sky_color += (sun_disk_color * sun_disk + sun_color.rgb * sun_halo * sun_halo_strength) * sun_visibility;
 	sky_color += moon_color.rgb * (moon_disk * moon_lit * 0.9 + moon_halo * moon_phase) * moon_visibility;
 	if (clouds_enabled) {
-		vec4 cloud = texture(cloud_cubemap, EYEDIR);
+		vec4 cloud = textureLod(cloud_cubemap, EYEDIR, 0.0);
 		sky_color = sky_color * (1.0 - cloud.a) + cloud.rgb;
 	}
-	// Clouds sit above the haze, so it lies over them too.
+	// Clouds sit above the haze, so it lies over them too, and clouds in front of the
+	// light shade it: the glow around a covered sun goes out.
 	if (haze_density > 0.0) {
-		sky_color = haze_apply(sky_color, EYEDIR, haze_optical_depth(camera_height, EYEDIR, haze_ray_length(camera_height, EYEDIR)));
+		float haze_light_visibility = clouds_enabled ? haze_cloud_light_transmittance(cloud_cubemap, haze_light_direction) : 1.0;
+		sky_color = haze_apply(sky_color, EYEDIR, haze_optical_depth(camera_height, EYEDIR, haze_ray_length(camera_height, EYEDIR)), haze_light_visibility);
 	}
 	COLOR = sky_color;
 }

@@ -157,6 +157,14 @@ const HAZE_MAX_RAY_LENGTH := 1000000.0
 @export_range(0.0, 8.0, 0.01) var cloud_light_intensity := 1.0
 ## Brightness of the sky light that fills cloud shadows.
 @export_range(0.0, 8.0, 0.01) var cloud_ambient_intensity := 1.0
+## How strongly clouds toward the sun or moon block the haze's glow around it:
+## multiplies their opacity (clamped to 1). 1 uses the opacity as rendered; 2
+## blocks the glow fully behind half-opaque cloud; 0 never blocks it.
+@export_range(0.0, 8.0, 0.01, "or_greater") var cloud_haze_shadow_strength := 1.0 :
+	set(value):
+		cloud_haze_shadow_strength = value
+		if is_node_ready():
+			_update_sky()
 @export_subgroup("Cloud Quality")
 ## Edge length in texels of the cloud cubemap faces.
 @export_range(256, 2048, 128) var cloud_cubemap_size := 1024 :
@@ -393,6 +401,12 @@ func get_haze_ambient_color() -> Color:
 	return _haze_ambient_color
 
 
+## Multiplies the cloud cubemap's opacity toward the haze light before it shades
+## the haze's direct light (cloud_haze_shadow_strength).
+func get_haze_cloud_shadow_strength() -> float:
+	return cloud_haze_shadow_strength
+
+
 ## Makes preset the cloud_preset, blending to it over seconds (0 = at once).
 func transition_clouds_to(preset : CloudPreset, seconds : float) -> void:
 	_next_cloud_transition_seconds = seconds
@@ -520,6 +534,7 @@ func _push_haze_parameters() -> void:
 		material.set(&"shader_parameter/haze_light_direction", _haze_light_direction)
 		material.set(&"shader_parameter/haze_light_color", Vector3(_haze_light_color.r, _haze_light_color.g, _haze_light_color.b))
 		material.set(&"shader_parameter/haze_ambient_color", Vector3(_haze_ambient_color.r, _haze_ambient_color.g, _haze_ambient_color.b))
+		material.set(&"shader_parameter/haze_cloud_shadow_strength", cloud_haze_shadow_strength)
 	var effect := _get_haze_effect()
 	if effect:
 		effect.sea_level = sea_level
@@ -529,6 +544,7 @@ func _push_haze_parameters() -> void:
 		effect.light_direction = _haze_light_direction
 		effect.light_color = _haze_light_color
 		effect.ambient_color = _haze_ambient_color
+		effect.cloud_shadow_strength = cloud_haze_shadow_strength
 
 
 func _get_haze_effect() -> SkyHazeEffect:
@@ -782,9 +798,11 @@ func _setup_clouds() -> void:
 func _release_clouds() -> void:
 	if _cloud_renderer == null:
 		return
-	_cloud_renderer.release()
+	var renderer := _cloud_renderer
 	_cloud_renderer = null
+	# Unbind the cubemap before its texture is freed.
 	_push_cloud_material_parameters()
+	renderer.release()
 
 
 func _start_cloud_transition() -> void:
@@ -853,6 +871,10 @@ func _push_cloud_material_parameters() -> void:
 	for material : Material in [_world_environment.environment.sky.sky_material, _starfield.material_override]:
 		RenderingServer.material_set_param(material.get_rid(), &"clouds_enabled", enabled)
 		RenderingServer.material_set_param(material.get_rid(), &"cloud_cubemap", texture_rid)
+	# The haze over the scene is shaded by the clouds toward its light.
+	var effect := _get_haze_effect()
+	if effect:
+		effect.cloud_cubemap = _cloud_renderer.cubemap.texture_rd_rid if enabled else RID()
 
 
 func _get_cloud_sun_light_scale() -> float:

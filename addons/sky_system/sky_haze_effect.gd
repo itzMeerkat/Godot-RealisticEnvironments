@@ -20,11 +20,14 @@ const HAZE_SHADER := """
 #define HAZE_EARTH_RADIUS 6371000.0
 #define HAZE_STEPS 12
 #define HAZE_FORWARD_SHARE 0.75
+#define HAZE_CLOUD_SHADE_ANGLE 0.04
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 layout(rgba16f, set = 0, binding = 0) uniform restrict image2D color_image;
 layout(set = 0, binding = 1) uniform sampler2D depth_texture;
+// SkySystem's cloud cubemap (a = opacity), or a transparent placeholder.
+layout(set = 0, binding = 2) uniform samplerCube cloud_cubemap;
 
 layout(push_constant, std430) uniform Params {
 	mat4 inv_view_projection; // to camera-relative world positions
@@ -35,7 +38,7 @@ layout(push_constant, std430) uniform Params {
 	vec3 ambient_color;
 	float haze_anisotropy;
 	float camera_height; // above sea level
-	float pad_0;
+	float cloud_shadow_strength; // multiplies the cloud opacity toward the light
 	float pad_1;
 	float pad_2;
 } params;
@@ -69,6 +72,12 @@ float haze_phase(float cos_theta) {
 	return mix(1.0 / (4.0 * PI), lobe, HAZE_FORWARD_SHARE);
 }
 
+float haze_cloud_light_transmittance(vec3 light_direction) {
+	vec3 direction = normalize(vec3(light_direction.x, max(light_direction.y, HAZE_CLOUD_SHADE_ANGLE), light_direction.z));
+	float lod = log2(max(HAZE_CLOUD_SHADE_ANGLE * float(textureSize(cloud_cubemap, 0).x) * 0.5, 1.0));
+	return 1.0 - clamp(textureLod(cloud_cubemap, direction, lod).a * params.cloud_shadow_strength, 0.0, 1.0);
+}
+
 void main() {
 	ivec2 size = imageSize(color_image);
 	ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
@@ -86,7 +95,8 @@ void main() {
 	float ray_length = length(offset);
 	vec3 direction = offset / ray_length;
 	float transmittance = exp(-haze_optical_depth(params.camera_height, direction, ray_length));
-	vec3 inscattered = params.light_color * haze_phase(dot(direction, params.light_direction)) + params.ambient_color;
+	float light_visibility = haze_cloud_light_transmittance(params.light_direction);
+	vec3 inscattered = params.light_color * (light_visibility * haze_phase(dot(direction, params.light_direction))) + params.ambient_color;
 	vec4 color = imageLoad(color_image, pixel);
 	color.rgb = color.rgb * transmittance + inscattered * (1.0 - transmittance);
 	imageStore(color_image, pixel, color);
@@ -131,11 +141,28 @@ var ambient_color := Color.BLACK :
 		_params_mutex.lock()
 		ambient_color = value
 		_params_mutex.unlock()
+## Multiplies the cloud opacity toward the light (SkySystem.cloud_haze_shadow_strength).
+var cloud_shadow_strength := 1.0 :
+	set(value):
+		_params_mutex.lock()
+		cloud_shadow_strength = value
+		_params_mutex.unlock()
+## RenderingDevice cubemap of the clouds (SkySystem.get_cloud_cubemap()), whose
+## cover toward the light shades the haze; an empty RID = no clouds. Clear it
+## before the texture is freed.
+var cloud_cubemap := RID() :
+	set(value):
+		_params_mutex.lock()
+		cloud_cubemap = value
+		_params_mutex.unlock()
 
 var _rd : RenderingDevice
 var _shader := RID()
 var _pipeline := RID()
 var _sampler := RID()
+var _cloud_sampler := RID()
+## Bound in place of cloud_cubemap while there are no clouds.
+var _no_cloud_cubemap := RID()
 var _params_mutex := Mutex.new()
 
 
@@ -159,6 +186,20 @@ func _init() -> void:
 	sampler_state.min_filter = RenderingDevice.SAMPLER_FILTER_NEAREST
 	sampler_state.mag_filter = RenderingDevice.SAMPLER_FILTER_NEAREST
 	_sampler = _rd.sampler_create(sampler_state)
+	var cloud_sampler_state := RDSamplerState.new()
+	cloud_sampler_state.min_filter = RenderingDevice.SAMPLER_FILTER_LINEAR
+	cloud_sampler_state.mag_filter = RenderingDevice.SAMPLER_FILTER_LINEAR
+	cloud_sampler_state.mip_filter = RenderingDevice.SAMPLER_FILTER_LINEAR
+	_cloud_sampler = _rd.sampler_create(cloud_sampler_state)
+	var no_cloud_format := RDTextureFormat.new()
+	no_cloud_format.texture_type = RenderingDevice.TEXTURE_TYPE_CUBE
+	no_cloud_format.format = RenderingDevice.DATA_FORMAT_R8G8B8A8_UNORM
+	no_cloud_format.width = 1
+	no_cloud_format.height = 1
+	no_cloud_format.array_layers = 6
+	no_cloud_format.usage_bits = RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT
+	var transparent_face := PackedByteArray([0, 0, 0, 0])
+	_no_cloud_cubemap = _rd.texture_create(no_cloud_format, RDTextureView.new(), [transparent_face, transparent_face, transparent_face, transparent_face, transparent_face, transparent_face])
 
 
 func _notification(what: int) -> void:
@@ -167,6 +208,8 @@ func _notification(what: int) -> void:
 	# Freeing a shader frees its pipeline.
 	_rd.free_rid(_shader)
 	_rd.free_rid(_sampler)
+	_rd.free_rid(_cloud_sampler)
+	_rd.free_rid(_no_cloud_cubemap)
 
 
 func _render_callback(_callback_type: int, render_data: RenderData) -> void:
@@ -176,6 +219,8 @@ func _render_callback(_callback_type: int, render_data: RenderData) -> void:
 		light_color.r, light_color.g, light_color.b, haze_scale_height,
 		ambient_color.r, ambient_color.g, ambient_color.b, haze_anisotropy]
 	var camera_sea_level := sea_level
+	var shadow_strength := cloud_shadow_strength
+	var clouds := cloud_cubemap if cloud_cubemap.is_valid() else _no_cloud_cubemap
 	_params_mutex.unlock()
 	if density <= 0.0:
 		return
@@ -198,7 +243,12 @@ func _render_callback(_callback_type: int, render_data: RenderData) -> void:
 		depth_uniform.binding = 1
 		depth_uniform.add_id(_sampler)
 		depth_uniform.add_id(render_scene_buffers.get_depth_layer(view))
-		var uniform_set := UniformSetCacheRD.get_cache(_shader, 0, [color_uniform, depth_uniform])
+		var cloud_uniform := RDUniform.new()
+		cloud_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_SAMPLER_WITH_TEXTURE
+		cloud_uniform.binding = 2
+		cloud_uniform.add_id(_cloud_sampler)
+		cloud_uniform.add_id(clouds)
+		var uniform_set := UniformSetCacheRD.get_cache(_shader, 0, [color_uniform, depth_uniform, cloud_uniform])
 
 		var view_projection := render_scene_data.get_view_projection(view) * Projection(camera_rotation.affine_inverse())
 		var inv_view_projection := view_projection.inverse()
@@ -206,7 +256,7 @@ func _render_callback(_callback_type: int, render_data: RenderData) -> void:
 		for column in [inv_view_projection.x, inv_view_projection.y, inv_view_projection.z, inv_view_projection.w]:
 			push.append_array([column.x, column.y, column.z, column.w])
 		push.append_array(params)
-		push.append_array([camera_transform.origin.y - camera_sea_level, 0.0, 0.0, 0.0])
+		push.append_array([camera_transform.origin.y - camera_sea_level, shadow_strength, 0.0, 0.0])
 		var push_bytes := push.to_byte_array()
 		_rd.compute_list_bind_uniform_set(compute_list, uniform_set, 0)
 		_rd.compute_list_set_push_constant(compute_list, push_bytes, push_bytes.size())

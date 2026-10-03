@@ -524,7 +524,8 @@ Lighting:
 - Haze (`haze_apply_to_sky()`): with a sky source that has the haze getters
   (SkySystem), the reflected sky is seen through the haze along the reflected
   ray, from the sea surface. It is a copy of the sky system's
-  `shaders/haze.gdshaderinc`; change both together. The haze between the
+  `shaders/haze.gdshaderinc`; change both together. Its light is shaded by
+  the clouds toward it, from the same cloud cubemap. The haze between the
   camera and the water is not the water's: the sky system's compositor effect
   puts it over the whole scene.
 - Reflections use one reflectance: Fresnel averaged over the same slopes as the
