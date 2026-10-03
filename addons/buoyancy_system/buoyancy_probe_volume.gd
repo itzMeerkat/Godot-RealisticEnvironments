@@ -4,8 +4,9 @@ extends Node3D
 ## Probe-based displacement source. It generates physical buoyancy probes inside
 ## the design waterline and separate FX/contact probes on the waterline edge.
 
-signal probe_entered_water(probe: Node, state: Dictionary)
-signal probe_exited_water(probe: Node, state: Dictionary)
+## Emitted when probes are added, removed, enabled, disabled or edited, or the
+## volume itself is toggled. BuoyantBody rebuilds its probe cache on it.
+signal probes_changed
 
 const GENERATED_PROBES_NAME := "GeneratedProbes"
 const DEBUG_NODE_NAME := "DebugDraw"
@@ -29,7 +30,10 @@ const DEBUG_SHOW_WATERLINE_INTERSECTION := true
 const DEBUG_SHOW_WATERLINE_CONVEX_HULL := true
 
 ## Enables this probe volume for buoyancy sampling and contact events.
-@export var enabled := true
+@export var enabled := true :
+	set(value):
+		enabled = value
+		probes_changed.emit()
 
 @export_group("Waterline Generation")
 ## Mesh roots used by the editor generator to find the design waterline outline.
@@ -104,7 +108,7 @@ const DEBUG_SHOW_WATERLINE_CONVEX_HULL := true
 	set(value):
 		debug_enabled = value
 		if not debug_enabled:
-			_probe_states.clear()
+			_debug_mesh.clear_surfaces()
 		elif is_inside_tree():
 			_ensure_debug_nodes()
 		_update_debug_visibility()
@@ -114,9 +118,8 @@ var _physical_cache : Array[Node3D] = []
 var _fx_cache : Array[Node3D] = []
 var _cache_dirty := true
 var _warned_missing_runtime_probes := false
-var _probe_states := {}
-var _probe_wet := {}
-var _probe_last_event_time := {}
+## Probe instance id -> BuoyancyProbeState, for the probes currently in this volume.
+var _states_by_probe := {}
 var _debug_body_state := {}
 var _debug_mesh_instance : MeshInstance3D
 var _debug_mesh := ImmediateMesh.new()
@@ -155,9 +158,6 @@ func _ready() -> void:
 	_connect_probe_signals()
 	if debug_enabled:
 		_ensure_debug_nodes()
-	else:
-		_debug_mesh_instance = get_node_or_null(DEBUG_NODE_NAME) as MeshInstance3D
-		_update_debug_visibility()
 	_queue_debug_rebuild()
 
 
@@ -271,135 +271,38 @@ func _finalize_generation() -> void:
 	_queue_debug_rebuild()
 
 
-func get_buoyancy_sample_points() -> Array[Dictionary]:
-	var samples : Array[Dictionary] = []
+## States of the enabled physical probes, created once per probe and reused.
+## Empty while the volume is disabled.
+func get_physical_probe_states() -> Array[BuoyancyProbeState]:
+	var states : Array[BuoyancyProbeState] = []
 	if not enabled:
-		return samples
+		return states
 	var probes := _get_physical_probes()
-	if probes.is_empty() and not Engine.is_editor_hint():
+	if probes.is_empty():
 		_warn_missing_runtime_probes_once()
-	for i in probes.size():
-		var probe := probes[i]
-		if probe == null or not _is_probe_enabled(probe):
-			continue
-		samples.push_back({
-			"world_position": probe.global_position,
-			"local_position": probe.position,
-			"max_submerged_volume_cubic_meters": float(probe.call(&"get_max_submerged_volume")),
-			"buoyancy_height": float(probe.call(&"get_buoyancy_height")),
-			"longitudinal_water_drag_multiplier": float(probe.get(&"longitudinal_water_drag_multiplier")),
-			"lateral_water_drag_multiplier": float(probe.get(&"lateral_water_drag_multiplier")),
-			"source": self,
-			"source_probe": probe,
-			"source_sample_index": i,
-			"is_fx_probe": false,
-		})
-	return samples
+	for probe in probes:
+		if (probe as BuoyancyProbeNode).enabled:
+			states.push_back(_get_or_create_state(probe, false, "", enter_depth_threshold, exit_depth_threshold))
+	return states
 
 
-func get_contact_sample_points() -> Array[Dictionary]:
-	var samples : Array[Dictionary] = []
+## States of the enabled contact (FX) probes. Empty while the volume is disabled.
+func get_contact_probe_states() -> Array[BuoyancyProbeState]:
+	var states : Array[BuoyancyProbeState] = []
 	if not enabled:
-		return samples
-	var probes := _get_fx_probes()
-	for i in probes.size():
-		var probe := probes[i]
-		if probe == null or not _is_probe_enabled(probe):
-			continue
-		samples.push_back({
-			"world_position": probe.global_position,
-			"local_position": probe.position,
-			"source": self,
-			"source_probe": probe,
-			"source_sample_index": i,
-			"is_fx_probe": true,
-		})
-	return samples
+		return states
+	for probe in _get_fx_probes():
+		var fx_probe := probe as BuoyancyFxProbeNode
+		if fx_probe.enabled:
+			states.push_back(_get_or_create_state(probe, true, fx_probe.tag, fx_probe.enter_depth_threshold, fx_probe.exit_depth_threshold))
+	return states
 
 
-func update_probe_state(probe: Node, sample_position: Vector3, water_sample: WaterSurfaceSample, force: Vector3, submersion: float, is_fx_probe: bool) -> void:
-	if probe == null or water_sample == null:
-		return
+func _get_or_create_state(probe : Node3D, is_fx_probe : bool, tag : String, enter_threshold : float, exit_threshold : float) -> BuoyancyProbeState:
 	var key := probe.get_instance_id()
-	var depth := water_sample.height - sample_position.y
-	var enter_threshold := enter_depth_threshold
-	var exit_threshold := exit_depth_threshold
-	if is_fx_probe and probe.has_method(&"get_enter_depth_threshold"):
-		enter_threshold = float(probe.call(&"get_enter_depth_threshold", enter_depth_threshold))
-	if is_fx_probe and probe.has_method(&"get_exit_depth_threshold"):
-		exit_threshold = float(probe.call(&"get_exit_depth_threshold", exit_depth_threshold))
-	if enter_threshold <= exit_threshold:
-		enter_threshold = exit_threshold + 0.001
-
-	var was_wet := bool(_probe_wet.get(key, false))
-	var is_wet := was_wet
-	if was_wet:
-		if depth <= exit_threshold:
-			is_wet = false
-	else:
-		if depth >= enter_threshold:
-			is_wet = true
-
-	var now := float(Time.get_ticks_msec()) * 0.001
-	if is_wet != was_wet:
-		var last_event_time := float(_probe_last_event_time.get(key, -1.0e20))
-		if now - last_event_time < min_event_interval:
-			is_wet = was_wet
-		else:
-			_probe_last_event_time[key] = now
-
-	_probe_wet[key] = is_wet
-	var tag_value = probe.get(&"tag")
-	var state := {
-		"probe": probe,
-		"tag": "" if tag_value == null else str(tag_value),
-		"world_position": sample_position,
-		"water_position": Vector3(sample_position.x, water_sample.height, sample_position.z),
-		"depth": depth,
-		"submersion": submersion,
-		"is_wet": is_wet,
-		"was_wet": was_wet,
-		"entered": is_wet and not was_wet,
-		"exited": was_wet and not is_wet,
-		"force": force,
-		"normal": water_sample.normal,
-		"surface_velocity": water_sample.surface_velocity,
-		"is_fx_probe": is_fx_probe,
-		"time": now,
-	}
-	_probe_states[key] = state
-	if bool(state["entered"]):
-		probe_entered_water.emit(probe, state)
-	elif bool(state["exited"]):
-		probe_exited_water.emit(probe, state)
-	_queue_debug_rebuild()
-
-
-func get_probe_states(tag_filter := "") -> Array[Dictionary]:
-	var states : Array[Dictionary] = []
-	for state in _probe_states.values():
-		if not (state is Dictionary):
-			continue
-		if tag_filter != "" and str(state.get("tag", "")) != tag_filter:
-			continue
-		states.push_back(state)
-	return states
-
-
-func get_wet_probe_states(tag_filter := "") -> Array[Dictionary]:
-	var states : Array[Dictionary] = []
-	for state in get_probe_states(tag_filter):
-		if bool(state.get("is_wet", false)):
-			states.push_back(state)
-	return states
-
-
-func get_total_max_submerged_volume() -> float:
-	var volume := 0.0
-	for probe in _get_physical_probes():
-		if probe != null and _is_probe_enabled(probe):
-			volume += float(probe.call(&"get_max_submerged_volume"))
-	return volume
+	if not _states_by_probe.has(key):
+		_states_by_probe[key] = BuoyancyProbeState.new(probe, is_fx_probe, tag, enter_threshold, exit_threshold, min_event_interval)
+	return _states_by_probe[key]
 
 
 func set_debug_body_state(center_of_mass_world: Vector3, gravity_force: Vector3, external_force: Vector3, has_state: bool) -> void:
@@ -415,95 +318,12 @@ func set_debug_body_state(center_of_mass_world: Vector3, gravity_force: Vector3,
 
 
 func _build_waterline_segments(mesh_instances: Array[MeshInstance3D]) -> Array[Dictionary]:
+	var triangles := HullSlicer.collect_triangles(mesh_instances, global_transform.affine_inverse())
+	var points := HullSlicer.slice(triangles, design_waterline_y)
 	var segments : Array[Dictionary] = []
-	for mesh_instance in mesh_instances:
-		if mesh_instance.mesh == null:
-			continue
-		var mesh := mesh_instance.mesh
-		for surface_index in mesh.get_surface_count():
-			var arrays := mesh.surface_get_arrays(surface_index)
-			if arrays.is_empty() or arrays.size() <= Mesh.ARRAY_VERTEX:
-				continue
-			if not (arrays[Mesh.ARRAY_VERTEX] is PackedVector3Array):
-				continue
-			var vertices : PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
-			var indices := PackedInt32Array()
-			if arrays.size() > Mesh.ARRAY_INDEX and arrays[Mesh.ARRAY_INDEX] is PackedInt32Array:
-				indices = arrays[Mesh.ARRAY_INDEX]
-			if indices.size() >= 3:
-				for i in range(0, indices.size() - 2, 3):
-					_add_triangle_waterline_segment(segments, mesh_instance, vertices[indices[i]], vertices[indices[i + 1]], vertices[indices[i + 2]])
-			else:
-				for i in range(0, vertices.size() - 2, 3):
-					_add_triangle_waterline_segment(segments, mesh_instance, vertices[i], vertices[i + 1], vertices[i + 2])
+	for i in range(0, points.size(), 2):
+		segments.push_back({"a": points[i], "b": points[i + 1]})
 	return segments
-
-
-func _add_triangle_waterline_segment(segments: Array[Dictionary], mesh_instance: MeshInstance3D, a: Vector3, b: Vector3, c: Vector3) -> void:
-	var la := to_local(mesh_instance.global_transform * a)
-	var lb := to_local(mesh_instance.global_transform * b)
-	var lc := to_local(mesh_instance.global_transform * c)
-	var points : Array[Vector3] = []
-	_add_edge_intersections(points, la, lb)
-	_add_edge_intersections(points, lb, lc)
-	_add_edge_intersections(points, lc, la)
-	points = _deduplicate_points(points)
-	if points.size() < 2:
-		return
-	var pair := _get_farthest_point_pair(points)
-	var p0 : Vector3 = pair[0]
-	var p1 : Vector3 = pair[1]
-	if p0.distance_squared_to(p1) <= EPSILON * EPSILON:
-		return
-	segments.push_back({"a": Vector2(p0.x, p0.z), "b": Vector2(p1.x, p1.z)})
-
-
-func _add_edge_intersections(points: Array[Vector3], a: Vector3, b: Vector3) -> void:
-	var da := a.y - design_waterline_y
-	var db := b.y - design_waterline_y
-	if absf(da) <= EPSILON and absf(db) <= EPSILON:
-		points.push_back(a)
-		points.push_back(b)
-		return
-	if absf(da) <= EPSILON:
-		points.push_back(a)
-		return
-	if absf(db) <= EPSILON:
-		points.push_back(b)
-		return
-	if da * db > 0.0:
-		return
-	var t := da / (da - db)
-	if t < -EPSILON or t > 1.0 + EPSILON:
-		return
-	points.push_back(a.lerp(b, clampf(t, 0.0, 1.0)))
-
-
-func _deduplicate_points(points: Array[Vector3]) -> Array[Vector3]:
-	var result : Array[Vector3] = []
-	for point in points:
-		var duplicate := false
-		for existing in result:
-			if point.distance_squared_to(existing) <= EPSILON * EPSILON:
-				duplicate = true
-				break
-		if not duplicate:
-			result.push_back(point)
-	return result
-
-
-func _get_farthest_point_pair(points: Array[Vector3]) -> Array[Vector3]:
-	var best_a := points[0]
-	var best_b := points[1]
-	var best_distance := best_a.distance_squared_to(best_b)
-	for i in points.size():
-		for j in range(i + 1, points.size()):
-			var distance := points[i].distance_squared_to(points[j])
-			if distance > best_distance:
-				best_distance = distance
-				best_a = points[i]
-				best_b = points[j]
-	return [best_a, best_b]
 
 
 func _build_waterline_hull_points(segments: Array, bounds: AABB) -> Array:
@@ -825,22 +645,21 @@ func _is_fx_probe(node: Node) -> bool:
 	return node is Node3D and node.get_script() == FX_PROBE_SCRIPT
 
 
-func _is_probe_enabled(probe: Node) -> bool:
-	var value = probe.get(&"enabled")
-	return true if value == null else bool(value)
-
-
 func _rebuild_probe_cache() -> void:
 	_physical_cache.clear()
 	_fx_cache.clear()
 	_collect_probes(self)
 	_cache_dirty = false
+	var kept := {}
+	for probe in _physical_cache + _fx_cache:
+		var key := probe.get_instance_id()
+		if _states_by_probe.has(key):
+			kept[key] = _states_by_probe[key]
+	_states_by_probe = kept
 
 
 func _collect_probes(root: Node) -> void:
 	for child in root.get_children():
-		if child == _debug_mesh_instance:
-			continue
 		if _is_physical_probe(child):
 			_physical_cache.push_back(child)
 		elif _is_fx_probe(child):
@@ -864,6 +683,7 @@ func _refresh_probes_deferred() -> void:
 		return
 	_connect_probe_signals()
 	_queue_debug_rebuild()
+	probes_changed.emit()
 
 
 func _connect_probe_signals() -> void:
@@ -876,7 +696,11 @@ func _connect_probe_signals() -> void:
 
 
 func _on_probe_changed() -> void:
+	# Threshold edits must reach the probe's state, so drop it; the next
+	# get_*_probe_states() call recreates it.
+	_states_by_probe.clear()
 	_queue_debug_rebuild()
+	probes_changed.emit()
 
 
 func _warn_missing_runtime_probes_once() -> void:
@@ -887,7 +711,7 @@ func _warn_missing_runtime_probes_once() -> void:
 
 
 func _queue_debug_rebuild() -> void:
-	if not is_inside_tree():
+	if not debug_enabled or not is_inside_tree():
 		return
 	if _debug_rebuild_queued:
 		return
@@ -901,14 +725,12 @@ func _rebuild_queued_debug_mesh() -> void:
 
 
 func _ensure_debug_nodes() -> void:
-	if _debug_mesh_instance != null and is_instance_valid(_debug_mesh_instance):
+	if _debug_mesh_instance != null:
 		return
-	_debug_mesh_instance = get_node_or_null(DEBUG_NODE_NAME) as MeshInstance3D
-	if _debug_mesh_instance == null:
-		_debug_mesh_instance = MeshInstance3D.new()
-		_debug_mesh_instance.name = DEBUG_NODE_NAME
-		add_child(_debug_mesh_instance)
-		_debug_mesh_instance.owner = owner
+	# Internal and unowned: debug geometry is never saved into the scene.
+	_debug_mesh_instance = MeshInstance3D.new()
+	_debug_mesh_instance.name = DEBUG_NODE_NAME
+	add_child(_debug_mesh_instance, false, INTERNAL_MODE_BACK)
 	_debug_mesh_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_debug_mesh_instance.extra_cull_margin = 10000.0
 	_debug_mesh_instance.mesh = _debug_mesh
@@ -917,8 +739,6 @@ func _ensure_debug_nodes() -> void:
 
 
 func _update_debug_visibility() -> void:
-	if _debug_mesh_instance == null and is_inside_tree():
-		_debug_mesh_instance = get_node_or_null(DEBUG_NODE_NAME) as MeshInstance3D
 	if _debug_mesh_instance != null:
 		_debug_mesh_instance.visible = debug_enabled
 
@@ -1070,26 +890,16 @@ func _add_debug_waterline_convex_hull() -> void:
 
 
 func _add_debug_water_lines() -> void:
-	for state in _probe_states.values():
-		if not (state is Dictionary):
-			continue
-		var sample_position : Vector3 = state.get("world_position", Vector3.ZERO)
-		var water_position : Vector3 = state.get("water_position", sample_position)
-		_add_debug_vertex(to_local(sample_position))
-		_add_debug_vertex(to_local(water_position))
+	for state : BuoyancyProbeState in _states_by_probe.values():
+		if state.has_sample:
+			_add_debug_vertex(to_local(state.world_position))
+			_add_debug_vertex(to_local(state.water_position))
 
 
 func _add_debug_force_lines() -> void:
-	for state in _probe_states.values():
-		if not (state is Dictionary):
-			continue
-		if bool(state.get("is_fx_probe", false)):
-			continue
-		var force : Vector3 = state.get("force", Vector3.ZERO)
-		if force.length_squared() <= 0.0001:
-			continue
-		var sample_position : Vector3 = state.get("world_position", Vector3.ZERO)
-		_add_debug_arrow(sample_position, force, DEBUG_FORCE_SCALE)
+	for state : BuoyancyProbeState in _states_by_probe.values():
+		if not state.is_fx_probe and state.has_sample:
+			_add_debug_arrow(state.world_position, state.force, DEBUG_FORCE_SCALE)
 
 
 func _has_debug_body_state() -> bool:

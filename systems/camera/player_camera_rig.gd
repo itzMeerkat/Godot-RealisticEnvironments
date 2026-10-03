@@ -304,8 +304,8 @@ func _get_anchor_transform(anchor: Node3D) -> Transform3D:
 
 func _smooth_anchor_transform(from: Transform3D, to: Transform3D, rotation_smoothing_value: float, delta: float) -> Transform3D:
 	var weight := _smoothing_weight(rotation_smoothing_value, delta)
-	var basis := from.basis.slerp(to.basis, weight).orthonormalized()
-	return Transform3D(basis, to.origin)
+	var _basis := from.basis.slerp(to.basis, weight).orthonormalized()
+	return Transform3D(_basis, to.origin)
 
 func _smooth_vector(from: Vector3, to: Vector3, smoothing: float, delta: float) -> Vector3:
 	return from.lerp(to, _smoothing_weight(smoothing, delta))

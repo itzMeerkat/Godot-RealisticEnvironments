@@ -1,10 +1,9 @@
-[gd_scene format=4 uid="uid://dx4r13gqfh13"]
+[gd_scene format=3 uid="uid://dx4r13gqfh13"]
 
 [ext_resource type="Script" uid="uid://dj3qlu7uupdmi" path="res://demo/main.gd" id="1_skarq"]
 [ext_resource type="Script" uid="uid://cqbpvt36rest3" path="res://addons/ocean_system/wave_cascade_parameters.gd" id="2_pw5n6"]
 [ext_resource type="Script" uid="uid://bw2332cbm64tv" path="res://addons/sky_system/sky_profile.gd" id="3_nr2wj"]
 [ext_resource type="PackedScene" uid="uid://c4amd8o0cttut" path="res://systems/camera/player_camera_rig.tscn" id="4_camera_rig"]
-[ext_resource type="Shader" uid="uid://cjhn8nkfr4mn0" path="res://addons/ocean_system/shaders/spatial/water.gdshader" id="4_dg77c"]
 [ext_resource type="PackedScene" uid="uid://lsh7kr3nyl2t" path="res://addons/ocean_system/ocean_system.tscn" id="7_s0x5e"]
 [ext_resource type="PlaneMesh" path="res://addons/ocean_system/editor_water_preview_mesh.tres" id="8_fdg1k"]
 [ext_resource type="PackedScene" uid="uid://bm4bg7uoyr0xy" path="res://systems/debug/ocean_debug_panel.tscn" id="9_gb4mm"]
@@ -13,6 +12,7 @@
 [ext_resource type="PackedScene" uid="uid://cr5sv0avc8dug" path="res://demo/buoy.tscn" id="13_fdg1k"]
 [ext_resource type="PackedScene" uid="uid://b2pleaxvcdai8" path="res://demo/floating_box.tscn" id="13_floating_box"]
 [ext_resource type="Script" uid="uid://b372vvbghwlxx" path="res://systems/hud/compass_hud.gd" id="14_compass"]
+[ext_resource type="PackedScene" uid="uid://cu6jvrb4ikqbo" path="res://demo/rowboat.tscn" id="15_rowboat"]
 
 [sub_resource type="Curve" id="Curve_fdg1k"]
 _limits = [0.0, 2.0, 0.0, 1.0]
@@ -61,115 +61,22 @@ moon_energy_curve = SubResource("Curve_f8mb2")
 star_visibility_curve = SubResource("Curve_dls5p")
 ambient_energy_curve = SubResource("Curve_fdg1k")
 
-[sub_resource type="Texture2DArrayRD" id="Texture2DArrayRD_fdg1k"]
-
-[sub_resource type="Texture2DArrayRD" id="Texture2DArrayRD_6g5ly"]
-
-[sub_resource type="Texture2DArrayRD" id="Texture2DArrayRD_ucu34"]
-
-[sub_resource type="Texture2DArrayRD" id="Texture2DArrayRD_f8mb2"]
-
-[sub_resource type="ShaderMaterial" id="ShaderMaterial_ycdy4"]
-render_priority = 1
-shader = ExtResource("4_dg77c")
-shader_parameter/water_color = Color(0.1, 0.15, 0.18, 1)
-shader_parameter/foam_color = Color(0.73, 0.67, 0.62, 1)
-shader_parameter/water_diffuse_strength = 0.08
-shader_parameter/water_scatter_color = Color(0.045, 0.18, 0.2, 1)
-shader_parameter/clear_roughness = 0.1
-shader_parameter/foam_roughness = 0.24
-shader_parameter/clear_specular = 0.25
-shader_parameter/foam_specular = 0.08
-shader_parameter/slope_roughness_strength = 0.55
-shader_parameter/normal_strength = 1.0
-shader_parameter/foam_intensity = 0.5
-shader_parameter/foam_threshold = 0.05
-shader_parameter/foam_softness = 0.35
-shader_parameter/sky_top_color = Color(0.12, 0.42, 0.78, 1)
-shader_parameter/sky_horizon_color = Color(0.58, 0.78, 0.94, 1)
-shader_parameter/sky_ground_horizon_color = Color(0.435, 0.585, 0.705, 1)
-shader_parameter/sky_ground_bottom_color = Color(0.053999998, 0.189, 0.35099998, 1)
-shader_parameter/sky_sun_direction = Vector3(0.95105654, 0.2531319, 0.17724487)
-shader_parameter/sky_sun_color = Color(1, 0.96, 0.82, 1)
-shader_parameter/sky_sun_visibility = 1.0
-shader_parameter/sky_reflection_enabled = true
-shader_parameter/sky_reflection_strength = 0.55
-shader_parameter/sky_reflection_fresnel_power = 5.0
-shader_parameter/sky_reflection_f0 = 0.02
-shader_parameter/sky_horizon_boost = 0.85
-shader_parameter/sky_reflection_roughness_strength = 0.75
-shader_parameter/sky_reflection_far_roughness = 0.35
-shader_parameter/sun_glitter_strength = 0.42
-shader_parameter/sun_glitter_power = 64.0
-shader_parameter/sun_glitter_low_sun_boost = 1.4
-shader_parameter/sun_scatter_strength = 0.24
-shader_parameter/sun_scatter_base = 0.08
-shader_parameter/sun_scatter_phase_power = 2.0
-shader_parameter/sun_scatter_normal_power = 0.75
-shader_parameter/sun_scatter_slope_strength = 0.65
-shader_parameter/sun_scatter_distance_strength = 0.25
-shader_parameter/crest_glow_enabled = true
-shader_parameter/crest_glow_color = Color(0.08, 0.58, 0.46, 1)
-shader_parameter/crest_glow_strength = 1.25
-shader_parameter/crest_glow_emission_strength = 0.75
-shader_parameter/crest_height_start = 0.18
-shader_parameter/crest_height_end = 0.85
-shader_parameter/crest_slope_start = 0.18
-shader_parameter/crest_slope_end = 0.85
-shader_parameter/crest_back_view_power = 0.5
-shader_parameter/crest_back_normal_power = 1.0
-shader_parameter/crest_low_sun_start = 0.02
-shader_parameter/crest_low_sun_end = 0.38
-shader_parameter/planar_reflection_enabled = true
-shader_parameter/planar_reflection_view_projection = Projection(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1)
-shader_parameter/planar_reflection_strength = 0.42
-shader_parameter/planar_reflection_distortion = 0.018
-shader_parameter/planar_reflection_fresnel_power = 4.0
-shader_parameter/planar_reflection_plane_y = 0.0
-shader_parameter/use_bicubic_normals = true
-shader_parameter/fragment_cascade_limit = 3
-shader_parameter/enable_far_lod = true
-shader_parameter/near_ocean_radius = 256.0
-shader_parameter/far_lod_radius = 7000.0
-shader_parameter/far_lod_blend_distance = 1400.0
-shader_parameter/far_lod_curve = 1.8
-shader_parameter/far_low_frequency_tile_length = 32.0
-shader_parameter/far_normal_strength = 0.14
-shader_parameter/far_foam_coverage = 0.24
-shader_parameter/far_foam_threshold_boost = 0.2
-shader_parameter/hull_cutout_count = 0
-shader_parameter/hull_cutout_centers = PackedVector4Array(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
-shader_parameter/hull_cutout_axes = PackedVector4Array(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
-shader_parameter/hull_cutout_shapes = PackedVector4Array(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
-shader_parameter/hull_cutout_verticals = PackedVector4Array(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
-shader_parameter/hull_cutout_widths = PackedVector4Array(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
-shader_parameter/manual_foam_count = 0
-shader_parameter/manual_foam_sources = PackedVector4Array(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
-shader_parameter/manual_foam_shapes = PackedVector4Array(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
-shader_parameter/map_scales = PackedVector4Array(0.0078125, 0.0078125, 0.7, 1, 0.03125, 0.03125, 0.35, 0.8, 0.125, 0.125, 0.06, 0.45)
-shader_parameter/spectrum_blend_states = PackedVector4Array(1, 0, 0, 0, 2, 3, 0, 0, 4, 5, 0, 0)
-shader_parameter/num_cascades = 3
-shader_parameter/displacements = SubResource("Texture2DArrayRD_fdg1k")
-shader_parameter/normals = SubResource("Texture2DArrayRD_6g5ly")
-shader_parameter/previous_displacements = SubResource("Texture2DArrayRD_ucu34")
-shader_parameter/previous_normals = SubResource("Texture2DArrayRD_f8mb2")
-shader_parameter/wave_blend_alpha = 0.9561159690395731
-
 [sub_resource type="Resource" id="Resource_adqv5"]
 script = ExtResource("2_pw5n6")
 tile_length = Vector2(128, 128)
-displacement_scale = 0.7
+displacement_scale = 1.98
 wind_speed = 6.0
 wind_direction = 20.0
 fetch_length = 12.0
 swell = 0.55
 spread = 0.35
-foam_amount = 2.0
+whitecap = 0.45
+foam_lifetime = 3.0
 
 [sub_resource type="Resource" id="Resource_luhq0"]
 script = ExtResource("2_pw5n6")
 tile_length = Vector2(32, 32)
-displacement_scale = 0.35
+displacement_scale = 0.99
 normal_scale = 0.8
 wind_speed = 6.0
 wind_direction = 15.0
@@ -178,12 +85,12 @@ wind_direction_offset = -5.0
 fetch_length = 4.0
 swell = 0.35
 spread = 0.55
-foam_amount = 1.0
+whitecap = 0.6
 
 [sub_resource type="Resource" id="Resource_83u3u"]
 script = ExtResource("2_pw5n6")
 tile_length = Vector2(8, 8)
-displacement_scale = 0.06
+displacement_scale = 0.17
 normal_scale = 0.45
 wind_speed = 6.0
 wind_direction = 20.0
@@ -191,8 +98,8 @@ wind_speed_multiplier = 1.6
 fetch_length = 1.5
 swell = 0.2
 spread = 0.65
-whitecap = 0.45
-foam_amount = 0.8
+whitecap = 0.87
+foam_lifetime = 0.8
 
 [node name="Main" type="Node3D" unique_id=1897186747]
 script = ExtResource("1_skarq")
@@ -202,12 +109,13 @@ time_of_day = 0.3
 cycle_enabled = false
 cycle_duration_seconds = 30.0
 profile = SubResource("Resource_msmub")
+cloud_wind_source_path = NodePath("../WindSystem")
 
 [node name="PlayerCameraRig" parent="." unique_id=436407652 instance=ExtResource("4_camera_rig")]
 active_mode = 0
-follow_target_path = NodePath("../FloatingBox")
-first_person_anchor_path = NodePath("../FloatingBox/CameraTargets/FirstPersonSeat")
-third_person_focus_path = NodePath("../FloatingBox/CameraTargets/ThirdPersonFocus")
+follow_target_path = NodePath("../Rowboat")
+first_person_anchor_path = NodePath("../Rowboat/CameraTargets/FirstPersonSeat")
+third_person_focus_path = NodePath("../Rowboat/CameraTargets/ThirdPersonFocus")
 cycle_mode_action = &"cycle_camera_mode"
 first_person_anchor_rotation_smoothing = 3.0
 
@@ -216,21 +124,15 @@ script = ExtResource("10_tfjfv")
 wind_direction = 0.0
 
 [node name="Water" parent="." unique_id=1159832475 instance=ExtResource("7_s0x5e")]
-material_override = SubResource("ShaderMaterial_ycdy4")
 extra_cull_margin = 362.03867
 gi_mode = 0
 mesh = ExtResource("8_fdg1k")
 skeleton = NodePath("")
 sky_source_path = NodePath("../SkySystem")
-crest_glow_strength = 1.25
-crest_glow_emission_strength = 0.75
-crest_back_view_power = 0.5
-crest_back_normal_power = 1.0
-foam_intensity = 0.5
+interaction_viscosity = 0.05
 use_external_wind = true
 wind_source_path = NodePath("../WindSystem")
 parameters = Array[ExtResource("2_pw5n6")]([SubResource("Resource_adqv5"), SubResource("Resource_luhq0"), SubResource("Resource_83u3u")])
-simulation_map_size = 512
 mesh_base_cell_size = 1.0
 
 [node name="OceanDebugPanel" parent="." unique_id=900526538 instance=ExtResource("9_gb4mm")]
@@ -251,12 +153,13 @@ offset_bottom = 156.0
 grow_horizontal = 0
 script = ExtResource("14_compass")
 
-[node name="FloatingBox" parent="." unique_id=1766651400 instance=ExtResource("13_floating_box")]
+[node name="Rowboat" parent="." unique_id=1766651400 instance=ExtResource("15_rowboat")]
 transform = Transform3D(0.69116926, 0, -0.72269297, 0, 1, 0, 0.72269297, 0, 0.69116926, 0, 0, 0)
 player_controlled = true
+debug_enabled = true
 
 [node name="Buoy" parent="." unique_id=2077650632 instance=ExtResource("13_fdg1k")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 146.46655, 2.0000153, -97.32648)
 
-[node name="FloatingBox2" parent="." unique_id=1779372444 instance=ExtResource("13_floating_box")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -15.264832, 0, -22.716064)
+[node name="Caravel" parent="." unique_id=1779372444 instance=ExtResource("13_floating_box")]
+transform = Transform3D(0.63730067, 0, -0.7706152, 0, 1, 0, 0.7706152, 0, 0.63730067, -13.774445, 0, -15.14146)

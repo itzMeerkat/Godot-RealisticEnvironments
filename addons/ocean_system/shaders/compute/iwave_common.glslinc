@@ -1,0 +1,31 @@
+/**
+ * Shared definitions for the iWave interaction simulation (WaterInteractionSim).
+ *
+ * The simulation window is grid_size x grid_size cells of cell_size meters,
+ * starting at integer cell `origin` and following the camera. World cell c is
+ * stored at texel c mod grid_size (grid_size is a power of two), so moving the
+ * window never copies data; only cells that enter the window are cleared.
+ *
+ * State texture (rgba32f): x = eta_n, y = eta_{n-1}, z = p_n, w = p_{n-1}
+ *   eta = h + p is the wave deviation from the hull-conforming rest state,
+ *   h the visible surface offset and p the hull pressure head (m).
+ * Render texture (rgba16f): x = h, y = eta, z = foam, w = hull coverage
+ *   (1 where a hull sits in the water; surface queries leave eta out there)
+ *
+ * Godot does not track include dependencies: reimport every iwave_*.glsl
+ * after editing this file.
+ */
+
+// Pressure history that does not exist yet (cell just entered the window).
+// Treated as "equal to the current pressure" so fresh cells are not forced.
+#define IWAVE_NO_PRESSURE -1.0e30
+
+// The world cell stored at a texel, for the window starting at origin.
+ivec2 iwave_texel_to_cell(ivec2 texel, ivec2 origin, int grid_size) {
+	return origin + ((texel - origin) & ivec2(grid_size - 1));
+}
+
+// World-space XZ of a cell center.
+vec2 iwave_cell_center(ivec2 cell, float cell_size) {
+	return (vec2(cell) + 0.5) * cell_size;
+}

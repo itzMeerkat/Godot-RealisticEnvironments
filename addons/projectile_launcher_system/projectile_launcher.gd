@@ -31,6 +31,9 @@ const DEBUG_ARROW_ON_TOP := true
 @export_range(0.0, 120.0, 0.01, "or_greater") var projectile_lifetime := 10.0
 ## Adds the launcher platform's current velocity at the muzzle to the shot velocity.
 @export var inherit_launcher_velocity := true
+## Node a ProjectileWeaponController turns toward its aim point (e.g. the gun
+## carriage). Empty turns the launcher itself.
+@export var yaw_target_path: NodePath
 
 @export_group("Collision")
 ## Overrides collision layer and mask on spawned projectile RigidBody3D nodes.

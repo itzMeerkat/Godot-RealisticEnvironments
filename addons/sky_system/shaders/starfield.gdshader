@@ -1,12 +1,17 @@
 shader_type spatial;
 render_mode unshaded, cull_front, depth_draw_never, blend_add;
 
+#include "res://addons/sky_system/shaders/haze.gdshaderinc"
+
 uniform float star_visibility : hint_range(0.0, 8.0) = 0.0;
 uniform float star_brightness : hint_range(0.0, 8.0) = 1.0;
 uniform float star_density : hint_range(16.0, 512.0) = 72.0;
 uniform float star_twinkle_strength : hint_range(0.0, 1.0) = 0.12;
 uniform float horizon_softness : hint_range(0.0, 0.5) = 0.08;
 uniform float time = 0.0;
+// Clouds hide the stars; set by SkySystem like the sky shader's cloud uniforms.
+uniform bool clouds_enabled = false;
+uniform samplerCube cloud_cubemap : filter_linear;
 
 varying vec3 world_dir;
 
@@ -40,6 +45,14 @@ void fragment() {
 	float twinkle = 1.0 + sin(time * mix(0.7, 2.1, seed) + seed * 31.0) * star_twinkle_strength;
 	float horizon_fade = smoothstep(-horizon_softness, horizon_softness, dir.y);
 	float intensity = is_star * star_shape * twinkle * horizon_fade * star_visibility * star_brightness;
+	if (clouds_enabled) {
+		intensity *= 1.0 - texture(cloud_cubemap, dir).a;
+	}
+	// Dimmed by the haze in front (its own glow is in the sky behind).
+	if (haze_density > 0.0) {
+		float camera_height = CAMERA_POSITION_WORLD.y - sea_level;
+		intensity *= exp(-haze_optical_depth(camera_height, dir, haze_ray_length(camera_height, dir)));
+	}
 	vec3 star_color = mix(vec3(0.62, 0.72, 1.0), vec3(1.0, 0.92, 0.72), hash12(cell + 7.31));
 	ALBEDO = star_color * intensity;
 	ALPHA = clamp(intensity, 0.0, 1.0);

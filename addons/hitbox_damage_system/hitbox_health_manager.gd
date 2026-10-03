@@ -1,6 +1,11 @@
 class_name HitboxHealthManager
-extends Node
-## Central hitbox damage, health, and signal router for projectile impacts.
+extends Node3D
+## Hitbox container and damage router: ProjectileHitbox descendants report
+## projectile impacts here, which become per-group health, signals and hit
+## effects. Optionally shows a health-bar debug panel.
+
+const DEBUG_SCREEN_POSITION := Vector2(24.0, 88.0)
+const DEBUG_PANEL_WIDTH := 260.0
 
 signal hitbox_hit(hitbox_group: StringName, hitbox: Node, projectile: Node, hit_data: Dictionary)
 signal group_health_changed(hitbox_group: StringName, health: float, max_health: float, hit_data: Dictionary)
@@ -10,10 +15,6 @@ signal group_destroyed(hitbox_group: StringName, hit_data: Dictionary)
 @export var enabled := true
 ## Optional owner rigid body used for own-projectile filtering. Leave empty to find an ancestor.
 @export var owner_rigid_body_path: NodePath
-## Optional root scanned for ProjectileHitbox children. Leave empty to scan nearby children.
-@export var hitbox_root_path: NodePath
-## Automatically finds child ProjectileHitbox nodes under hitbox_root_path.
-@export var auto_collect_child_hitboxes := true
 
 @export_group("Projectile Filtering")
 ## Ignores projectiles whose source metadata points back to owner_rigid_body_path.
@@ -43,10 +44,21 @@ signal group_destroyed(hitbox_group: StringName, hit_data: Dictionary)
 ## Fallback seconds before spawned hit effects are freed if they do not self-delete.
 @export_range(0.0, 10.0, 0.01, "or_greater") var hit_effect_fallback_lifetime := 1.6
 
+@export_group("Debug")
+## Shows a panel with a health bar per group in group_max_health.
+@export var debug_ui_enabled := false :
+	set(value):
+		debug_ui_enabled = value
+		if _debug_layer != null:
+			_debug_layer.visible = debug_ui_enabled
+
 var _hitboxes: Array[Node] = []
 var _group_health := {}
 var _destroyed_groups := {}
 var _owner_rigid_body: RigidBody3D
+var _debug_layer: CanvasLayer
+var _debug_bars := {}
+var _debug_labels := {}
 
 
 func _enter_tree() -> void:
@@ -60,15 +72,14 @@ func _exit_tree() -> void:
 func _ready() -> void:
 	_initialize_group_health()
 	refresh_hitboxes()
+	_build_debug_ui()
+	group_health_changed.connect(_on_debug_health_changed)
 
 
+## Re-registers every ProjectileHitbox below this node.
 func refresh_hitboxes() -> void:
 	_hitboxes.clear()
-	if not auto_collect_child_hitboxes:
-		return
-	var root := _get_hitbox_root()
-	if root != null:
-		_collect_hitboxes(root)
+	_collect_hitboxes(self)
 
 
 func handle_projectile_hit(hitbox: Node, projectile: Node, hit_data: Dictionary = {}) -> void:
@@ -114,12 +125,14 @@ func get_group_max_health(hitbox_group: StringName) -> float:
 
 func set_group_health(hitbox_group: StringName, health: float) -> void:
 	_group_health[hitbox_group] = clampf(health, 0.0, get_group_max_health(hitbox_group))
+	_refresh_debug_ui()
 
 
 func reset_health() -> void:
 	_group_health.clear()
 	_destroyed_groups.clear()
 	_initialize_group_health()
+	_refresh_debug_ui()
 
 
 func is_group_destroyed(hitbox_group: StringName) -> bool:
@@ -242,14 +255,6 @@ func _get_owner_rigid_body() -> RigidBody3D:
 	return null
 
 
-func _get_hitbox_root() -> Node:
-	if not hitbox_root_path.is_empty():
-		var root := get_node_or_null(hitbox_root_path)
-		if root != null:
-			return root
-	return get_parent()
-
-
 func _collect_hitboxes(root: Node) -> void:
 	if root is ProjectileHitbox:
 		if not _hitboxes.has(root):
@@ -259,3 +264,57 @@ func _collect_hitboxes(root: Node) -> void:
 		var child_node := child as Node
 		if child_node != null:
 			_collect_hitboxes(child_node)
+
+
+func _build_debug_ui() -> void:
+	_debug_layer = CanvasLayer.new()
+	_debug_layer.name = "HealthDebugUI"
+	_debug_layer.visible = debug_ui_enabled
+	add_child(_debug_layer, false, INTERNAL_MODE_BACK)
+
+	var panel := PanelContainer.new()
+	panel.position = DEBUG_SCREEN_POSITION
+	panel.custom_minimum_size = Vector2(DEBUG_PANEL_WIDTH, 0.0)
+	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_debug_layer.add_child(panel)
+	var content := VBoxContainer.new()
+	content.add_theme_constant_override("separation", 6)
+	panel.add_child(content)
+	var title := Label.new()
+	title.text = "Hitbox Health"
+	content.add_child(title)
+
+	for key in group_max_health.keys():
+		var group := StringName(str(key))
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 8)
+		content.add_child(row)
+		var name_label := Label.new()
+		name_label.custom_minimum_size = Vector2(56.0, 0.0)
+		name_label.text = String(group)
+		row.add_child(name_label)
+		var bar := ProgressBar.new()
+		bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		bar.show_percentage = false
+		row.add_child(bar)
+		var value_label := Label.new()
+		value_label.custom_minimum_size = Vector2(78.0, 0.0)
+		value_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		row.add_child(value_label)
+		_debug_bars[group] = bar
+		_debug_labels[group] = value_label
+	_refresh_debug_ui()
+
+
+func _refresh_debug_ui() -> void:
+	for group in _debug_bars.keys():
+		var max_health := get_group_max_health(group)
+		var health := get_group_health(group)
+		var bar := _debug_bars[group] as ProgressBar
+		bar.max_value = maxf(max_health, 0.001)
+		bar.value = health
+		(_debug_labels[group] as Label).text = "%d / %d" % [roundi(health), roundi(max_health)]
+
+
+func _on_debug_health_changed(_group: StringName, _health: float, _max_health: float, _hit_data: Dictionary) -> void:
+	_refresh_debug_ui()

@@ -13,7 +13,7 @@
 
 layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 
-layout(rgba16f, set = 0, binding = 0) restrict writeonly uniform image2DArray spectrum;
+layout(rgba32f, set = 0, binding = 0) restrict writeonly uniform image2DArray spectrum;
 
 layout(push_constant) restrict readonly uniform PushConstants {
 	ivec2 seed;
@@ -111,7 +111,10 @@ vec2 get_spectrum_amplitude(in ivec2 id, in ivec2 map_size) {
 	float w_norm = dispersion[1] / k * dk.x*dk.y;
 	float s = TMA_spectrum(w, peak_frequency, alpha);
 	float d = mix(0.5/PI, hasselmann_directional_spread(w, peak_frequency, wind_speed, theta), 1.0 - spread) * exp(-(1.0-detail)*(1.0-detail) * k*k);
-	return gaussian(hash(uvec2(id + seed))) * sqrt(max(2.0 * s * d * w_norm, 0.f));
+	// Height variance per mode: E|h0|^2 = S dk / 2 (two unit normals, so the 1/2),
+	// and spectrum_modulate adds h0(k) and conj(h0(-k)), so E|h(k)|^2 = S dk and the
+	// summed height variance matches the spectrum's.
+	return gaussian(hash(uvec2(id + seed))) * sqrt(max(s * d * w_norm, 0.f)) * 0.5;
 }
 
 void main() {

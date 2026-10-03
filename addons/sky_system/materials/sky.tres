@@ -1,22 +1,31 @@
-[gd_resource type="ShaderMaterial" format=4]
+[gd_resource type="ShaderMaterial" format=3 uid="uid://dn2e5gtbc2jx4"]
 
-[ext_resource type="Shader" path="res://addons/sky_system/shaders/sky.gdshader" id="1_sky"]
+[ext_resource type="Shader" uid="uid://bfqtnobg1ay72" path="res://addons/sky_system/shaders/sky.gdshader" id="1_sky"]
 
 [resource]
 shader = ExtResource("1_sky")
+shader_parameter/sea_level = 0.0
+shader_parameter/haze_density = 7.824e-05
+shader_parameter/haze_scale_height = 1000.0
+shader_parameter/haze_anisotropy = 0.97
+shader_parameter/haze_light_direction = Vector3(0.95105654, 0.2531319, 0.17724487)
+shader_parameter/haze_light_color = Vector3(1.4756833, 1.416656, 1.2100604)
+shader_parameter/haze_ambient_color = Vector3(0.6014704, 0.8006116, 0.9576058)
 shader_parameter/sky_top_color = Color(0.12, 0.42, 0.78, 1)
 shader_parameter/sky_horizon_color = Color(0.58, 0.78, 0.94, 1)
-shader_parameter/radiance_sun_disk_strength = 0.16
-shader_parameter/radiance_sun_halo_strength = 0.18
-shader_parameter/ground_bottom_color = Color(0.01, 0.02, 0.03, 1)
-shader_parameter/ground_horizon_color = Color(0.16, 0.24, 0.28, 1)
-shader_parameter/sun_direction = Vector3(1, 0, 0)
-shader_parameter/sun_color = Color(1, 0.92, 0.72, 1)
+shader_parameter/ground_bottom_color = Color(0.053999998, 0.189, 0.35099998, 1)
+shader_parameter/ground_horizon_color = Color(0.435, 0.585, 0.705, 1)
+shader_parameter/sun_direction = Vector3(0.95105654, 0.2531319, 0.17724487)
+shader_parameter/sun_color = Color(1, 0.96, 0.82, 1)
 shader_parameter/sun_visibility = 1.0
+shader_parameter/sun_irradiance = Vector3(2.1143348, 2.0297613, 1.7337545)
 shader_parameter/sun_disk_size = 0.00465
 shader_parameter/sun_halo_size = 0.075
-shader_parameter/moon_direction = Vector3(-1, 0, 0)
-shader_parameter/moon_color = Color(0.72, 0.78, 1, 1)
+shader_parameter/radiance_sun_disk_strength = 0.16
+shader_parameter/radiance_sun_halo_strength = 0.18
+shader_parameter/moon_direction = Vector3(-0.94785255, -0.2729413, -0.16455607)
+shader_parameter/moon_color = Color(0.02, 0.025, 0.04, 1)
 shader_parameter/moon_visibility = 0.0
 shader_parameter/moon_disk_size = 0.00465
-shader_parameter/moon_phase = 1.0
+shader_parameter/moon_phase = 0.9999999990217492
+shader_parameter/clouds_enabled = false

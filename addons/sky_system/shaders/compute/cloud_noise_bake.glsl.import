@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://c1iu02wf68lfb"
+path="res://.godot/imported/cloud_noise_bake.glsl-3a27438ff985951553823006625855fc.res"
+
+[deps]
+
+source_file="res://addons/sky_system/shaders/compute/cloud_noise_bake.glsl"
+dest_files=["res://.godot/imported/cloud_noise_bake.glsl-3a27438ff985951553823006625855fc.res"]
+
+[params]
+

@@ -1,0 +1,91 @@
+/**
+ * Shared ocean displacement sampling for compute shaders. Matches the water
+ * material's vertex displacement so compute results agree with the visuals.
+ *
+ * Before `#include "ocean_sampling.glslinc"`, the including shader must:
+ *   - define OCEAN_SAMPLING_SET, OCEAN_CASCADE_BUFFER_BINDING,
+ *     OCEAN_DISPLACEMENT_A_BINDING and OCEAN_DISPLACEMENT_B_BINDING;
+ *   - declare `uint cascade_count` and `float water_level` (usually as
+ *     push-constant members).
+ *
+ * Godot does not track include dependencies: after editing this file, reimport
+ * every .glsl that includes it (surface_query.glsl, iwave_pressure.glsl).
+ */
+
+#define OCEAN_MAX_CASCADES 8U
+#define OCEAN_DISPLACEMENT_INVERSION_ITERATIONS 3
+
+struct OceanCascade {
+	vec4 map_scales;  // [uv scale xy, displacement scale, normal scale]
+	vec4 blend_state; // [active layer, pending layer, active weight, pending weight]
+	// x: weight of map B (map A gets the rest) for the current time; y (1/s) turns
+	// B - A into a velocity. Each cascade updates at its own rate into whichever
+	// map does not hold its newest frame (OceanSystem._get_cascade_frame_blend()).
+	vec4 frame_blend;
+};
+
+layout(std430, set = OCEAN_SAMPLING_SET, binding = OCEAN_CASCADE_BUFFER_BINDING) restrict readonly buffer OceanCascadeBuffer {
+	OceanCascade ocean_cascades[];
+};
+
+// Bound with a repeat, linear sampler (the maps have mip chains; this reads mip 0):
+// the same hardware bilinear filtering as the water material's vertex shader.
+layout(set = OCEAN_SAMPLING_SET, binding = OCEAN_DISPLACEMENT_A_BINDING) uniform sampler2DArray ocean_displacements_a;
+layout(set = OCEAN_SAMPLING_SET, binding = OCEAN_DISPLACEMENT_B_BINDING) uniform sampler2DArray ocean_displacements_b;
+
+// One cascade's spectrum-weighted displacement in maps A and B at uv.
+void ocean_sample_cascade(OceanCascade cascade, vec2 uv, out vec3 a, out vec3 b) {
+	vec3 active_coords = vec3(uv, cascade.blend_state.x);
+	a = textureLod(ocean_displacements_a, active_coords, 0.0).xyz * cascade.blend_state.z;
+	b = textureLod(ocean_displacements_b, active_coords, 0.0).xyz * cascade.blend_state.z;
+	if (cascade.blend_state.w > 0.0) {
+		vec3 pending_coords = vec3(uv, cascade.blend_state.y);
+		a += textureLod(ocean_displacements_a, pending_coords, 0.0).xyz * cascade.blend_state.w;
+		b += textureLod(ocean_displacements_b, pending_coords, 0.0).xyz * cascade.blend_state.w;
+	}
+}
+
+// Displacement as rendered at source position xz, and its rate of change.
+void ocean_sample_displacement_and_velocity(vec2 xz, out vec3 displacement, out vec3 velocity) {
+	displacement = vec3(0.0);
+	velocity = vec3(0.0);
+	uint count = min(cascade_count, OCEAN_MAX_CASCADES);
+	for (uint i = 0U; i < count; ++i) {
+		OceanCascade cascade = ocean_cascades[i];
+		vec3 a;
+		vec3 b;
+		ocean_sample_cascade(cascade, xz * cascade.map_scales.xy, a, b);
+		displacement += mix(a, b, cascade.frame_blend.x) * cascade.map_scales.z;
+		velocity += (b - a) * cascade.frame_blend.y * cascade.map_scales.z;
+	}
+}
+
+// Displacement as rendered at source position xz.
+vec3 ocean_sample_visual_displacement(vec2 xz) {
+	vec3 displacement = vec3(0.0);
+	uint count = min(cascade_count, OCEAN_MAX_CASCADES);
+	for (uint i = 0U; i < count; ++i) {
+		OceanCascade cascade = ocean_cascades[i];
+		vec3 a;
+		vec3 b;
+		ocean_sample_cascade(cascade, xz * cascade.map_scales.xy, a, b);
+		displacement += mix(a, b, cascade.frame_blend.x) * cascade.map_scales.z;
+	}
+	return displacement;
+}
+
+// The mesh moves the vertex that starts at x to x + D.xz(x). Returns the source
+// position x whose displaced vertex lands on world position p (fixed-point
+// iteration; converges quickly for non-overturning waves).
+vec2 ocean_invert_horizontal_displacement(vec2 p) {
+	vec2 x = p;
+	for (int i = 0; i < OCEAN_DISPLACEMENT_INVERSION_ITERATIONS; ++i) {
+		x = p - ocean_sample_visual_displacement(x).xz;
+	}
+	return x;
+}
+
+// World-space height of the rendered surface directly above/below p.
+float ocean_sample_surface_height(vec2 p) {
+	return water_level + ocean_sample_visual_displacement(ocean_invert_horizontal_displacement(p)).y;
+}

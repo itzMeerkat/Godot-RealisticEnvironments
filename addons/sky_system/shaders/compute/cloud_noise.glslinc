@@ -1,0 +1,73 @@
+// Noise shared by the cloud compute shaders. Not tracked by the importer:
+// after editing, reimport cloud_noise_bake.glsl and cloud_weather.glsl.
+//
+// `period` makes a function tile every `period` cells (used for the baked 3D
+// textures, which wrap); 0 disables tiling.
+
+vec3 cloud_hash33(vec3 p) {
+	p = fract(p * vec3(0.1031, 0.1030, 0.0973));
+	p += dot(p, p.yxz + 33.33);
+	return fract((p.xxy + p.yxx) * p.zyx);
+}
+
+vec3 cloud_cell(vec3 cell, float period) {
+	// The offset keeps cell (0, 0, 0) away from the hash's fixed point at 0.
+	return (period > 0.0 ? mod(cell, period) : cell) + vec3(17.13, 31.71, 47.37);
+}
+
+// Gradient noise in roughly [-1, 1].
+float cloud_gradient_noise(vec3 p, float period) {
+	vec3 i = floor(p);
+	vec3 f = fract(p);
+	vec3 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+	float n000 = dot(cloud_hash33(cloud_cell(i + vec3(0.0, 0.0, 0.0), period)) * 2.0 - 1.0, f - vec3(0.0, 0.0, 0.0));
+	float n100 = dot(cloud_hash33(cloud_cell(i + vec3(1.0, 0.0, 0.0), period)) * 2.0 - 1.0, f - vec3(1.0, 0.0, 0.0));
+	float n010 = dot(cloud_hash33(cloud_cell(i + vec3(0.0, 1.0, 0.0), period)) * 2.0 - 1.0, f - vec3(0.0, 1.0, 0.0));
+	float n110 = dot(cloud_hash33(cloud_cell(i + vec3(1.0, 1.0, 0.0), period)) * 2.0 - 1.0, f - vec3(1.0, 1.0, 0.0));
+	float n001 = dot(cloud_hash33(cloud_cell(i + vec3(0.0, 0.0, 1.0), period)) * 2.0 - 1.0, f - vec3(0.0, 0.0, 1.0));
+	float n101 = dot(cloud_hash33(cloud_cell(i + vec3(1.0, 0.0, 1.0), period)) * 2.0 - 1.0, f - vec3(1.0, 0.0, 1.0));
+	float n011 = dot(cloud_hash33(cloud_cell(i + vec3(0.0, 1.0, 1.0), period)) * 2.0 - 1.0, f - vec3(0.0, 1.0, 1.0));
+	float n111 = dot(cloud_hash33(cloud_cell(i + vec3(1.0, 1.0, 1.0), period)) * 2.0 - 1.0, f - vec3(1.0, 1.0, 1.0));
+	return mix(
+		mix(mix(n000, n100, u.x), mix(n010, n110, u.x), u.y),
+		mix(mix(n001, n101, u.x), mix(n011, n111, u.x), u.y),
+		u.z);
+}
+
+float cloud_gradient_fbm(vec3 p, float period, int octaves) {
+	float sum = 0.0;
+	float amplitude = 0.5;
+	float total = 0.0;
+	for (int i = 0; i < octaves; i++) {
+		sum += cloud_gradient_noise(p, period) * amplitude;
+		total += amplitude;
+		p *= 2.0;
+		period *= 2.0;
+		amplitude *= 0.5;
+	}
+	return sum / total;
+}
+
+// Inverted cellular noise: 1 on feature points, falling to 0 one cell away.
+float cloud_worley(vec3 p, float period) {
+	vec3 i = floor(p);
+	vec3 f = fract(p);
+	float nearest = 1.0e9;
+	for (int z = -1; z <= 1; z++) {
+		for (int y = -1; y <= 1; y++) {
+			for (int x = -1; x <= 1; x++) {
+				vec3 offset = vec3(x, y, z);
+				vec3 difference = offset + cloud_hash33(cloud_cell(i + offset, period)) - f;
+				nearest = min(nearest, dot(difference, difference));
+			}
+		}
+	}
+	return 1.0 - clamp(sqrt(nearest), 0.0, 1.0);
+}
+
+// Three Worley octaves starting at `frequency` cells per unit.
+float cloud_worley_fbm(vec3 p, float frequency) {
+	return cloud_worley(p * frequency, frequency) * 0.625
+		+ cloud_worley(p * frequency * 2.0, frequency * 2.0) * 0.25
+		+ cloud_worley(p * frequency * 4.0, frequency * 4.0) * 0.125;
+}

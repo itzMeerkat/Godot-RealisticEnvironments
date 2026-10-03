@@ -2,79 +2,103 @@
 
 [ext_resource type="PackedScene" uid="uid://cu4i5s60m0u7x" path="res://demo/assets/buoy/red_marine_navigation_buoy_game_ready.glb" id="1_lq5a0"]
 [ext_resource type="Script" uid="uid://cv6g660t6s5av" path="res://addons/buoyancy_system/buoyant_body.gd" id="2_7hk8w"]
-[ext_resource type="Script" path="res://addons/buoyancy_system/buoyancy_probe_volume.gd" id="3_ow6qj"]
-[ext_resource type="Script" path="res://addons/buoyancy_system/buoyancy_probe_node.gd" id="4_54211"]
+[ext_resource type="Script" uid="uid://ianh08wohto0" path="res://addons/buoyancy_system/buoyancy_probe_volume.gd" id="3_ow6qj"]
+[ext_resource type="Script" uid="uid://obesevate4xe" path="res://addons/buoyancy_system/buoyancy_probe_node.gd" id="4_54211"]
 [ext_resource type="Script" uid="uid://c8hdl5abw2t2d" path="res://demo/buoy_distance_label.gd" id="5_distance"]
+[ext_resource type="Script" uid="uid://dorhxd7wuq5cu" path="res://addons/ocean_system/hull_water_footprint.gd" id="6_footprint"]
+[ext_resource type="Resource" uid="uid://by5205rl2tbvi" path="res://demo/buoy_hull_profile.tres" id="7_571ab"]
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_lq5a0"]
 radius = 0.9291992
 height = 5.154297
 
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_54211"]
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_t66q4"]
 transparency = 1
+cull_mode = 2
 no_depth_test = true
 shading_mode = 0
-albedo_color = Color(0.1, 0.8, 1, 0.22)
+albedo_color = Color(0.1, 0.8, 1, 0.32)
 
-[sub_resource type="ImmediateMesh" id="ImmediateMesh_pevfj"]
+[sub_resource type="SphereMesh" id="SphereMesh_3aspy"]
+radius = 0.16
+height = 0.32
 
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_571ab"]
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_xapa5"]
 transparency = 1
+cull_mode = 2
 no_depth_test = true
 shading_mode = 0
-albedo_color = Color(0.1, 0.8, 1, 0.22)
+albedo_color = Color(0.1, 0.8, 1, 0.32)
 
-[sub_resource type="ImmediateMesh" id="ImmediateMesh_t66q4"]
+[sub_resource type="SphereMesh" id="SphereMesh_y2khd"]
+radius = 0.16
+height = 0.32
 
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_3aspy"]
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_1kh0k"]
 transparency = 1
+cull_mode = 2
 no_depth_test = true
 shading_mode = 0
-albedo_color = Color(0.1, 0.8, 1, 0.22)
+albedo_color = Color(0.1, 0.8, 1, 0.32)
 
-[sub_resource type="ImmediateMesh" id="ImmediateMesh_xapa5"]
+[sub_resource type="SphereMesh" id="SphereMesh_yspub"]
+radius = 0.16
+height = 0.32
 
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_y2khd"]
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_i3j5b"]
 transparency = 1
+cull_mode = 2
 no_depth_test = true
 shading_mode = 0
-albedo_color = Color(0.1, 0.8, 1, 0.22)
+albedo_color = Color(0.1, 0.8, 1, 0.32)
 
-[sub_resource type="ImmediateMesh" id="ImmediateMesh_1kh0k"]
+[sub_resource type="SphereMesh" id="SphereMesh_nrol3"]
+radius = 0.16
+height = 0.32
 
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_yspub"]
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_t6yrx"]
 transparency = 1
+cull_mode = 2
 no_depth_test = true
 shading_mode = 0
-albedo_color = Color(0.1, 0.8, 1, 0.22)
+albedo_color = Color(0.1, 0.8, 1, 0.32)
 
-[sub_resource type="ImmediateMesh" id="ImmediateMesh_i3j5b"]
+[sub_resource type="SphereMesh" id="SphereMesh_wjqy0"]
+radius = 0.16
+height = 0.32
 
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_nrol3"]
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_2p8vy"]
 transparency = 1
+cull_mode = 2
 no_depth_test = true
 shading_mode = 0
-albedo_color = Color(0.1, 0.8, 1, 0.22)
+albedo_color = Color(0.1, 0.8, 1, 0.32)
 
-[sub_resource type="ImmediateMesh" id="ImmediateMesh_t6yrx"]
+[sub_resource type="SphereMesh" id="SphereMesh_d63e2"]
+radius = 0.16
+height = 0.32
 
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_wjqy0"]
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_qo6cr"]
 transparency = 1
+cull_mode = 2
 no_depth_test = true
 shading_mode = 0
-albedo_color = Color(0.1, 0.8, 1, 0.22)
+albedo_color = Color(0.1, 0.8, 1, 0.32)
 
-[sub_resource type="ImmediateMesh" id="ImmediateMesh_2p8vy"]
+[sub_resource type="SphereMesh" id="SphereMesh_gpwpt"]
+radius = 0.16
+height = 0.32
 
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_d63e2"]
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_whww0"]
 transparency = 1
+cull_mode = 2
 no_depth_test = true
 shading_mode = 0
-albedo_color = Color(0.1, 0.8, 1, 0.22)
+albedo_color = Color(0.1, 0.8, 1, 0.32)
 
-[sub_resource type="ImmediateMesh" id="ImmediateMesh_qo6cr"]
-
-[sub_resource type="ImmediateMesh" id="ImmediateMesh_gpwpt"]
+[sub_resource type="SphereMesh" id="SphereMesh_67ip0"]
+radius = 0.16
+height = 0.32
 
 [node name="Buoy" type="Node3D" unique_id=2077650632]
 
@@ -91,7 +115,6 @@ shape = SubResource("CapsuleShape3D_lq5a0")
 
 [node name="BuoyBody" type="Node3D" parent="RigidBody3D" unique_id=659075801]
 script = ExtResource("2_7hk8w")
-rigid_body_path = NodePath("../Sketchfab_Scene/Sketchfab_model/buoy_lowpoly_fbx_fbx/RootNode")
 
 [node name="Node3D" type="Node3D" parent="RigidBody3D" unique_id=1006859282]
 script = ExtResource("3_ow6qj")
@@ -102,89 +125,83 @@ debug_enabled = false
 
 [node name="Probe_000" type="MeshInstance3D" parent="RigidBody3D/Node3D/GeneratedProbes" unique_id=958575109]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.44630045, -0.8164333, -0.44630045)
-material_override = SubResource("StandardMaterial3D_54211")
+material_override = SubResource("StandardMaterial3D_t66q4")
 cast_shadow = 0
 extra_cull_margin = 10000.0
-mesh = SubResource("ImmediateMesh_pevfj")
+mesh = SubResource("SphereMesh_3aspy")
 script = ExtResource("4_54211")
 max_submerged_volume_cubic_meters = 1.2809
 buoyancy_height = 1.6078372
 
 [node name="Probe_001" type="MeshInstance3D" parent="RigidBody3D/Node3D/GeneratedProbes" unique_id=282954885]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.4463004, -0.8164333, -0.44630045)
-material_override = SubResource("StandardMaterial3D_571ab")
+material_override = SubResource("StandardMaterial3D_xapa5")
 cast_shadow = 0
 extra_cull_margin = 10000.0
-mesh = SubResource("ImmediateMesh_t66q4")
+mesh = SubResource("SphereMesh_y2khd")
 script = ExtResource("4_54211")
 max_submerged_volume_cubic_meters = 1.2809
 buoyancy_height = 1.6078372
 
 [node name="Probe_002" type="MeshInstance3D" parent="RigidBody3D/Node3D/GeneratedProbes" unique_id=606315226]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.44630045, 0.7914039, -0.44630045)
-material_override = SubResource("StandardMaterial3D_3aspy")
+material_override = SubResource("StandardMaterial3D_1kh0k")
 cast_shadow = 0
 extra_cull_margin = 10000.0
-mesh = SubResource("ImmediateMesh_xapa5")
+mesh = SubResource("SphereMesh_yspub")
 script = ExtResource("4_54211")
 max_submerged_volume_cubic_meters = 1.2809
 buoyancy_height = 1.6078372
 
 [node name="Probe_003" type="MeshInstance3D" parent="RigidBody3D/Node3D/GeneratedProbes" unique_id=2073005665]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.4463004, 0.7914039, -0.44630045)
-material_override = SubResource("StandardMaterial3D_y2khd")
+material_override = SubResource("StandardMaterial3D_i3j5b")
 cast_shadow = 0
 extra_cull_margin = 10000.0
-mesh = SubResource("ImmediateMesh_1kh0k")
+mesh = SubResource("SphereMesh_nrol3")
 script = ExtResource("4_54211")
 max_submerged_volume_cubic_meters = 1.2809
 buoyancy_height = 1.6078372
 
 [node name="Probe_004" type="MeshInstance3D" parent="RigidBody3D/Node3D/GeneratedProbes" unique_id=826536182]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.44630045, -0.8164333, 0.44630057)
-material_override = SubResource("StandardMaterial3D_yspub")
+material_override = SubResource("StandardMaterial3D_t6yrx")
 cast_shadow = 0
 extra_cull_margin = 10000.0
-mesh = SubResource("ImmediateMesh_i3j5b")
+mesh = SubResource("SphereMesh_wjqy0")
 script = ExtResource("4_54211")
 max_submerged_volume_cubic_meters = 1.2809
 buoyancy_height = 1.6078372
 
 [node name="Probe_005" type="MeshInstance3D" parent="RigidBody3D/Node3D/GeneratedProbes" unique_id=601307136]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.4463004, -0.8164333, 0.44630057)
-material_override = SubResource("StandardMaterial3D_nrol3")
+material_override = SubResource("StandardMaterial3D_2p8vy")
 cast_shadow = 0
 extra_cull_margin = 10000.0
-mesh = SubResource("ImmediateMesh_t6yrx")
+mesh = SubResource("SphereMesh_d63e2")
 script = ExtResource("4_54211")
 max_submerged_volume_cubic_meters = 1.2809
 buoyancy_height = 1.6078372
 
 [node name="Probe_006" type="MeshInstance3D" parent="RigidBody3D/Node3D/GeneratedProbes" unique_id=1325008678]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.44630045, 0.7914039, 0.44630057)
-material_override = SubResource("StandardMaterial3D_wjqy0")
+material_override = SubResource("StandardMaterial3D_qo6cr")
 cast_shadow = 0
 extra_cull_margin = 10000.0
-mesh = SubResource("ImmediateMesh_2p8vy")
+mesh = SubResource("SphereMesh_gpwpt")
 script = ExtResource("4_54211")
 max_submerged_volume_cubic_meters = 1.2809
 buoyancy_height = 1.6078372
 
 [node name="Probe_007" type="MeshInstance3D" parent="RigidBody3D/Node3D/GeneratedProbes" unique_id=701507295]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.4463004, 0.7914039, 0.44630057)
-material_override = SubResource("StandardMaterial3D_d63e2")
+material_override = SubResource("StandardMaterial3D_whww0")
 cast_shadow = 0
 extra_cull_margin = 10000.0
-mesh = SubResource("ImmediateMesh_qo6cr")
+mesh = SubResource("SphereMesh_67ip0")
 script = ExtResource("4_54211")
 max_submerged_volume_cubic_meters = 1.2809
 buoyancy_height = 1.6078372
-
-[node name="DebugDraw" type="MeshInstance3D" parent="RigidBody3D/Node3D" unique_id=679927406]
-visible = false
-cast_shadow = 0
-extra_cull_margin = 10000.0
-mesh = SubResource("ImmediateMesh_gpwpt")
 
 [node name="Sketchfab_Scene" parent="RigidBody3D" unique_id=660243005 instance=ExtResource("1_lq5a0")]
 transform = Transform3D(0.3, 0, 0, 0, 0.3, 0, 0, 0, 0.3, 0, 0, 0)
@@ -208,5 +225,11 @@ text = "-- m"
 font_size = 72
 outline_size = 16
 script = ExtResource("5_distance")
+
+[node name="HullWaterFootprint" type="Node3D" parent="RigidBody3D" unique_id=106163369]
+script = ExtResource("6_footprint")
+profile = ExtResource("7_571ab")
+cutout_enabled = false
+bake_source_paths = Array[NodePath]([NodePath("../Sketchfab_Scene")])
 
 [editable path="RigidBody3D/Sketchfab_Scene"]

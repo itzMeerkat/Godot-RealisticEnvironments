@@ -2,22 +2,22 @@
 
 [ext_resource type="Script" uid="uid://dbxip3y4rh1va" path="res://addons/ocean_system/ocean_system.gd" id="1_ocean"]
 [ext_resource type="Script" uid="uid://cqbpvt36rest3" path="res://addons/ocean_system/wave_cascade_parameters.gd" id="2_params"]
-[ext_resource type="Material" uid="uid://byumtcccq4ew3" path="res://addons/ocean_system/mat_water.tres" id="3_water_mat"]
 [sub_resource type="Resource" id="Resource_primary_swell"]
 script = ExtResource("2_params")
 tile_length = Vector2(128, 128)
-displacement_scale = 0.7
+displacement_scale = 1.98
 wind_speed = 6.0
 wind_direction = 20.0
 fetch_length = 12.0
 swell = 0.55
 spread = 0.35
-foam_amount = 2.0
+whitecap = 0.45
+foam_lifetime = 3.0
 
 [sub_resource type="Resource" id="Resource_secondary_swell"]
 script = ExtResource("2_params")
 tile_length = Vector2(32, 32)
-displacement_scale = 0.35
+displacement_scale = 0.99
 normal_scale = 0.8
 wind_speed = 6.0
 wind_direction = 15.0
@@ -25,12 +25,12 @@ wind_speed_multiplier = 1.15
 fetch_length = 4.0
 swell = 0.35
 spread = 0.55
-foam_amount = 1.0
+whitecap = 0.6
 
 [sub_resource type="Resource" id="Resource_surface_detail"]
 script = ExtResource("2_params")
 tile_length = Vector2(8, 8)
-displacement_scale = 0.06
+displacement_scale = 0.17
 normal_scale = 0.45
 wind_speed = 6.0
 wind_direction = 20.0
@@ -38,13 +38,12 @@ wind_speed_multiplier = 1.6
 fetch_length = 1.5
 swell = 0.2
 spread = 0.65
-whitecap = 0.45
-foam_amount = 0.8
+whitecap = 0.87
+foam_lifetime = 0.8
 
 [node name="OceanSystem" type="MeshInstance3D" unique_id=1912029964]
 process_priority = 100
 sorting_offset = 999.0
-material_override = ExtResource("3_water_mat")
 cast_shadow = 0
 extra_cull_margin = 7000.0
 script = ExtResource("1_ocean")
