@@ -3,19 +3,13 @@ class_name SkyProfile
 extends Resource
 ## Color gradients and energy curves sampled by SkySystem. Time-based gradients
 ## use normalized day positions: 0 midnight, 0.25 sunrise, 0.5 noon, 0.75 sunset.
+## The sun's and the moon's light are not here: the atmosphere colours and dims
+## them (SkySystem).
 
-## Sun light color across the day.
-@export var sun_color_gradient : Gradient
-## Moon light color across the day.
-@export var moon_color_gradient : Gradient
 ## Zenith sky color across the day.
 @export var sky_top_gradient : Gradient
 ## Horizon sky color across the day.
 @export var sky_horizon_gradient : Gradient
-## Sun light energy across the day.
-@export var sun_energy_curve : Curve
-## Moon light energy across the day.
-@export var moon_energy_curve : Curve
 ## Star visibility response to night factor.
 @export var star_visibility_curve : Curve
 ## Environment ambient light energy across the day.
@@ -26,16 +20,6 @@ func _init() -> void:
 	_ensure_defaults()
 
 
-func sample_sun_color(time_of_day : float) -> Color:
-	_ensure_defaults()
-	return sun_color_gradient.sample(_wrap_time(time_of_day))
-
-
-func sample_moon_color(time_of_day : float) -> Color:
-	_ensure_defaults()
-	return moon_color_gradient.sample(_wrap_time(time_of_day))
-
-
 func sample_sky_top_color(time_of_day : float) -> Color:
 	_ensure_defaults()
 	return sky_top_gradient.sample(_wrap_time(time_of_day))
@@ -44,16 +28,6 @@ func sample_sky_top_color(time_of_day : float) -> Color:
 func sample_sky_horizon_color(time_of_day : float) -> Color:
 	_ensure_defaults()
 	return sky_horizon_gradient.sample(_wrap_time(time_of_day))
-
-
-func sample_sun_energy(time_of_day : float) -> float:
-	_ensure_defaults()
-	return sun_energy_curve.sample_baked(_wrap_time(time_of_day))
-
-
-func sample_moon_energy(time_of_day : float) -> float:
-	_ensure_defaults()
-	return moon_energy_curve.sample_baked(_wrap_time(time_of_day))
 
 
 func sample_star_visibility(night_factor : float) -> float:
@@ -67,22 +41,6 @@ func sample_ambient_energy(time_of_day : float) -> float:
 
 
 func _ensure_defaults() -> void:
-	if sun_color_gradient == null:
-		sun_color_gradient = _make_gradient([
-			Color(0.05, 0.07, 0.12),
-			Color(1.0, 0.48, 0.22),
-			Color(1.0, 0.96, 0.82),
-			Color(1.0, 0.42, 0.18),
-			Color(0.05, 0.07, 0.12),
-		])
-	if moon_color_gradient == null:
-		moon_color_gradient = _make_gradient([
-			Color(0.35, 0.45, 0.70),
-			Color(0.16, 0.20, 0.32),
-			Color(0.02, 0.025, 0.04),
-			Color(0.16, 0.20, 0.32),
-			Color(0.35, 0.45, 0.70),
-		])
 	if sky_top_gradient == null:
 		sky_top_gradient = _make_gradient([
 			Color(0.005, 0.008, 0.018),
@@ -98,25 +56,6 @@ func _ensure_defaults() -> void:
 			Color(0.58, 0.78, 0.94),
 			Color(1.0, 0.36, 0.18),
 			Color(0.015, 0.018, 0.035),
-		])
-	if sun_energy_curve == null:
-		sun_energy_curve = _make_curve([
-			Vector2(0.0, 0.0),
-			Vector2(0.23, 0.0),
-			Vector2(0.30, 0.65),
-			Vector2(0.50, 1.25),
-			Vector2(0.70, 0.65),
-			Vector2(0.77, 0.0),
-			Vector2(1.0, 0.0),
-		])
-	if moon_energy_curve == null:
-		moon_energy_curve = _make_curve([
-			Vector2(0.0, 0.045),
-			Vector2(0.22, 0.018),
-			Vector2(0.30, 0.0),
-			Vector2(0.70, 0.0),
-			Vector2(0.78, 0.018),
-			Vector2(1.0, 0.045),
 		])
 	if star_visibility_curve == null:
 		star_visibility_curve = _make_curve([

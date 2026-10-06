@@ -8,10 +8,13 @@ uniform vec4 ground_bottom_color : source_color = vec4(0.01, 0.02, 0.03, 1.0);
 uniform vec4 ground_horizon_color : source_color = vec4(0.16, 0.24, 0.28, 1.0);
 
 uniform vec3 sun_direction = vec3(1.0, 0.0, 0.0);
+// Colour of the sun's light at the sea (brightest channel 1).
 uniform vec4 sun_color : source_color = vec4(1.0, 0.92, 0.72, 1.0);
+// Share of the disk above the horizon.
 uniform float sun_visibility : hint_range(0.0, 1.0) = 1.0;
-// The sun's light above the haze, color * energy * pi (irradiance in the units of the
-// scene's lights). The disk shows it spread over its solid angle.
+// The sun's light through the air but not the haze, pi * energy * transmittance
+// (irradiance in the units of the scene's lights). The disk shows it spread over its
+// solid angle; the haze dims it here (the atmosphere's view volume).
 uniform vec3 sun_irradiance = vec3(3.0);
 uniform float sun_disk_size : hint_range(0.001, 0.05) = 0.00465;
 uniform float sun_halo_size : hint_range(0.01, 0.5) = 0.075;
@@ -19,7 +22,9 @@ uniform float radiance_sun_disk_strength : hint_range(0.0, 3.0) = 0.16;
 uniform float radiance_sun_halo_strength : hint_range(0.0, 1.0) = 0.18;
 
 uniform vec3 moon_direction = vec3(-1.0, 0.0, 0.0);
-uniform vec4 moon_color : source_color = vec4(0.72, 0.78, 1.0, 1.0);
+// As the sun's: the full moon's light, so the lit part of the disk shows it.
+uniform vec4 moon_color : source_color = vec4(1.0, 1.0, 1.0, 1.0);
+uniform vec3 moon_irradiance = vec3(0.1);
 uniform float moon_visibility : hint_range(0.0, 1.0) = 0.0;
 uniform float moon_disk_size : hint_range(0.001, 0.05) = 0.00465;
 uniform float moon_phase : hint_range(0.0, 1.0) = 1.0;
@@ -85,23 +90,25 @@ void sky() {
 	float sun_disk = body_disk(EYEDIR, sun_direction, sun_disk_size);
 	float sun_halo = body_halo(EYEDIR, sun_direction, sun_halo_size) * 0.32;
 	float moon_disk = body_disk(EYEDIR, moon_direction, moon_disk_size);
-	float moon_halo = body_halo(EYEDIR, moon_direction, 0.08) * 0.08;
+	float moon_halo = body_halo(EYEDIR, moon_direction, sun_halo_size) * 0.32;
 	float moon_lit = moon_lighting(EYEDIR, moon_direction, sun_direction, moon_disk_size);
 
-	// The disk at its real radiance: the sun's irradiance over the disk's solid angle,
-	// far brighter than anything around it, the haze's glow included; that glow is the
-	// sun's halo (the atmosphere's forward lobe). The radiance map (ambient light and
-	// reflections) keeps a faint disk and halo instead: a disk that bright would sparkle
+	// The disks at their real radiance: the light's irradiance over the disk's solid
+	// angle, far brighter than anything around them, the haze's glow included; that glow
+	// is their halo (the atmosphere's forward lobe). The radiance map (ambient light and
+	// reflections) keeps faint disks and halos instead: disks that bright would sparkle
 	// in every glossy reflection.
 	vec3 sun_disk_color = sun_irradiance / (PI * sun_disk_size * sun_disk_size);
-	float sun_halo_strength = 0.0;
+	vec3 moon_disk_color = moon_irradiance / (PI * moon_disk_size * moon_disk_size);
+	float halo_strength = 0.0;
 	if (AT_CUBEMAP_PASS) {
 		sun_disk_color = sun_color.rgb * radiance_sun_disk_strength;
-		sun_halo_strength = radiance_sun_halo_strength;
+		moon_disk_color = moon_color.rgb * radiance_sun_disk_strength;
+		halo_strength = radiance_sun_halo_strength;
 	}
 
-	sky_color += (sun_disk_color * sun_disk + sun_color.rgb * sun_halo * sun_halo_strength) * sun_visibility;
-	sky_color += moon_color.rgb * (moon_disk * moon_lit * 0.9 + moon_halo * moon_phase) * moon_visibility;
+	sky_color += (sun_disk_color * sun_disk + sun_color.rgb * sun_halo * halo_strength) * sun_visibility;
+	sky_color += (moon_disk_color * moon_disk * moon_lit + moon_color.rgb * moon_halo * moon_phase * halo_strength) * moon_visibility;
 	if (clouds_enabled) {
 		vec4 cloud = textureLod(cloud_cubemap, EYEDIR, 0.0);
 		sky_color = sky_color * (1.0 - cloud.a) + cloud.rgb;

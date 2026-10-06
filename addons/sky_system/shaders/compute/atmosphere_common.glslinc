@@ -6,10 +6,19 @@
  *
  * The planet is a sphere of radius ATMOSPHERE_EARTH_RADIUS whose surface is the sea
  * (altitude 0). The atmosphere is horizontally uniform and ends at top_altitude.
- * Media today: haze (aerosols and droplets, CloudPreset haze_*), extinction
- * haze_density * exp(-altitude / haze_scale_height), scattering albedo 1. New media
- * (air molecules, ozone) are added to atmosphere_extinction() and the scattering
- * sums of atmosphere_view.glsl; consumers only read the lookup textures.
+ * Media, with their extinction (1/m) per colour channel:
+ *   air molecules (Rayleigh): ATMOSPHERE_RAYLEIGH_SCATTERING * exp(-altitude / 8 km),
+ *     scattering only;
+ *   ozone: ATMOSPHERE_OZONE_ABSORPTION times a tent profile peaking at 25 km and
+ *     ending at 10 and 40 km, absorbing only;
+ *   haze (aerosols and droplets, CloudPreset haze_*): haze_density *
+ *     exp(-altitude / haze_scale_height), grey, scattering albedo 1.
+ * Values from Bruneton 2017 and Hillaire 2020, for the sRGB primaries' wavelengths.
+ * Light paths (the transmittance LUT) cross every medium. View rays (atmosphere_view.glsl)
+ * cross only the haze so far: the air's own glow (the blue sky) is not modelled yet, and
+ * its extinction without that glow would only darken distant things.
+ * New media are added here and in atmosphere_view.glsl's scattering sums; consumers
+ * only read the lookup textures.
  *
  * Godot-shader copy of the view-volume lookup (atmosphere_view_uv() and the phase):
  * shaders/atmosphere.gdshaderinc, and the ocean's water.gdshader. Change them together.
@@ -19,6 +28,13 @@
 #define ATMOSPHERE_EARTH_RADIUS 6371000.0
 // Share of the haze's scattering in its forward (Henyey-Greenstein) lobe; the rest is isotropic.
 #define ATMOSPHERE_HAZE_FORWARD_SHARE 0.75
+// Air molecules at sea level (1/m) and their scale height (m).
+#define ATMOSPHERE_RAYLEIGH_SCATTERING vec3(5.802e-6, 13.558e-6, 33.1e-6)
+#define ATMOSPHERE_RAYLEIGH_SCALE_HEIGHT 8000.0
+// Ozone at its peak (1/m), and its layer: a tent around the centre altitude (m).
+#define ATMOSPHERE_OZONE_ABSORPTION vec3(0.650e-6, 1.881e-6, 0.085e-6)
+#define ATMOSPHERE_OZONE_CENTER 25000.0
+#define ATMOSPHERE_OZONE_HALF_WIDTH 15000.0
 
 /* x * (1 - 1/n) + 0.5/n: maps [0, 1] onto the centres of the first and last of n texels. */
 float atmosphere_unit_to_uv(float x, float n) {
@@ -71,21 +87,45 @@ float atmosphere_horizon_mu(float h) {
 	return -sqrt(hh * (2.0 * ATMOSPHERE_EARTH_RADIUS + hh)) / (ATMOSPHERE_EARTH_RADIUS + hh);
 }
 
-/* Extinction (1/m) at altitude h, per colour channel. */
-vec3 atmosphere_extinction(float h, float haze_density, float haze_scale_height) {
-	return vec3(haze_density * exp(-max(h, 0.0) / haze_scale_height));
+/*
+ * Mean of exp(-altitude / scale_height) along a segment whose altitude goes linearly
+ * from h_a to h_b: exact for the exponential profile, so long steps through thin air
+ * stay accurate.
+ */
+float atmosphere_exponential_mean(float h_a, float h_b, float scale_height) {
+	float a = max(h_a, 0.0) / scale_height;
+	float x = max(h_b, 0.0) / scale_height - a;
+	float density_a = exp(-a);
+	return abs(x) < 1e-4 ? density_a * (1.0 - 0.5 * x) : density_a * (1.0 - exp(-x)) / x;
 }
 
-/*
- * Mean extinction along a segment whose altitude goes linearly from h_a to h_b: exact
- * for the exponential haze profile, so long steps through thin air stay accurate.
- */
+/* Integral of the ozone's tent profile from the sea up to altitude h (m). */
+float atmosphere_ozone_integral(float h) {
+	float u = clamp(h - ATMOSPHERE_OZONE_CENTER, -ATMOSPHERE_OZONE_HALF_WIDTH, ATMOSPHERE_OZONE_HALF_WIDTH);
+	float w = ATMOSPHERE_OZONE_HALF_WIDTH;
+	return u <= 0.0 ? (u + w) * (u + w) / (2.0 * w) : 0.5 * w + u - u * u / (2.0 * w);
+}
+
+/* Mean of the ozone's profile along a segment whose altitude goes linearly from h_a to h_b. */
+float atmosphere_ozone_mean(float h_a, float h_b) {
+	float dh = h_b - h_a;
+	if (abs(dh) < 1.0) {
+		float u = 0.5 * (h_a + h_b) - ATMOSPHERE_OZONE_CENTER;
+		return max(1.0 - abs(u) / ATMOSPHERE_OZONE_HALF_WIDTH, 0.0);
+	}
+	return (atmosphere_ozone_integral(h_b) - atmosphere_ozone_integral(h_a)) / dh;
+}
+
+/* Mean haze extinction (1/m) along such a segment: what view rays cross. */
+vec3 atmosphere_haze_mean_extinction(float h_a, float h_b, float haze_density, float haze_scale_height) {
+	return vec3(haze_density * atmosphere_exponential_mean(h_a, h_b, haze_scale_height));
+}
+
+/* Mean extinction (1/m) of every medium along such a segment: what light paths cross. */
 vec3 atmosphere_mean_extinction(float h_a, float h_b, float haze_density, float haze_scale_height) {
-	float a = max(h_a, 0.0) / haze_scale_height;
-	float x = max(h_b, 0.0) / haze_scale_height - a;
-	float density_a = exp(-a);
-	float mean = abs(x) < 1e-4 ? density_a * (1.0 - 0.5 * x) : density_a * (1.0 - exp(-x)) / x;
-	return vec3(haze_density * mean);
+	return atmosphere_haze_mean_extinction(h_a, h_b, haze_density, haze_scale_height)
+			+ ATMOSPHERE_RAYLEIGH_SCATTERING * atmosphere_exponential_mean(h_a, h_b, ATMOSPHERE_RAYLEIGH_SCALE_HEIGHT)
+			+ ATMOSPHERE_OZONE_ABSORPTION * atmosphere_ozone_mean(h_a, h_b);
 }
 
 /*

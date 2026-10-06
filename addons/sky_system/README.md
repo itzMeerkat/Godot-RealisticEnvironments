@@ -24,16 +24,34 @@ To drive the ocean, set `OceanSystem.sky_source_path` to this node.
   `lunar_age_days`.
 - **Astronomy** — `latitude_degrees`, `day_of_year`, `lunar_age_days`
   (0 new, ~14.77 full), `north_offset_degrees` (rotate celestial north around
-  world up; default north is −Z), `axis_tilt_degrees`, energy multipliers,
-  `star_brightness`.
-- `profile` — a `SkyProfile` resource of gradients (sun, moon, sky top, sky
-  horizon colours) and curves (sun/moon/ambient energy, star visibility).
-  Missing entries are filled with built-in defaults.
+  world up; default north is −Z), `axis_tilt_degrees`,
+  `sun_energy_multiplier` / `moon_energy_multiplier` (scale the lights'
+  energy above the atmosphere), `star_brightness`.
+- `profile` — a `SkyProfile` resource of gradients (sky top and horizon
+  colours) and curves (ambient energy, star visibility). Missing entries are
+  filled with built-in defaults. The sun's and moon's light are not in it:
+  see **Sun and moon light** below.
+- **Sun and moon light** — both are white
+  above the atmosphere (`SkySystem.SOLAR_ENERGY` 1.3, `MOON_ENERGY` 0.045 for
+  the full moon, times the lit share of the disk). The atmosphere colours and
+  dims them on the way down: the scene's lights get the transmittance from
+  space to the sea along their direction (`_get_atmosphere_transmittance()`,
+  the CPU copy of the transmittance LUT) times the share of the disk above the
+  horizon, split into `light_color` (brightest channel 1, also
+  `get_sun_color()`) and `light_energy`. A clear sun is pale yellow high up
+  (energy about 1.1 at 55° in clear air), about 3000 K at 6° and deep red at the horizon; haze
+  dims it further. Clouds get the light at the middle of their layer, so they
+  stay lit after the sea has lost the sun. The moon is the exception to
+  physics: its real light is 1/400000 of the sun's, but the scene has no
+  exposure adaptation, so its energy is set for a dark-adapted eye and it
+  lights the scene (and shows its disk) only once the sun is well down
+  (`get_night_factor()`).
 - **Visuals** — `render_bodies_in_sky` draws sun/moon disks in the sky shader
-  (default) instead of the billboard meshes. The sun disk has its real
-  radiance (the sun light's irradiance over the disk's solid angle), so it is
-  the brightest thing in view; its glow comes from the atmosphere. The radiance map
-  that lights and reflects the scene keeps a faint disk and halo
+  (default) instead of the billboard meshes. The disks have their real
+  radiance (the light's irradiance through the air over the disk's solid
+  angle; the haze and clouds dim it in the sky shader), so the sun is the
+  brightest thing in view; their glow comes from the atmosphere. The radiance
+  map that lights and reflects the scene keeps faint disks and halos
   (`radiance_sun_disk_strength`, `radiance_sun_halo_strength`), as a disk that
   bright would sparkle in glossy reflections; `follow_active_camera` keeps the
   starfield and meshes centred on the camera. `sea_level`: world height of the
@@ -87,17 +105,24 @@ with clouds disabled too.
 The model lives in one place, the compute passes of `AtmosphereRenderer`
 (`shaders/compute/atmosphere_*.glsl`, shared code in
 `atmosphere_common.glslinc`). Every consumer samples their lookup textures, so
-new media (air molecules, ozone, multiple scattering) are added there only.
+new media (multiple scattering, the air's own glow) are added there only.
 
-- Medium: a sphere of sea (radius 6371 km) under an atmosphere that ends 12
-  haze scale heights up. Haze extinction `3.912 / visibility` at sea level,
-  falling off exponentially with altitude, scattering albedo 1, grey. Rays
-  follow the curved sea, so the horizon itself is fully hazed while the sky
-  overhead stays clear; rays below the horizon end at the sea.
+- Media: a sphere of sea (radius 6371 km) under an atmosphere that ends at
+  100 km. Air molecules (Rayleigh scattering, (5.8, 13.6, 33.1)·10⁻⁶ /m at sea
+  level for red, green and blue, scale height 8 km), ozone (absorption
+  (0.65, 1.88, 0.085)·10⁻⁶ /m in a layer 10–40 km up, peaking at 25 km) and
+  the haze: extinction `3.912 / visibility` at sea level, falling off
+  exponentially with altitude, scattering albedo 1, grey, ending 12 haze
+  scale heights up. Light paths (sun and moon down to any point) cross all
+  three; view rays cross only the haze for now, as the air's own glow (the
+  blue sky) still comes from the sky profile and its extinction without that
+  glow would only darken distant things. Rays follow the curved sea, so the
+  horizon itself is fully hazed while the sky overhead stays clear; rays below
+  the horizon end at the sea.
 - Light: the key light (the sun, or the moon at night, as the clouds pick it)
-  at its colour × energy above the atmosphere, dimmed down to every point by the
-  transmittance LUT (haze high up is lit more than haze near the sea under a
-  low sun) and shadowed by the planet; times the clouds' transmittance toward
+  white at its energy above the atmosphere, dimmed and coloured down to every
+  point by the transmittance LUT (haze high up is lit more, and redder, than
+  haze near the sea under a low sun) and shadowed by the planet; times the clouds' transmittance toward
   the light over the camera (blurred cloud cubemap mip, about 2.3° wide; a sun
   behind a cloud loses its glow, `cloud_haze_shadow_strength` multiplies that
   opacity). Phase: a sharp forward Henyey-Greenstein lobe `g = haze_anisotropy`
@@ -106,8 +131,9 @@ new media (air molecules, ozone, multiple scattering) are added there only.
   standing in for multiple scattering: the sky profile's horizon colour and the
   light the haze took out of the sunbeam.
 - Passes, every frame (`AtmosphereRenderer.render()`):
-  1. `atmosphere_transmittance.glsl`: transmittance LUT (256 × 64), from space
-     to any altitude along any direction above the horizon (Bruneton's layout).
+  1. `atmosphere_transmittance.glsl`: transmittance LUT (256 × 256, the rows
+     dense enough near the sea for a 150 m fog layer), from space to any
+     altitude along any direction above the horizon (Bruneton's layout).
   2. `atmosphere_view.glsl`: **view volumes** (32 × 128 × slices, rgba16f),
      one ray per azimuth from the light × view angle (squeezed toward the
      horizon, which falls on a texel edge). Three textures: transmittance,
@@ -125,8 +151,9 @@ new media (air molecules, ozone, multiple scattering) are added there only.
     keeps it);
   - transparent materials, each for its own distance (below);
   - the ocean's sky reflection, from `get_atmosphere_sky_volumes()`;
-  - the sun and moon lights, dimmed by the transmittance from space to the sea
-    (`_get_atmosphere_transmittance()`, the LUT's integral on the CPU).
+  - the sun and moon lights, the sky's disks and the clouds' light, coloured
+    by the transmittance from space (`_get_atmosphere_transmittance()`, the
+    LUT's integral on the CPU; see **Sun and moon light** above).
 - Global shader uniforms: SkySystem publishes the camera volume through
   `atmosphere_enabled`, `atmosphere_view_transmittance`,
   `atmosphere_view_inscatter`, `atmosphere_view_inscatter_lobe` (`sampler3D`),
@@ -188,7 +215,7 @@ then. When the day cycle advances `time_of_day`, `day_of_year` and
   phase angle, with a 5.145° inclined orbit. Equatorial coordinates are
   converted to local horizontal (east, up, north) for `latitude_degrees`, then
   rotated by `north_offset_degrees` into world space.
-- Colours are not sampled at the raw `time_of_day`. `_get_profile_sample_time()`
+- Profile colours are not sampled at the raw `time_of_day`. `_get_profile_sample_time()`
   maps the *actual sun height* (and whether it's morning or evening) onto the
   profile's 0/0.25/0.5/0.75 keys, so seasons and latitudes that shift sunrise
   still get sunrise colours at the horizon.

@@ -407,14 +407,14 @@ func _add_sky_controls(parent : VBoxContainer) -> void:
 			sky_system.north_offset_degrees = value
 	)
 
-	var sun_energy := _add_float_row(parent, "Sun Energy", "Multiplier applied to the sky profile's sun light curve.", 0.0, 8.0, 0.01, false)
+	var sun_energy := _add_float_row(parent, "Sun Energy", "Multiplies the sun's light energy above the atmosphere.", 0.0, 8.0, 0.01, false)
 	sun_energy.name = "SkySunEnergy"
 	sun_energy.value_changed.connect(func(value : float) -> void:
 		if not _is_syncing and sky_system:
 			sky_system.sun_energy_multiplier = value
 	)
 
-	var moon_energy := _add_float_row(parent, "Moon Energy", "Multiplier applied to the sky profile's moon light curve.", 0.0, 8.0, 0.01, false)
+	var moon_energy := _add_float_row(parent, "Moon Energy", "Multiplies the full moon's light energy above the atmosphere.", 0.0, 8.0, 0.01, false)
 	moon_energy.name = "SkyMoonEnergy"
 	moon_energy.value_changed.connect(func(value : float) -> void:
 		if not _is_syncing and sky_system:

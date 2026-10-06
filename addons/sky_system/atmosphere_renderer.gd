@@ -14,14 +14,19 @@ extends RefCounted
 const TRANSMITTANCE_SHADER := preload("res://addons/sky_system/shaders/compute/atmosphere_transmittance.glsl")
 const VIEW_SHADER := preload("res://addons/sky_system/shaders/compute/atmosphere_view.glsl")
 
-const TRANSMITTANCE_SIZE := Vector2i(256, 64)
+## Rows run up to the 100 km top, densest near the sea: 256 of them keep a 150 m
+## sea fog layer several rows deep.
+const TRANSMITTANCE_SIZE := Vector2i(256, 256)
 ## View volumes: azimuth from the light x view angle x distance slices.
 const VIEW_SIZE := Vector3i(32, 128, 64)
 ## Distance (m) of the camera volume's last regular slice; farther points read it.
 ## Beyond the cameras' far planes (the demo uses 60 km).
 const MAX_DISTANCE := 100000.0
-## The atmosphere ends this many haze scale heights above the sea.
-const TOP_SCALE_HEIGHTS := 12.0
+## Where the air ends (m): its density is e^-12 of the sea level's there, and the
+## ozone layer lies below.
+const AIR_TOP_ALTITUDE := 100000.0
+## The haze ends this many haze scale heights above the sea (view rays end there).
+const HAZE_TOP_SCALE_HEIGHTS := 12.0
 
 ## Camera view volume (sampled by the sky, starfield, aerial perspective and transparent
 ## materials): rgb transmittance, rgb isotropic in-scatter, rgb lobe in-scatter per unit phase.
@@ -103,7 +108,12 @@ func release() -> void:
 
 ## Altitude (m) where the atmosphere ends.
 func get_top_altitude() -> float:
-	return TOP_SCALE_HEIGHTS * haze_scale_height
+	return maxf(AIR_TOP_ALTITUDE, get_haze_top_altitude())
+
+
+## Altitude (m) where the haze ends.
+func get_haze_top_altitude() -> float:
+	return HAZE_TOP_SCALE_HEIGHTS * haze_scale_height
 
 
 ## The observer altitude the camera volume is built for: the camera's, kept inside the
@@ -141,7 +151,7 @@ func render(camera_altitude : float, cloud_cubemap : RID) -> void:
 			volume[0], haze_density, haze_scale_height, top,
 			light_direction.x, light_direction.y, light_direction.z, MAX_DISTANCE,
 			light_color.r, light_color.g, light_color.b, cloud_shadow_strength,
-			ambient_color.r, ambient_color.g, ambient_color.b, 0.0,
+			ambient_color.r, ambient_color.g, ambient_color.b, get_haze_top_altitude(),
 		])
 		_device.compute_list_set_push_constant(compute_list, view_push, view_push.size())
 		_device.compute_list_dispatch(compute_list, ceili(VIEW_SIZE.x / 8.0), ceili(VIEW_SIZE.y / 8.0), 1)

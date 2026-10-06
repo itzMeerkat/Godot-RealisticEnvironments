@@ -14,9 +14,12 @@
  * phase is left out because the haze's lobe is far narrower than a texel.
  *
  * Light: the key light (sun or moon) at light_color above the atmosphere, dimmed by the
- * clouds toward it and by the atmosphere down to each sample (transmittance LUT, with
- * the planet's shadow), plus the isotropic ambient_color (sky light and multiple
- * scattering) wherever there is haze.
+ * clouds toward it and by every medium down to each sample (transmittance LUT, with
+ * the planet's shadow: haze high up under a low sun is lit red), plus the isotropic
+ * ambient_color (sky light and multiple scattering) wherever there is haze.
+ *
+ * The rays themselves cross only the haze (see atmosphere_common.glslinc), so they end
+ * at the sea or at haze_top_altitude, above which there is no haze to speak of.
  */
 
 #include "atmosphere_common.glslinc"
@@ -46,7 +49,7 @@ layout(push_constant, std430) restrict readonly uniform PushConstants {
 	vec3 light_color;        // radiance per unit phase function above the atmosphere: pi * color * energy
 	float cloud_shadow_strength; // multiplies the cloud opacity toward the light
 	vec3 ambient_color;      // isotropic in-scattered radiance
-	float pad;
+	float haze_top_altitude; // m, where view rays end; <= top_altitude
 } pc;
 
 vec3 transmittance;
@@ -85,7 +88,7 @@ void march(float mu, float cos_light, vec3 key_light, float t_start, float t_end
 		float t = t_start + (t_end - t_start) * (quadratic ? s * s : s);
 		float h = atmosphere_altitude_along(h0, mu, t);
 		float dt = t - previous_t;
-		vec3 segment_transmittance = exp(-atmosphere_mean_extinction(previous_h, h, pc.haze_density, pc.haze_scale_height) * dt);
+		vec3 segment_transmittance = exp(-atmosphere_haze_mean_extinction(previous_h, h, pc.haze_density, pc.haze_scale_height) * dt);
 		float t_mid = 0.5 * (previous_t + t);
 		float h_mid = min(atmosphere_altitude_along(h0, mu, t_mid), pc.top_altitude);
 		// The light's cosine to the local up there: the planet curves under the ray.
@@ -125,7 +128,9 @@ void main() {
 	vec3 key_light = pc.light_color * cloud_light_transmittance();
 
 	float t_sea = atmosphere_distance_to_sea(h0, mu);
-	float t_end = t_sea >= 0.0 ? t_sea : atmosphere_distance_to_top(h0, mu, pc.top_altitude);
+	// An observer above haze_top_altitude: a ray that dips toward the sea and misses it
+	// ends back at the observer's altitude, past all the haze it crosses.
+	float t_end = t_sea >= 0.0 ? t_sea : atmosphere_distance_to_top(h0, mu, max(pc.haze_top_altitude, h0));
 	transmittance = vec3(1.0);
 	inscatter = vec3(0.0);
 	inscatter_lobe = vec3(0.0);

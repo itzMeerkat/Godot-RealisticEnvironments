@@ -258,9 +258,16 @@ before touching its code; this file only records what is easy to get wrong.
   `AtmosphereRenderer`'s compute passes (`sky_system/shaders/compute/
   atmosphere_transmittance.glsl`, `atmosphere_view.glsl`, shared code in
   `atmosphere_common.glslinc`). Consumers only sample the lookup textures; add
-  new media (air, ozone, multiple scattering) there, never in a consumer. The
-  one other copy of physics is `SkySystem._get_atmosphere_transmittance()`
-  (the transmittance LUT's integral for the scene's lights): same steps.
+  new media there, never in a consumer. The one other copy of physics is
+  `SkySystem._get_atmosphere_transmittance()` (the transmittance LUT's
+  integral on the CPU, for the scene's lights, the sky's disks and the
+  clouds' light): same media constants and steps. Light paths cross every
+  medium; view rays cross only the haze until the air's in-scatter is
+  modelled (adding air extinction to view rays alone darkens distant things).
+- The sun's and moon's light colours come only from that transmittance (white
+  above the atmosphere, `SOLAR_ENERGY`, `MOON_ENERGY`); don't reintroduce
+  colour gradients or energy curves for them. The moon's energy and its gating
+  by `_night_factor` are the one exposure compromise (no auto exposure).
 - The view-volume layout (`atmosphere_view_uvw()`, slice distances) and the
   lobe's phase are copied in `atmosphere_common.glslinc`,
   `atmosphere.gdshaderinc` and the ocean's `water.gdshader`
