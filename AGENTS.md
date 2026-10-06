@@ -212,6 +212,14 @@ before touching its code; this file only records what is easy to get wrong.
   with mips) and `distance_texture` (surface distance from the mirrored camera,
   for finding where each pixel's reflected ray hits), not the SubViewport's
   tonemapped texture; both must be resized with the viewport (`set_size()`).
+- A material keeps the RenderingServer RID of a texture parameter from when it
+  was set. Swapping a `Texture2DRD`'s `texture_rd_rid` straight to a new RD
+  texture keeps that RID (texture_replace); clearing it to `RID()` first frees
+  it, and the material then samples a freed texture as white. Either swap
+  without clearing (`PlanarReflectionCaptureEffect.set_size()`) or set the
+  material parameter again afterwards (`OceanSystem._set_texture_rid()` users).
+  The planar reflection got this wrong once: after every window resize the sea
+  reflected solid white "geometry" instead of the sky.
 
 ## Sky and cloud invariants
 - Clouds are rendered by `CloudRenderer` (owned by `SkySystem`, editor and

@@ -182,32 +182,25 @@ func set_size(size: Vector2i) -> void:
 	var distance_rid := _rd.texture_create(format, RDTextureView.new())
 	assert(distance_rid.is_valid(), "PlanarReflectionCaptureEffect failed to create its distance texture.")
 	_rd.texture_clear(distance_rid, Color(0.0, 0.0, 0.0, 0.0), 0, 1, 0, 1)
-	_free_texture()
 	_params_mutex.lock()
+	var old_rids : Array[RID] = _mip_views.duplicate()
+	old_rids.push_back(_texture_rid)
+	old_rids.push_back(_distance_rid)
 	_size = size
 	_texture_rid = texture_rid
 	_mip_views = mip_views
 	_distance_rid = distance_rid
 	_params_mutex.unlock()
+	# Swapped straight from the old texture to the new one, never through an empty
+	# RID: Texture2DRD then replaces its RenderingServer texture in place and keeps
+	# that RID. Materials hold the RID they were given (the water's), so clearing
+	# first would leave them on a freed texture, which samples as white: full
+	# geometry coverage 1 m away, a white mirror over the whole sea.
 	texture.texture_rd_rid = texture_rid
 	distance_texture.texture_rd_rid = distance_rid
-
-
-func _free_texture() -> void:
-	texture.texture_rd_rid = RID()
-	distance_texture.texture_rd_rid = RID()
-	_params_mutex.lock()
-	for view in _mip_views:
-		_rd.free_rid(view)
-	if _texture_rid.is_valid():
-		_rd.free_rid(_texture_rid)
-	if _distance_rid.is_valid():
-		_rd.free_rid(_distance_rid)
-	_mip_views = []
-	_texture_rid = RID()
-	_distance_rid = RID()
-	_size = Vector2i.ZERO
-	_params_mutex.unlock()
+	for rid in old_rids:
+		if rid.is_valid():
+			_rd.free_rid(rid)
 
 
 func _render_callback(_callback_type: int, render_data: RenderData) -> void:
