@@ -430,6 +430,8 @@ var wind_source : Node
 var sky_source : Node
 ## True when sky_source has no lighting_changed signal and must be read every frame.
 var _sky_source_polled := false
+## Last camera exposure sent to the water material (_update_scene_exposure()).
+var _scene_exposure := 1.0
 ## Set by the sky source's lighting_changed signal.
 var _sky_lighting_dirty := false
 
@@ -510,6 +512,7 @@ func _process(delta : float) -> void:
 	_update_hull_cutouts()
 	if _sky_source_polled or _sky_lighting_dirty:
 		_update_sky_lighting_shader_parameters()
+	_update_scene_exposure()
 	time += delta
 	# No generator means no cascades: a flat ocean.
 	if wave_generator != null:
@@ -525,6 +528,7 @@ func _physics_process(delta : float) -> void:
 ## Pushes every shader parameter this node owns into the current water material.
 func _push_all_shader_parameters() -> void:
 	_set_water_shader_parameter(&'foam_color', foam_color)
+	_set_water_shader_parameter(&'scene_exposure', _scene_exposure)
 	_set_water_shader_parameter(&'normal_strength', normal_strength)
 	_set_water_shader_parameter(&'use_bicubic_normals', use_bicubic_normals)
 	_set_water_shader_parameter(&'fragment_cascade_limit', fragment_cascade_limit)
@@ -1219,6 +1223,17 @@ func _update_hull_profile_array(footprints : Array[HullWaterFootprint]) -> void:
 		var error := _hull_profiles.create_from_images(images)
 		assert(error == OK, "Building the hull profile texture array failed: %s" % error_string(error))
 	_set_water_shader_parameter(&'hull_profiles', _hull_profiles)
+
+
+## The water sums its reflections pre-exposed (the sky source's textures and the planar
+## reflection are stored that way) and divides EMISSION by the camera's exposure.
+func _update_scene_exposure() -> void:
+	var camera := get_viewport().get_camera_3d()
+	var attributes : CameraAttributes = camera.attributes if camera and camera.attributes else get_world_3d().camera_attributes
+	var exposure := attributes.exposure_multiplier if attributes else 1.0
+	if exposure != _scene_exposure:
+		_scene_exposure = exposure
+		_set_water_shader_parameter(&'scene_exposure', exposure)
 
 
 func _set_water_shader_parameter(parameter: StringName, value: Variant) -> void:

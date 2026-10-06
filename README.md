@@ -47,8 +47,9 @@ most ocean, sky, wind, buoyancy and cascade parameters live.
 project.godot            Godot manifest (main scene, input map, physics layer names)
 addons/                  Reusable systems, each self-contained with its own README
   ocean_system/          FFT ocean: compute pipeline, water shader, mesh, reflections, queries
-  sky_system/            Day/night sky, sun + moon lights, starfield, astronomy, volumetric clouds
+  sky_system/            Day/night sky, atmosphere, sun + moon lights, starfield, astronomy, volumetric clouds
   wind_system/           Wind provider node with procedural gusts
+  exposure_system/       Camera exposure from the scene's light meter, eye-like adaptation
   buoyancy_system/       Probe-based buoyancy, probe generation, sinking monitor
   hitbox_damage_system/  Projectile hitboxes, grouped health, hit effects
   projectile_launcher_system/  Launchers, projectiles, aim solver, recoil, FX

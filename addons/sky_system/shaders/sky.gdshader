@@ -1,11 +1,11 @@
 shader_type sky;
+/*
+ * The sky: space (the sun's and the moon's disks) seen through the atmosphere, whose
+ * view volume holds everything else (the blue sky, twilight, the haze's glow, the sea
+ * below the horizon), with the clouds inside it at their base's distance.
+ */
 
 #include "res://addons/sky_system/shaders/atmosphere.gdshaderinc"
-
-uniform vec4 sky_top_color : source_color = vec4(0.12, 0.42, 0.78, 1.0);
-uniform vec4 sky_horizon_color : source_color = vec4(0.58, 0.78, 0.94, 1.0);
-uniform vec4 ground_bottom_color : source_color = vec4(0.01, 0.02, 0.03, 1.0);
-uniform vec4 ground_horizon_color : source_color = vec4(0.16, 0.24, 0.28, 1.0);
 
 uniform vec3 sun_direction = vec3(1.0, 0.0, 0.0);
 // Colour of the sun's light at the sea (brightest channel 1).
@@ -33,6 +33,9 @@ uniform float moon_phase : hint_range(0.0, 1.0) = 1.0;
 // a is opacity. SkySystem sets both through the RenderingServer so the runtime
 // texture is never saved into the material. The sky shows mip 0.
 uniform bool clouds_enabled = false;
+// Altitude (m) of the cloud layer's base, where the atmosphere in front of the clouds
+// ends; sent with the cloud uniforms.
+uniform float cloud_base_altitude = 1500.0;
 uniform samplerCube cloud_cubemap : filter_linear_mipmap;
 
 float body_disk(vec3 view_direction, vec3 body_direction, float disk_size) {
@@ -75,18 +78,6 @@ float moon_lighting(vec3 view_direction, vec3 body_direction, vec3 light_directi
 }
 
 void sky() {
-	// The sea's horizon is below eye level (the earth curves away): the sky reaches
-	// down to it, and the gradients run from it rather than from eye level. The
-	// camera's altitude comes from the atmosphere, not POSITION: a sky that reads
-	// POSITION re-renders its radiance map whenever the camera moves (SkySystem
-	// refreshes it instead, see _refresh_sky_radiance()).
-	float horizon_dip = sqrt(2.0 * atmosphere_observer.w / ATMOSPHERE_EARTH_RADIUS);
-	float elevation = EYEDIR.y + horizon_dip;
-	float horizon_blend = smoothstep(-0.08, 0.45, elevation);
-	vec3 upper_sky = mix(sky_horizon_color.rgb, sky_top_color.rgb, horizon_blend);
-	vec3 lower_sky = mix(ground_horizon_color.rgb, ground_bottom_color.rgb, 1.0 - smoothstep(-0.55, 0.0, elevation));
-	vec3 sky_color = mix(lower_sky, upper_sky, step(0.0, elevation));
-
 	float sun_disk = body_disk(EYEDIR, sun_direction, sun_disk_size);
 	float sun_halo = body_halo(EYEDIR, sun_direction, sun_halo_size) * 0.32;
 	float moon_disk = body_disk(EYEDIR, moon_direction, moon_disk_size);
@@ -96,29 +87,35 @@ void sky() {
 	// The disks at their real radiance: the light's irradiance over the disk's solid
 	// angle, far brighter than anything around them, the haze's glow included; that glow
 	// is their halo (the atmosphere's forward lobe). The radiance map (ambient light and
-	// reflections) keeps faint disks and halos instead: disks that bright would sparkle
-	// in every glossy reflection.
+	// reflections) keeps faint disks and halos instead (radiance_sun_*_strength times the
+	// radiance of a white diffuser in their light): disks that bright would sparkle in
+	// every glossy reflection.
 	vec3 sun_disk_color = sun_irradiance / (PI * sun_disk_size * sun_disk_size);
 	vec3 moon_disk_color = moon_irradiance / (PI * moon_disk_size * moon_disk_size);
-	float halo_strength = 0.0;
+	vec3 sun_halo_color = vec3(0.0);
+	vec3 moon_halo_color = vec3(0.0);
 	if (AT_CUBEMAP_PASS) {
-		sun_disk_color = sun_color.rgb * radiance_sun_disk_strength;
-		moon_disk_color = moon_color.rgb * radiance_sun_disk_strength;
-		halo_strength = radiance_sun_halo_strength;
+		sun_disk_color = sun_irradiance / PI * radiance_sun_disk_strength;
+		moon_disk_color = moon_irradiance / PI * radiance_sun_disk_strength;
+		sun_halo_color = sun_irradiance / PI * radiance_sun_halo_strength;
+		moon_halo_color = moon_irradiance / PI * radiance_sun_halo_strength * moon_phase;
 	}
+	vec3 space = (sun_disk_color * sun_disk + sun_halo_color * sun_halo) * sun_visibility
+			+ (moon_disk_color * moon_disk * moon_lit + moon_halo_color * moon_halo) * moon_visibility;
 
-	sky_color += (sun_disk_color * sun_disk + sun_color.rgb * sun_halo * halo_strength) * sun_visibility;
-	sky_color += (moon_disk_color * moon_disk * moon_lit + moon_color.rgb * moon_halo * moon_phase * halo_strength) * moon_visibility;
-	if (clouds_enabled) {
-		vec4 cloud = textureLod(cloud_cubemap, EYEDIR, 0.0);
-		sky_color = sky_color * (1.0 - cloud.a) + cloud.rgb;
-	}
-	// Clouds and the bodies lie beyond the atmosphere, which lies over all of them.
+	vec4 cloud = clouds_enabled ? textureLod(cloud_cubemap, EYEDIR, 0.0) : vec4(0.0);
 	if (atmosphere_enabled) {
-		vec3 transmittance;
-		vec3 inscatter;
-		atmosphere_along(EYEDIR, -1.0, transmittance, inscatter);
-		sky_color = sky_color * transmittance + inscatter;
+		// The camera's altitude comes from the atmosphere, not POSITION: a sky that reads
+		// POSITION re-renders its radiance map whenever the camera moves (SkySystem
+		// refreshes it instead, see _refresh_sky_radiance()). The atmosphere and the
+		// clouds are pre-exposed; Godot exposes the sky's output itself.
+		COLOR = atmosphere_sky_with_clouds(EYEDIR, cloud, atmosphere_distance_to_altitude(EYEDIR, cloud_base_altitude), space * atmosphere_exposure) / atmosphere_exposure;
+		// Godot renders the radiance map exposed, then exposes the light it gives again
+		// (Godot 4.8): the map gets the sky unexposed.
+		if (AT_CUBEMAP_PASS) {
+			COLOR /= atmosphere_exposure;
+		}
+	} else {
+		COLOR = space * (1.0 - cloud.a) + cloud.rgb;
 	}
-	COLOR = sky_color;
 }

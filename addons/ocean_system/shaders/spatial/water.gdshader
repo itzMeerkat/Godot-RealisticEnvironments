@@ -68,9 +68,11 @@ uniform float sky_sun_visibility : hint_range(0.0, 1.0) = 1.0;
 // radiance, a opacity, with a mip chain for rough reflections. Set at runtime by OceanSystem.
 uniform bool sky_clouds_enabled = false;
 uniform samplerCube sky_cloud_cubemap : filter_linear_mipmap;
-// The atmosphere between the sea and the sky from the sky source (get_atmosphere_sky_volumes():
-// transmittance, isotropic in-scatter, lobe in-scatter per unit phase, for rays leaving the
-// sea; get_atmosphere_light(): xyz toward its light, w the lobe's g). Set at runtime by OceanSystem.
+// The sky source's atmosphere seen from the sea (get_atmosphere_sky_volumes(): transmittance,
+// in-scatter but the lobe, lobe in-scatter per unit phase, at the cloud base and at the ray's
+// end; get_atmosphere_light(): xyz toward its light, w the lobe's g). With it the sky the
+// water reflects is the atmosphere's, and the sky colours above are unused. Set at runtime
+// by OceanSystem.
 uniform bool sky_atmosphere_enabled = false;
 uniform sampler3D sky_atmosphere_transmittance : filter_linear, repeat_disable;
 uniform sampler3D sky_atmosphere_inscatter : filter_linear, repeat_disable;
@@ -85,6 +87,11 @@ uniform float sun_specular_strength : hint_range(0.0, 4.0) = 1.0;
 uniform float sun_glitter_density : hint_range(0.0, 10000000.0) = 1000000.0;
 uniform float sun_glitter_rate : hint_range(0.0, 60.0) = 12.0; // glint patterns per second
 uniform int water_debug_view : hint_range(0, 11) = 0;
+// The camera's exposure (CameraAttributes.exposure_multiplier, or the world's), set
+// every frame by OceanSystem. The reflections are summed pre-exposed, as the sky source's
+// clouds and atmosphere and the planar reflection are stored, and EMISSION (which Godot
+// exposes itself) divides by it.
+uniform float scene_exposure = 1.0;
 uniform bool planar_reflection_enabled = false;
 // Linear HDR, rgb premultiplied by geometry coverage (a), with a mip chain (PlanarReflectionCaptureEffect).
 uniform sampler2D planar_reflection_texture : filter_linear_mipmap, repeat_disable;
@@ -176,13 +183,14 @@ vec3 earth_curvature_tilt(vec3 direction, vec2 xz, vec3 camera_position) {
 }
 
 /*
- * The sky seen from the sea surface along direction, through the atmosphere: a lookup of
- * the sky source's sea-level view volumes at the ray's end. The mapping is the sky
- * system's atmosphere_view_uvw() (shaders/compute/atmosphere_common.glslinc and
- * atmosphere.gdshaderinc) for an observer at altitude 0, whose horizon is level. Change
- * them together.
+ * The sky source's sea-level view volume (two slices: 0 at the cloud base, 1 at the
+ * ray's end) along an upward direction: transmittance and in-scatter from the sea to
+ * there, the lobe's phase applied. The mapping is the sky system's
+ * atmosphere_view_uvw() (shaders/compute/atmosphere_common.glslinc and
+ * atmosphere.gdshaderinc) for an observer at altitude 0, whose horizon is level.
+ * Change them together.
  */
-vec3 atmosphere_apply_to_sky(vec3 sky, vec3 direction) {
+void atmosphere_sea_lookup(vec3 direction, float slice, out vec3 transmittance, out vec3 inscatter) {
 	vec3 size = vec3(textureSize(sky_atmosphere_transmittance, 0));
 	vec2 light_xz = sky_atmosphere_light.xz;
 	float d = length(direction.xz);
@@ -193,13 +201,12 @@ vec3 atmosphere_apply_to_sky(vec3 sky, vec3 direction) {
 	// toward the horizon; directions below it (none here: reflections point up) mirror it.
 	float zenith = acos(clamp(direction.y, -1.0, 1.0)) / (0.5 * PI);
 	float y = zenith < 1.0 ? 0.5 * (1.0 - sqrt(1.0 - zenith)) : 0.5 + 0.5 * sqrt(min(zenith - 1.0, 1.0));
-	vec3 uvw = vec3(0.5 / size.x + x * (1.0 - 1.0 / size.x), clamp(y, 0.5 / size.y, 1.0 - 0.5 / size.y), (size.z - 0.5) / size.z);
+	vec3 uvw = vec3(0.5 / size.x + x * (1.0 - 1.0 / size.x), clamp(y, 0.5 / size.y, 1.0 - 0.5 / size.y), (slice + 0.5) / size.z);
 	float g = sky_atmosphere_light.w;
 	float denominator = 1.0 + g * g - 2.0 * g * dot(direction, sky_atmosphere_light.xyz);
 	float phase = (1.0 - g * g) / (4.0 * PI * denominator * sqrt(denominator));
-	vec3 transmittance = textureLod(sky_atmosphere_transmittance, uvw, 0.0).rgb;
-	vec3 inscatter = textureLod(sky_atmosphere_inscatter, uvw, 0.0).rgb + textureLod(sky_atmosphere_inscatter_lobe, uvw, 0.0).rgb * phase;
-	return sky * transmittance + inscatter;
+	transmittance = textureLod(sky_atmosphere_transmittance, uvw, 0.0).rgb;
+	inscatter = textureLod(sky_atmosphere_inscatter, uvw, 0.0).rgb + textureLod(sky_atmosphere_inscatter_lobe, uvw, 0.0).rgb * phase;
 }
 
 /* 1 inside the interaction window, fading to 0 before its absorbing border. */
@@ -369,12 +376,12 @@ vec3 sample_sky_gradient(vec3 direction) {
 }
 
 /*
- * Composites the sky source's clouds over a sky color seen in direction, blurred
- * over the reflection lobe of GGX roughness (perceptual).
+ * The sky source's clouds seen in direction (rgb premultiplied radiance, a opacity),
+ * blurred over the reflection lobe of GGX roughness (perceptual); none without clouds.
  */
-vec3 composite_clouds(vec3 sky, vec3 direction, float roughness) {
+vec4 sample_clouds(vec3 direction, float roughness) {
 	if (!sky_clouds_enabled) {
-		return sky;
+		return vec4(0.0);
 	}
 	// Reflected directions spread with an angular deviation of about sqrt(2) alpha
 	// (twice the normal's, slope deviation alpha / sqrt(2)). A box-filtered mip of
@@ -383,28 +390,53 @@ vec3 composite_clouds(vec3 sky, vec3 direction, float roughness) {
 	float alpha = roughness * roughness;
 	float lod = log2(max(alpha * float(textureSize(sky_cloud_cubemap, 0).x) * 2.45, 1.0));
 	// Explicit LOD: called from divergent control flow.
-	vec4 cloud = textureLod(sky_cloud_cubemap, direction, lod);
-	return sky * (1.0 - cloud.a) + cloud.rgb;
+	return textureLod(sky_cloud_cubemap, direction, lod);
+}
+
+/*
+ * The sky without clouds in direction, from the sky source's atmosphere when it has one
+ * (the in-scatter at the ray's end), else from the gradient.
+ */
+vec3 sample_clear_sky(vec3 direction) {
+	if (sky_atmosphere_enabled) {
+		vec3 transmittance;
+		vec3 inscatter;
+		atmosphere_sea_lookup(direction, 1.0, transmittance, inscatter);
+		return inscatter;
+	}
+	return sample_sky_gradient(direction) * scene_exposure;
 }
 
 vec3 sample_rough_procedural_environment(vec3 direction, float roughness) {
 	float rough = saturate(roughness);
-	vec3 sky = sample_sky_gradient(direction);
+	vec3 sky = sample_clear_sky(direction);
 	vec3 cloud_direction = direction;
 	float broad_weight = smoothstep(0.05, 0.55, rough);
 	if (broad_weight > 0.0) {
 		vec3 upper_dir = safe_normalize_vec3(vec3(direction.x, direction.y + rough * 0.65, direction.z), direction);
 		vec3 lower_dir = safe_normalize_vec3(vec3(direction.x, direction.y - rough * 0.45, direction.z), direction);
 		vec3 center_dir = safe_normalize_vec3(mix(direction, vec3(0.0, 1.0, 0.0), rough * 0.25), direction);
-		// The gradient is cheap and blurred over three directions; clouds are
-		// prefiltered (cubemap mips), read once toward the broad lobe's center.
-		vec3 broad_gradient = sample_sky_gradient(center_dir) * 0.5
-			+ sample_sky_gradient(upper_dir) * 0.3
-			+ sample_sky_gradient(lower_dir) * 0.2;
-		sky = mix(sky, broad_gradient, broad_weight);
+		// The clear sky is blurred over three directions; clouds are prefiltered
+		// (cubemap mips), read once toward the broad lobe's center.
+		vec3 broad_sky = sample_clear_sky(center_dir) * 0.5
+			+ sample_clear_sky(upper_dir) * 0.3
+			+ sample_clear_sky(lower_dir) * 0.2;
+		sky = mix(sky, broad_sky, broad_weight);
 		cloud_direction = safe_normalize_vec3(mix(direction, center_dir, broad_weight), direction);
 	}
-	return composite_clouds(sky, cloud_direction, rough);
+	vec4 cloud = sample_clouds(cloud_direction, rough);
+	if (!sky_atmosphere_enabled) {
+		return sky * (1.0 - cloud.a) + cloud.rgb;
+	}
+	if (cloud.a <= 0.0) {
+		return sky;
+	}
+	// The clouds sit inside the atmosphere: the air up to their base lies in front of
+	// them, the rest of the sky (sky less that air's in-scatter) behind.
+	vec3 transmittance_cloud;
+	vec3 inscatter_cloud;
+	atmosphere_sea_lookup(cloud_direction, 0.0, transmittance_cloud, inscatter_cloud);
+	return inscatter_cloud + transmittance_cloud * cloud.rgb + (1.0 - cloud.a) * (sky - inscatter_cloud);
 }
 
 float ggx_distribution(float no_h, float roughness) {
@@ -760,13 +792,9 @@ void fragment() {
 	vec3 base_albedo = mix(body_albedo, foam_color.rgb * mix(0.75, 1.0, detail), foam_factor);
 	sky_reflection_amount = saturate(sky_reflection_strength * sky_fresnel * clear_water_mask);
 	if (sky_reflection_enabled) {
+		// Seen from the bottom of the atmosphere; the camera's own path to the water is
+		// hazed afterwards, with the rest of the scene (the sky source's aerial perspective).
 		reflected_sky_color = sample_rough_procedural_environment(reflection_direction, effective_reflection_roughness);
-		// The water is at the bottom of the atmosphere; the camera's own path to the
-		// water is hazed afterwards, with the rest of the scene (the sky source's
-		// aerial perspective).
-		if (sky_atmosphere_enabled) {
-			reflected_sky_color = atmosphere_apply_to_sky(reflected_sky_color, reflection_direction);
-		}
 	}
 	vec3 reflected_color = reflected_sky_color;
 
@@ -795,7 +823,7 @@ void fragment() {
 			ray_end = vec4(water_world_position + reflection_direction * hit_distance, 1.0);
 			reflection_uv = planar_reflection_project(ray_end);
 		}
-		// Blurred over the reflection lobe like the clouds (composite_clouds): the
+		// Blurred over the reflection lobe like the clouds (sample_clouds): the
 		// reflected rays spread by about sqrt(2) alpha, which the mirrored camera sees
 		// scaled by (distance from the water) / (distance from the mirrored camera).
 		float lobe_scale = ray_end.w > 0.0 ? hit_distance / max(distance(ray_end.xyz, planar_reflection_camera_position), 0.001) : 1.0;
@@ -844,7 +872,7 @@ void fragment() {
 		METALLIC = 0.0;
 		ROUGHNESS = 1.0;
 		SPECULAR = 0.0;
-		EMISSION = debug_color;
+		EMISSION = debug_color / scene_exposure;
 		light_specular_scale = 0.0;
 		crest_transmission = 0.0;
 		glitter_cells = vec4(0.0);
@@ -853,7 +881,7 @@ void fragment() {
 		METALLIC = 0.0;
 		ROUGHNESS = mix(effective_reflection_roughness, foam_roughness, foam_factor);
 		SPECULAR = 0.0; // No engine sky reflection: it is in EMISSION (see the header).
-		EMISSION = reflection_radiance;
+		EMISSION = reflection_radiance / scene_exposure;
 		light_specular_scale = sun_specular_strength * clear_water_mask;
 		crest_transmission = (1.0 - sky_fresnel) * (1.0 - foam_factor);
 

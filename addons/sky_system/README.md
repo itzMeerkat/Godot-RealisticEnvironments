@@ -1,9 +1,10 @@
 # Sky System
 
 Day/night sky with astronomically positioned sun and moon, directional lights,
-a procedural sky shader, a rotating starfield, volumetric clouds, an atmosphere
-(haze over the sea) with weather presets, and getters that other systems (the
-ocean) read for lighting.
+a physically based atmosphere (the blue sky, twilight, haze and fog over the sea)
+that draws the whole sky, a rotating starfield, volumetric clouds with weather
+presets, a light meter for exposure, and getters that other systems (the ocean)
+read for lighting.
 
 ## Quick start
 
@@ -16,6 +17,12 @@ declare the atmosphere's global shader uniforms (see [Atmosphere](#atmosphere)).
 
 To drive the ocean, set `OceanSystem.sky_source_path` to this node.
 
+Light levels are physical (a sunny day is about 10⁵ times as bright as a
+moonlit night), so the scene needs an exposure that follows them: an
+`ExposureController` (`addons/exposure_system`) pointed at this node, or your
+own controller reading `get_scene_illuminance()` (see [Exposure](#exposure)).
+Without one, nights and heavy overcast render near black.
+
 ## Key exports (`SkySystem`)
 
 - `time_of_day` 0–1: 0 midnight, 0.25 sunrise, 0.5 noon, 0.75 sunset.
@@ -27,13 +34,13 @@ To drive the ocean, set `OceanSystem.sky_source_path` to this node.
   world up; default north is −Z), `axis_tilt_degrees`,
   `sun_energy_multiplier` / `moon_energy_multiplier` (scale the lights'
   energy above the atmosphere), `star_brightness`.
-- `profile` — a `SkyProfile` resource of gradients (sky top and horizon
-  colours) and curves (ambient energy, star visibility). Missing entries are
-  filled with built-in defaults. The sun's and moon's light are not in it:
-  see **Sun and moon light** below.
+- `profile` — a `SkyProfile` resource holding the stars' visibility curve
+  (filled with a built-in default when missing). The sky's colours, the lights
+  and the ambient light all come from the atmosphere, not from it.
 - **Sun and moon light** — both are white
-  above the atmosphere (`SkySystem.SOLAR_ENERGY` 1.3, `MOON_ENERGY` 0.045 for
-  the full moon, times the lit share of the disk). The atmosphere colours and
+  above the atmosphere (`SkySystem.SOLAR_ENERGY` 1.3 for the sun's 128 000 lux,
+  `MOON_ENERGY` for the full moon's 0.27 lux, about 1/470 000 of it, times the
+  lit share of the disk). The atmosphere colours and
   dims them on the way down: the scene's lights get the transmittance from
   space to the sea along their direction (`_get_atmosphere_transmittance()`,
   the CPU copy of the transmittance LUT) times the share of the disk above the
@@ -41,19 +48,17 @@ To drive the ocean, set `OceanSystem.sky_source_path` to this node.
   `get_sun_color()`) and `light_energy`. A clear sun is pale yellow high up
   (energy about 1.1 at 55° in clear air), about 3000 K at 6° and deep red at the horizon; haze
   dims it further. Clouds get the light at the middle of their layer, so they
-  stay lit after the sea has lost the sun. The moon is the exception to
-  physics: its real light is 1/400000 of the sun's, but the scene has no
-  exposure adaptation, so its energy is set for a dark-adapted eye and it
-  lights the scene (and shows its disk) only once the sun is well down
-  (`get_night_factor()`).
+  stay lit after the sea has lost the sun. A light below 0.1 % of the other's
+  is hidden (the moon by day), as it would only cost a shadowed light.
 - **Visuals** — `render_bodies_in_sky` draws sun/moon disks in the sky shader
   (default) instead of the billboard meshes. The disks have their real
   radiance (the light's irradiance through the air over the disk's solid
   angle; the haze and clouds dim it in the sky shader), so the sun is the
   brightest thing in view; their glow comes from the atmosphere. The radiance
   map that lights and reflects the scene keeps faint disks and halos
-  (`radiance_sun_disk_strength`, `radiance_sun_halo_strength`), as a disk that
-  bright would sparkle in glossy reflections; `follow_active_camera` keeps the
+  (`radiance_sun_disk_strength`, `radiance_sun_halo_strength`, times the
+  radiance of a white diffuser in the body's light), as a disk that bright
+  would sparkle in glossy reflections; `follow_active_camera` keeps the
   starfield and meshes centred on the camera. `sea_level`: world height of the
   sea. The sea's horizon is `√(2h/R)` below eye level for a camera `h` above it,
   and the sky reaches down to there; the haze is densest at it. The sky reads the
@@ -81,12 +86,12 @@ Mobile renderer).
 - Wind: `cloud_wind_source_path` (duck-typed wind source, speed scaled by
   `cloud_wind_speed_multiplier`), or `cloud_wind_speed` /
   `cloud_wind_direction` without one.
-- Lighting: `cloud_light_intensity`, `cloud_ambient_intensity`. A preset also
-  scales the scene: `sun_light_scale` multiplies the sun/moon lights and
-  `get_sun_visibility()`; `ambient_light_scale` multiplies the environment
-  ambient energy.
+- Lighting: `cloud_light_intensity`, `cloud_ambient_intensity` (multiply the
+  key light and the sky's light, from the atmosphere, on the clouds). A preset
+  also scales the scene: `sun_light_scale` multiplies the sun/moon lights and
+  `get_sun_visibility()`.
 - Quality: `cloud_cubemap_size`, `cloud_update_stride`, `cloud_view_steps`,
-  `cloud_light_steps`, `cloud_max_distance`, `cloud_fade_distance`. Defaults
+  `cloud_light_steps`, `cloud_max_distance`. Defaults
   (1024, stride 4, 64/6 steps) cost about 0.5 ms (fair) to 1.3 ms (storm) of
   GPU time on an RTX 4070 Ti.
 - `get_cloud_cubemap()` returns the cloud texture (or `null` while clouds are
@@ -107,43 +112,62 @@ The model lives in one place, the compute passes of `AtmosphereRenderer`
 `atmosphere_common.glslinc`). Every consumer samples their lookup textures, so
 new media (multiple scattering, the air's own glow) are added there only.
 
-- Media: a sphere of sea (radius 6371 km) under an atmosphere that ends at
-  100 km. Air molecules (Rayleigh scattering, (5.8, 13.6, 33.1)·10⁻⁶ /m at sea
+- Media (after Hillaire 2020, "A Scalable and Production Ready Sky and
+  Atmosphere Rendering Technique"): a sphere of sea (radius 6371 km, diffuse
+  albedo 0.06) under an atmosphere that ends at 100 km. Air molecules (Rayleigh scattering, (5.8, 13.6, 33.1)·10⁻⁶ /m at sea
   level for red, green and blue, scale height 8 km), ozone (absorption
   (0.65, 1.88, 0.085)·10⁻⁶ /m in a layer 10–40 km up, peaking at 25 km) and
   the haze: extinction `3.912 / visibility` at sea level, falling off
   exponentially with altitude, scattering albedo 1, grey, ending 12 haze
-  scale heights up. Light paths (sun and moon down to any point) cross all
-  three; view rays cross only the haze for now, as the air's own glow (the
-  blue sky) still comes from the sky profile and its extinction without that
-  glow would only darken distant things. Rays follow the curved sea, so the
-  horizon itself is fully hazed while the sky overhead stays clear; rays below
-  the horizon end at the sea.
-- Light: the key light (the sun, or the moon at night, as the clouds pick it)
-  white at its energy above the atmosphere, dimmed and coloured down to every
+  scale heights up. Light and view rays cross all three. Rays follow the
+  curved sea, so the horizon itself is fully hazed while the sky overhead
+  stays clear; rays below the horizon end at the sea, which adds the sunlight
+  it reflects diffusely.
+- Light: the key light (the sun, or the moon once the sun is 15° down and its
+  twilight gone) white at its energy above the atmosphere, dimmed and coloured down to every
   point by the transmittance LUT (haze high up is lit more, and redder, than
-  haze near the sea under a low sun) and shadowed by the planet; times the clouds' transmittance toward
-  the light over the camera (blurred cloud cubemap mip, about 2.3° wide; a sun
-  behind a cloud loses its glow, `cloud_haze_shadow_strength` multiplies that
-  opacity). Phase: a sharp forward Henyey-Greenstein lobe `g = haze_anisotropy`
-  (about 0.97) holding 75 % of the scattering plus 25 % isotropic, the shape of
-  Mie scattering by sea salt and droplets. Plus an isotropic ambient term
-  standing in for multiple scattering: the sky profile's horizon colour and the
-  light the haze took out of the sunbeam.
+  haze near the sea under a low sun) and shadowed by the planet. Below the
+  cloud layer the clouds shade it (`cloud_shade()`): near the camera by the
+  clouds toward the light over it (a blurred cloud cubemap mip, about 2.3°
+  wide: a sun behind a cloud loses its glow), farther than 5 km by the mean
+  cover overhead; `cloud_haze_shadow_strength` multiplies those opacities.
+  Phase: the air's Rayleigh phase; the haze's sharp forward Henyey-Greenstein
+  lobe `g = haze_anisotropy` (about 0.97) holding 75 % of its scattering plus
+  25 % isotropic, the shape of Mie scattering by sea salt and droplets. Every
+  higher order of scattering (the light of the sky itself, what keeps twilight
+  and shadows blue) comes from the multiple-scattering LUT, isotropic. The other
+  body lights the atmosphere the same way, without the lobe (its phase averaged
+  over the two mirrored directions each texel stands for), so twilight hands
+  over to moonlight smoothly. The clouds take the brighter of the two at their
+  altitude.
 - Passes, every frame (`AtmosphereRenderer.render()`):
   1. `atmosphere_transmittance.glsl`: transmittance LUT (256 × 256, the rows
      dense enough near the sea for a 150 m fog layer), from space to any
      altitude along any direction above the horizon (Bruneton's layout).
-  2. `atmosphere_view.glsl`: **view volumes** (32 × 128 × slices, rgba16f),
+  2. `atmosphere_multiple_scattering.glsl`: multiple-scattering LUT (32 × 32,
+     the light's angle × altitude, log-spaced in haze scale heights):
+     Hillaire's Ψ, second-order light over a sphere of directions summed as a
+     geometric series `L₂ / (1 − f_ms)`, sea bounce included.
+  3. `atmosphere_view.glsl`: **view volumes** (32 × 128 × slices, rgba16f),
      one ray per azimuth from the light × view angle (squeezed toward the
      horizon, which falls on a texel edge). Three textures: transmittance,
-     isotropic in-scatter, and the lobe's in-scatter per unit phase (the lobe
-     is narrower than a texel, so consumers apply its phase per pixel). The
-     camera volume stores 64 distance slices (`d = 100 km · (k/62)²`, the last
-     one at the ray's end); the sea-level volume stores only the rays' ends
-     (the sky the water reflects).
+     in-scatter but the lobe (the air's Rayleigh phase baked in), and the
+     lobe's in-scatter per unit phase (the lobe is narrower than a texel, so
+     consumers apply its phase per pixel). Three volumes: the camera's, 64
+     distance slices (`d = 100 km · (k/62)²`, the last one at the ray's end);
+     the sea level's, 2 slices (at the cloud base and at the ray's end: the sky
+     the water reflects, with its clouds in it); the cloud layer's, ray ends only.
+  4. `atmosphere_ambient.glsl`: the sky's light, integrated over a volume's ray
+     ends: at the cloud layer (`sky_ambient_buffer`: mean radiance above and
+     below, the clouds' ambient light) and at the camera through the clouds
+     (`camera_sky_light_buffer`: irradiance on a level surface, read back for
+     the light meter).
 - Consumers composite `background · transmittance + inscatter + lobe · phase`:
-  - the sky shader and the starfield, at the ray's end;
+  - the sky shader and the starfield, at the ray's end. The sky shader puts the
+    clouds inside the atmosphere: the air in front of the cloud base, the
+    cloud, then the rest of the air and space through its gaps
+    (`atmosphere_sky_with_clouds()`; the clouds are stored as seen at the
+    cloud);
   - `AerialPerspectiveEffect` (in the WorldEnvironment's compositor), every
     opaque pixel by its depth. It runs **before the transparent pass** as one
     fullscreen triangle with dual-source blending, into the multisampled
@@ -159,7 +183,8 @@ new media (multiple scattering, the air's own glow) are added there only.
   `atmosphere_view_inscatter`, `atmosphere_view_inscatter_lobe` (`sampler3D`),
   `atmosphere_observer` (`vec4`: world position of the camera the volume is
   built for, w its altitude as used), `atmosphere_light` (`vec4`: toward the
-  light, w the lobe's g) and `atmosphere_max_distance` (`float`). A project
+  light, w the lobe's g), `atmosphere_max_distance` (`float`) and
+  `atmosphere_exposure` (`float`, see [Exposure](#exposure)). A project
   using the sky system declares them in `project.godot` `[shader_globals]`
   (this project does). The last SkySystem set up owns them.
 - Transparent materials: Godot draws them after the aerial perspective, so
@@ -175,14 +200,48 @@ new media (multiple scattering, the air's own glow) are added there only.
   Compatibility renderer has no atmosphere. Godot's own Environment fog stays
   off: its height fog depends only on a pixel's height, not its distance.
 
+## Exposure
+
+`get_scene_illuminance()` is the scene's light meter: lux on a level surface at
+the active camera, from the sun's and the moon's lights and the sky (atmosphere
+and clouds, read back from the GPU a frame or two late; negative until the
+first readback). `get_illuminance_unit_lux()` converts the scene's light units
+(a light of energy 1/π facing a surface) to lux. `ExposureController` uses both.
+
+Godot applies a camera's exposure (`CameraAttributes.exposure_multiplier`, the
+camera's or else the world's) before rendering, to lights, emission and the
+sky; the colour buffer holds pre-exposed light. The sky system matches it, so
+moonlight keeps its precision in 16-bit textures:
+
+- the atmosphere's in-scatter, the sky light buffers and the clouds are stored
+  pre-exposed (the key light is multiplied by the exposure, read every frame;
+  `atmosphere_exposure` publishes it). The aerial perspective and `FOG` take
+  them as they are;
+- the sky shader divides by it (Godot exposes the sky's output itself). In the
+  radiance map pass it divides once more: Godot 4.8 renders the radiance map
+  exposed and then exposes the light it gives again, so the map holds the sky
+  unexposed (moonlit ambient light loses precision there);
+- the ocean sums its reflections pre-exposed and divides its `EMISSION`.
+
+The starfield is unlit `ALBEDO`, which Godot does not expose: its brightness is
+set for the screen (`star_brightness`, the profile's curve). Physical light
+units must stay off (they change what Godot's exposure means).
+
 ### Limits
 
 - Clouds are drawn as seen from below the cloud base: the camera altitude is
   clamped under it, so flying into or above the clouds is not supported.
 - Clouds do not cast shadows on the scene; heavy cover only dims the lights
-  through `sun_light_scale` / `ambient_light_scale`.
+  through `sun_light_scale`.
 - The atmosphere is horizontally uniform, and the clouds shade its light with
-  one value for the whole sky (toward the light over the camera).
+  two values (toward the light over the camera, and the mean cover).
+- The atmosphere's second light (the moon while the sun is up or in twilight,
+  the sun at night) has no haze glow around it, and its sky is mirrored about
+  the key light's vertical plane (the volume's layout): exact for a full moon
+  opposite the sun, approximate otherwise.
+- Thick cloud decks (overcast, rain) are too dark underneath, and so is the air
+  below them: the clouds' lighting does not yet carry enough light through a
+  thick layer.
 - Points beyond 100 km (`AtmosphereRenderer.MAX_DISTANCE`) are hazed as at
   100 km; keep cameras' far planes below it. The planar reflection camera's
   transparent surfaces are hazed as seen from the main camera.
@@ -192,10 +251,9 @@ new media (multiple scattering, the air's own glow) are added there only.
 ## Getters and signals
 
 `get_sun_direction()`, `get_moon_direction()` (unit vectors pointing *toward*
-the body), `get_sun_color()`, `get_sky_top_color()`, `get_sky_horizon_color()`,
-`get_sky_ground_horizon_color()`, `get_sky_ground_bottom_color()`,
-`get_sun_visibility()`, `get_moon_visibility()`, `get_moon_phase()`,
-`get_night_factor()`, `get_star_visibility()`, `get_time_of_day()`.
+the body), `get_sun_color()`, `get_sun_visibility()`, `get_moon_visibility()`,
+`get_moon_phase()`, `get_star_visibility()`, `get_time_of_day()`. Exposure:
+`get_scene_illuminance()`, `get_illuminance_unit_lux()`.
 Atmosphere: `get_atmosphere_sky_volumes()` (the sea-level view volumes,
 `[transmittance, inscatter, inscatter_lobe]` as `Texture3D`s, or empty without
 an atmosphere) and `get_atmosphere_light()` (`Vector4`: toward the light, w
@@ -215,12 +273,9 @@ then. When the day cycle advances `time_of_day`, `day_of_year` and
   phase angle, with a 5.145° inclined orbit. Equatorial coordinates are
   converted to local horizontal (east, up, north) for `latitude_degrees`, then
   rotated by `north_offset_degrees` into world space.
-- Profile colours are not sampled at the raw `time_of_day`. `_get_profile_sample_time()`
-  maps the *actual sun height* (and whether it's morning or evening) onto the
-  profile's 0/0.25/0.5/0.75 keys, so seasons and latitudes that shift sunrise
-  still get sunrise colours at the horizon.
-- Every change updates the lights (colour, energy, direction; hidden below a
-  small energy), environment ambient light, and the sky shader uniforms.
+- Every change updates the lights (colour, energy, direction) and the sky
+  shader uniforms. The environment's ambient light is the sky's radiance map
+  at energy 1.
   Starfield visibility fades with twilight and is washed out by a bright moon;
   the starfield rotates with local sidereal time.
 - At runtime the environment, sky, sky material and visual materials are
@@ -251,9 +306,10 @@ then. When the day cycle advances `time_of_day`, `day_of_year` and
    multiple scattering as three octaves of weaker extinction and flatter
    dual-lobe Henyey-Greenstein phase; ambient light from above attenuated by
    two-stream diffusion through the cloud column, plus light from below that
-   fades as the cover closes; the planet's shadow for twilight. Distant
-   clouds fade into the sky (aerial perspective). Steps are spaced
-   quadratically and jittered per texel and frame.
+   fades as the cover closes (both from the atmosphere's `sky_ambient_buffer`);
+   the planet's shadow for twilight. The result is the cloud as seen at the
+   cloud: the sky shader and the ocean put the atmosphere in front of it.
+   Steps are spaced quadratically and jittered per texel and frame.
 4. `cloud_mip_downsample.glsl`, every frame: rebuilds the cubemap's mip chain
    (2×2 box filter per face, no filtering across face edges). Premultiplied
    radiance and opacity average linearly, so every level composites like the
@@ -265,10 +321,10 @@ cubemap is indexed by view direction, so turning the camera costs nothing;
 the clouds are kilometres away, so moving the camera a few hundred metres
 between refreshes does not show either.
 
-The cubemap stores premultiplied radiance in rgb and opacity in a. The sky
-shader composites `sky * (1 - a) + rgb` (sun and moon disks included), the
-starfield fades stars by `1 - a`, and the ocean does the same in its
-procedural sky reflection. The radiance map (ambient light, reflections)
+The cubemap stores premultiplied radiance in rgb (pre-exposed, see
+[Exposure](#exposure)) and opacity in a. The sky shader composites it inside the
+atmosphere (`atmosphere_sky_with_clouds()`), the starfield fades stars by
+`1 - a`, and the ocean does the same as the sky in its sky reflection. The radiance map (ambient light, reflections)
 follows because the sky material's cloud parameters are re-sent once per full
 refresh. Those parameters go through `RenderingServer.material_set_param`, so
 the runtime texture is never stored in `materials/*.tres`.

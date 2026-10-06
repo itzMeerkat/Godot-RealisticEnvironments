@@ -46,8 +46,9 @@ before touching its code; this file only records what is easy to get wrong.
   are internal child nodes created at runtime. Never save them into a scene.
 
 ## Addon boundaries
-- `ocean_system`, `sky_system`, `wind_system`, `hitbox_damage_system` and
-  `projectile_launcher_system` have no dependencies on other addons. Keep it
+- `ocean_system`, `sky_system`, `wind_system`, `exposure_system`,
+  `hitbox_damage_system` and `projectile_launcher_system` have no
+  dependencies on other addons. Keep it
   that way: connect them with signals, groups and duck-typed methods.
 - `buoyancy_system` depends only on `ocean_system` (`OceanSystem`,
   `WaterSurfaceSample`). Damage-driven sinking is wired by connecting
@@ -64,15 +65,29 @@ before touching its code; this file only records what is easy to get wrong.
     A source with a `lighting_changed` signal is read only when it fires, so it
     must emit it after every lighting change; one without it is read every
     frame. Optional `get_cloud_cubemap()` returns a cubemap (rgb premultiplied
-    cloud radiance, a opacity; `null` = no clouds) with a full mip chain, that
-    the water composites into its sky reflection as `sky * (1 - a) + rgb`,
-    reading the mip that matches its roughness. Optional
-    `get_atmosphere_sky_volumes()` (`[transmittance, inscatter,
-    inscatter_lobe]` `Texture3D`s for an observer on the sea, ray ends only;
-    empty = no atmosphere) and `get_atmosphere_light()` (`Vector4`: toward the
-    light, w the lobe's Henyey-Greenstein g) give the atmosphere the water
-    puts over its sky reflection; a source must emit `lighting_changed` before
-    freeing those textures.
+    cloud radiance as seen at the cloud, a opacity; `null` = no clouds) with a
+    full mip chain, read at the mip that matches the water's roughness.
+    Optional `get_atmosphere_sky_volumes()` (`[transmittance, inscatter,
+    inscatter_lobe]` `Texture3D`s for an observer on the sea, two slices: at
+    the cloud base and at the ray's end; empty = no atmosphere) and
+    `get_atmosphere_light()` (`Vector4`: toward the light, w the lobe's
+    Henyey-Greenstein g) give the sky the water reflects: the clouds inside
+    the atmosphere, `L_c + T_c * cloud + (1 - a) * (L_end - L_c)`, or
+    `sky * (1 - a) + cloud` over the gradient without one. A source must emit
+    `lighting_changed` before freeing those textures. The clouds and the
+    in-scatter are stored pre-exposed (see Exposure below).
+  - Exposure: a light source has `get_scene_illuminance()` (lux on a level
+    surface at the active camera, negative while unknown) and
+    `get_illuminance_unit_lux()` (lux of the scene's irradiance 1);
+    `ExposureController` writes `CameraAttributes.exposure_multiplier`. Godot
+    applies that before rendering (lights, `EMISSION`, the sky's output; not
+    unshaded `ALBEDO` or `FOG`), so anything that writes its own light
+    matches it: every system reads the effective exposure itself (the
+    camera's attributes, else the world's) each frame and stores its HDR
+    textures pre-exposed. `SkySystem` scales the key light of its compute
+    passes by it (and publishes `atmosphere_exposure`); the sky shader and
+    the water divide what Godot exposes again. Don't apply exposure anywhere
+    else, and keep physical light units off.
   - Atmosphere globals: global shader uniforms `atmosphere_*` (declared in
     `project.godot` `[shader_globals]`, published by `SkySystem`, read through
     `sky_system/shaders/atmosphere.gdshaderinc`). Transparent materials that
@@ -223,9 +238,11 @@ before touching its code; this file only records what is easy to get wrong.
 
 ## Sky and cloud invariants
 - Clouds are rendered by `CloudRenderer` (owned by `SkySystem`, editor and
-  runtime) into the upper half of a cubemap around the camera. Its consumers
-  (sky shader, starfield, water) all composite `sky * (1 - a) + rgb`; change
-  the encoding in all of them together. The mip chain is rebuilt every frame
+  runtime) into the upper half of a cubemap around the camera, as seen at the
+  cloud (no atmosphere in front). Its consumers (sky shader, starfield, water)
+  all composite it inside the atmosphere (`atmosphere_sky_with_clouds()`; the
+  starfield only fades by `1 - a`); change the encoding in all of them
+  together. Its ambient light is the atmosphere's (`sky_ambient_buffer`). The mip chain is rebuilt every frame
   after the raymarch (`cloud_mip_downsample.glsl`, 2×2 box per face); the sky
   and starfield show mip 0, the water blurred mips, and the atmosphere's view
   pass a blurred mip toward the light to shade the atmosphere's light.
@@ -256,23 +273,35 @@ before touching its code; this file only records what is easy to get wrong.
 ## Atmosphere invariants
 - The atmosphere model (media, light, integration) lives only in
   `AtmosphereRenderer`'s compute passes (`sky_system/shaders/compute/
-  atmosphere_transmittance.glsl`, `atmosphere_view.glsl`, shared code in
+  atmosphere_transmittance.glsl`, `atmosphere_multiple_scattering.glsl`,
+  `atmosphere_view.glsl`, `atmosphere_ambient.glsl`, shared code in
   `atmosphere_common.glslinc`). Consumers only sample the lookup textures; add
   new media there, never in a consumer. The one other copy of physics is
   `SkySystem._get_atmosphere_transmittance()` (the transmittance LUT's
   integral on the CPU, for the scene's lights, the sky's disks and the
-  clouds' light): same media constants and steps. Light paths cross every
-  medium; view rays cross only the haze until the air's in-scatter is
-  modelled (adding air extinction to view rays alone darkens distant things).
+  clouds' light): same media constants and steps. Light and view rays cross
+  every medium. The whole sky (blue sky, twilight, ground below the horizon)
+  is the atmosphere's; don't add sky colour gradients or ambient terms.
 - The sun's and moon's light colours come only from that transmittance (white
-  above the atmosphere, `SOLAR_ENERGY`, `MOON_ENERGY`); don't reintroduce
-  colour gradients or energy curves for them. The moon's energy and its gating
-  by `_night_factor` are the one exposure compromise (no auto exposure).
+  above the atmosphere, `SOLAR_ENERGY`, `MOON_ENERGY`, both physical); don't
+  reintroduce colour gradients, energy curves or night gating for them. Night
+  visibility is the exposure controller's job. Both bodies light the
+  atmosphere (`atmosphere_view.glsl`: the key light with the haze's lobe, the
+  secondary without it); switching to a single light makes twilight drop
+  several hundred times at the switch.
 - The view-volume layout (`atmosphere_view_uvw()`, slice distances) and the
   lobe's phase are copied in `atmosphere_common.glslinc`,
   `atmosphere.gdshaderinc` and the ocean's `water.gdshader`
-  (`atmosphere_apply_to_sky()`, observer at altitude 0). Change them together.
+  (`atmosphere_sea_lookup()`, observer at altitude 0). Change them together.
   Consumers composite `background * transmittance + inscatter + lobe * phase`.
+- Exposure: everything the atmosphere passes and the clouds output (in-scatter,
+  sky light buffers, cloud radiance) is pre-exposed. The sky shader divides by
+  `atmosphere_exposure`, and once more in its radiance-map pass
+  (`AT_CUBEMAP_PASS`): Godot 4.8 renders the radiance map exposed and then
+  exposes the light it gives again (measured: ×X² without the fix). The
+  aerial perspective and `FOG` use the volumes as they are.
+  `SkySystem._sky_irradiance` (the light meter's sky part, read back with
+  `buffer_get_data_async`) divides by the exposure of its frame.
 - The global uniforms' list (`SkySystem.GLOBAL_*`, `atmosphere.gdshaderinc`,
   `project.godot` `[shader_globals]`) changes in all three places together.
   Only the owning SkySystem (`_global_atmosphere_owner`) writes them.
@@ -289,7 +318,8 @@ before touching its code; this file only records what is easy to get wrong.
   `GEOMETRIC_BLENDED_PROPERTIES`). `SkySystem.sea_level` must match the
   ocean's water height.
 - After editing `atmosphere_common.glslinc` reimport
-  `atmosphere_transmittance.glsl`, `atmosphere_view.glsl` and
+  `atmosphere_transmittance.glsl`, `atmosphere_multiple_scattering.glsl`,
+  `atmosphere_view.glsl`, `atmosphere_ambient.glsl` and
   `aerial_perspective.glsl` (delete their `.godot/imported/<name>-*` files).
 
 ## Physics layers

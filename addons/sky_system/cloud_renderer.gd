@@ -26,8 +26,8 @@ const PHASE_G := 0.6
 const MIN_BASE_CLEARANCE := 50.0
 ## Raymarch faces dispatched: every cube face but -Y.
 const RENDERED_FACE_COUNT := 5
-## Bytes of the raymarch Params buffer: ten vec4s, packed by _pack_params().
-const PARAMS_SIZE := 10 * 16
+## Bytes of the raymarch Params buffer: eight vec4s, packed by _pack_params().
+const PARAMS_SIZE := 8 * 16
 
 ## Sampled by the sky, the starfield and the ocean. rgb: premultiplied cloud
 ## radiance, a: opacity. Only the upper hemisphere is written. Has a full mip
@@ -42,8 +42,6 @@ var view_steps := 64
 var light_steps := 6
 ## Rays end after this distance (m); also sizes the weather map.
 var max_distance := 120000.0
-## Distance (m) over which aerial perspective fades clouds to 1/e.
-var fade_distance := 40000.0
 ## Weight of a texel's previous value when it is refreshed (0 replaces it).
 var history_weight := 0.6
 
@@ -65,7 +63,9 @@ var _frame := 0
 var _fresh_frames := 0
 
 
-func _init(device : RenderingDevice, face_size : int) -> void:
+## sky_ambient_buffer: AtmosphereRenderer.sky_ambient_buffer, the sky's light at the
+## cloud layer; it must outlive this renderer.
+func _init(device : RenderingDevice, face_size : int, sky_ambient_buffer : RID) -> void:
 	_device = device
 	_face_size = face_size
 	var linear_repeat := _own(_device.sampler_create(_make_sampler_state(RenderingDevice.SAMPLER_REPEAT_MODE_REPEAT)))
@@ -106,6 +106,7 @@ func _init(device : RenderingDevice, face_size : int) -> void:
 		_sampled_uniform(2, linear_repeat, detail_noise),
 		_sampled_uniform(3, linear_clamp, weather_map),
 		_buffer_uniform(4, _params_buffer),
+		_buffer_uniform(5, sky_ambient_buffer),
 	], raymarch_shader, 0))
 
 	var mip_shader := _load_shader(MIP_DOWNSAMPLE_SHADER)
@@ -145,12 +146,13 @@ func get_refresh_frames() -> int:
 	return update_stride * update_stride
 
 
-## Records the weather and raymarch passes for this frame.
+## Records the weather and raymarch passes for this frame. light_color: the key
+## light's irradiance at the cloud layer; sky_light_scale multiplies the sky's light.
 func render(camera_position : Vector3, preset : CloudPreset, wind_offset : Vector2, evolution_time : float,
-		light_direction : Vector3, light_color : Color, ambient_top : Color, ambient_bottom : Color) -> void:
+		light_direction : Vector3, light_color : Color, sky_light_scale : float) -> void:
 	assert(update_stride in [1, 2, 4], "CloudRenderer.update_stride must be 1, 2 or 4.")
 	var cloud_camera := Vector3(camera_position.x, clampf(camera_position.y, 0.0, preset.base_altitude - MIN_BASE_CLEARANCE), camera_position.z)
-	var params := _pack_params(cloud_camera, preset, wind_offset, evolution_time, light_direction, light_color, ambient_top, ambient_bottom)
+	var params := _pack_params(cloud_camera, preset, wind_offset, evolution_time, light_direction, light_color, sky_light_scale)
 	_device.buffer_update(_params_buffer, 0, params.size(), params)
 
 	var cycle_length := update_stride * update_stride
@@ -200,17 +202,15 @@ func render(camera_position : Vector3, preset : CloudPreset, wind_offset : Vecto
 
 
 func _pack_params(camera_position : Vector3, preset : CloudPreset, wind_offset : Vector2, evolution_time : float,
-		light_direction : Vector3, light_color : Color, ambient_top : Color, ambient_bottom : Color) -> PackedByteArray:
+		light_direction : Vector3, light_color : Color, sky_light_scale : float) -> PackedByteArray:
 	return PackedFloat32Array([
 		camera_position.x, camera_position.y, camera_position.z, PLANET_RADIUS,
-		preset.base_altitude, preset.base_altitude + preset.thickness, max_distance, fade_distance,
+		preset.base_altitude, preset.base_altitude + preset.thickness, max_distance, 0.0,
 		camera_position.x, camera_position.z, max_distance * 2.0, BASE_EXTINCTION * preset.density,
-		wind_offset.x, wind_offset.y, evolution_time, 0.0,
+		wind_offset.x, wind_offset.y, evolution_time, sky_light_scale,
 		preset.shape_scale, preset.detail_scale, preset.detail_erosion, preset.scattering_albedo,
 		light_direction.x, light_direction.y, light_direction.z, 0.0,
 		light_color.r, light_color.g, light_color.b, 0.0,
-		ambient_top.r, ambient_top.g, ambient_top.b, 0.0,
-		ambient_bottom.r, ambient_bottom.g, ambient_bottom.b, 0.0,
 		float(view_steps), float(light_steps), LIGHT_STEP_LENGTH, PHASE_G,
 	]).to_byte_array()
 

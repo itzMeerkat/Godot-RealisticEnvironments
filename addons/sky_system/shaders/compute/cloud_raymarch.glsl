@@ -10,9 +10,14 @@
  * frames. A refreshed texel is blended with its previous value; together with
  * the per-frame jitter this averages several sub-texel rays.
  *
- * Output texel: rgb = in-scattered radiance (premultiplied), a = opacity.
- * Both are already faded by aerial perspective, so the sky composites with
- * sky * (1 - a) + rgb.
+ * Output texel: rgb = in-scattered radiance (premultiplied), a = opacity, as
+ * seen at the cloud: the atmosphere between the camera and the clouds is left
+ * to the consumers (the sky splits its view volume at the cloud base, see
+ * atmosphere.gdshaderinc). Without it they composite sky * (1 - a) + rgb.
+ *
+ * Light: the key light as it reaches the cloud layer (SkySystem dims it by the
+ * atmosphere), and the sky's light at the layer from above and below
+ * (AtmosphereRenderer.sky_ambient_buffer, binding 5).
  *
  * The planet is a sphere (radius camera.w) with its surface at world y = 0;
  * the cloud layer is a spherical shell, which bends the layer down to the
@@ -27,16 +32,20 @@ layout(set = 0, binding = 2) uniform sampler3D detail_noise;
 layout(set = 0, binding = 3) uniform sampler2D weather_map;
 layout(set = 0, binding = 4, std430) restrict readonly buffer Params {
 	vec4 camera;          // xyz world position, w planet radius (m)
-	vec4 layer;           // x base altitude, y top altitude, z max distance, w aerial-perspective distance (m)
+	vec4 layer;           // x base altitude, y top altitude, z max distance, w unused
 	vec4 weather_area;    // xy map centre (world XZ), z map extent (m), w extinction at density 1 (1/m)
-	vec4 motion;          // xy wind offset (world XZ, m), z evolution time, w unused
+	vec4 motion;          // xy wind offset (world XZ, m), z evolution time, w sky light scale
 	vec4 scales;          // x shape tile (m), y detail tile (m), z detail erosion, w scattering albedo
 	vec4 light_direction; // xyz unit vector toward the key light (sun or moon)
-	vec4 light_color;     // rgb key light radiance
-	vec4 ambient_top;     // rgb ambient light at the top of the layer
-	vec4 ambient_bottom;  // rgb ambient light at the base of the layer
+	vec4 light_color;     // rgb key light irradiance at the cloud layer
 	vec4 march;           // x view steps, y light steps, z first light step (m), w forward phase g
 } params;
+// AtmosphereRenderer.sky_ambient_buffer (atmosphere_ambient.glsl).
+layout(set = 0, binding = 5, std430) restrict readonly buffer SkyAmbient {
+	vec4 above; // rgb mean radiance of the sky above the layer
+	vec4 below; // rgb mean radiance of the sky and sea below it
+	vec4 irradiance; // unused here
+} sky_ambient;
 
 layout(push_constant, std430) restrict readonly uniform PushConstants {
 	ivec2 pattern_offset;
@@ -207,7 +216,6 @@ vec4 march_clouds(vec3 direction, vec2 noise_position) {
 
 	vec3 radiance = vec3(0.0);
 	float transmittance = 1.0;
-	float weighted_depth = 0.0;
 	for (int i = 0; i < steps; i++) {
 		float x = (float(i) + jitter) / float(steps);
 		float t = t_start + path * x * x;
@@ -247,36 +255,26 @@ vec4 march_clouds(vec3 direction, vec2 noise_position) {
 			float cloud_top = params.layer.x + (params.layer.y - params.layer.x) * mix(0.22, 1.0, weather.g);
 			float column_depth = sigma_t * max(cloud_top - altitude, 0.0);
 			float diffuse_transmission = 1.0 / (1.0 + DIFFUSION * column_depth);
-			vec3 light_from_above = params.ambient_top.rgb + light_color * (SUN_DIFFUSE * light_visibility * max(light_direction.y, 0.0));
-			// Light from below (sea, horizon glow) fades as the cover closes.
-			vec3 light_from_below = params.ambient_bottom.rgb * (1.0 - clamp(height_fraction, 0.0, 1.0)) * (1.0 - 0.75 * weather.r);
+			vec3 light_from_above = sky_ambient.above.rgb * params.motion.w + light_color * (SUN_DIFFUSE * light_visibility * max(light_direction.y, 0.0));
+			// Light from below (sea, lower sky) fades as the cover closes.
+			vec3 light_from_below = sky_ambient.below.rgb * params.motion.w * (1.0 - clamp(height_fraction, 0.0, 1.0)) * (1.0 - 0.75 * weather.r);
 			vec3 ambient = light_from_above * diffuse_transmission + light_from_below;
 			vec3 source = albedo * (light_color * scattering * light_visibility + ambient);
 
 			// Energy-conserving integration over the step.
 			float step_transmittance = exp(-sigma_t * step_length);
 			radiance += transmittance * source * (1.0 - step_transmittance);
-			float next_transmittance = transmittance * step_transmittance;
-			weighted_depth += t * (transmittance - next_transmittance);
-			transmittance = next_transmittance;
+			transmittance *= step_transmittance;
 			// The rest of the ray is taken as opaque: the sun disk behind is so
 			// bright that even 1 % of it would show through as a bright spot.
 			if (transmittance < 0.01) {
-				weighted_depth += t * transmittance;
 				transmittance = 0.0;
 				break;
 			}
 		}
 	}
 
-	float opacity = 1.0 - transmittance;
-	if (opacity <= 0.0) {
-		return vec4(0.0);
-	}
-	// Aerial perspective: distant clouds dissolve into the sky behind them.
-	float depth = weighted_depth / opacity;
-	float fade = exp(-depth / params.layer.w);
-	return vec4(radiance * fade, opacity * fade);
+	return vec4(radiance, 1.0 - transmittance);
 }
 
 void main() {

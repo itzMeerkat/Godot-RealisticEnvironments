@@ -1,8 +1,9 @@
 /*
  * The atmosphere over the sea: geometry, the participating media and the layouts of
  * the lookup textures AtmosphereRenderer builds from them. Shared by the atmosphere
- * passes (atmosphere_transmittance.glsl, atmosphere_view.glsl) and the aerial
- * perspective pass (aerial_perspective.glsl).
+ * passes (atmosphere_transmittance.glsl, atmosphere_multiple_scattering.glsl,
+ * atmosphere_view.glsl, atmosphere_ambient.glsl) and the aerial perspective pass
+ * (aerial_perspective.glsl).
  *
  * The planet is a sphere of radius ATMOSPHERE_EARTH_RADIUS whose surface is the sea
  * (altitude 0). The atmosphere is horizontally uniform and ends at top_altitude.
@@ -13,12 +14,13 @@
  *     ending at 10 and 40 km, absorbing only;
  *   haze (aerosols and droplets, CloudPreset haze_*): haze_density *
  *     exp(-altitude / haze_scale_height), grey, scattering albedo 1.
- * Values from Bruneton 2017 and Hillaire 2020, for the sRGB primaries' wavelengths.
- * Light paths (the transmittance LUT) cross every medium. View rays (atmosphere_view.glsl)
- * cross only the haze so far: the air's own glow (the blue sky) is not modelled yet, and
- * its extinction without that glow would only darken distant things.
- * New media are added here and in atmosphere_view.glsl's scattering sums; consumers
- * only read the lookup textures.
+ * Values from Bruneton 2017 and Hillaire 2020 (at 680, 550 and 440 nm for r, g, b).
+ * The sea below reflects diffusely with ATMOSPHERE_SEA_ALBEDO, for the light the
+ * atmosphere gets back from it.
+ * Light: single scattering of the key light (the air with the Rayleigh phase, the haze
+ * with a forward lobe and an isotropic share) plus all higher orders from the
+ * multiple-scattering LUT (Hillaire 2020), isotropic. New media are added here (to
+ * atmosphere_segment_media()); consumers only read the lookup textures.
  *
  * Godot-shader copy of the view-volume lookup (atmosphere_view_uv() and the phase):
  * shaders/atmosphere.gdshaderinc, and the ocean's water.gdshader. Change them together.
@@ -35,6 +37,9 @@
 #define ATMOSPHERE_OZONE_ABSORPTION vec3(0.650e-6, 1.881e-6, 0.085e-6)
 #define ATMOSPHERE_OZONE_CENTER 25000.0
 #define ATMOSPHERE_OZONE_HALF_WIDTH 15000.0
+// Diffuse albedo of the sea for light it sends back up into the atmosphere: the open
+// ocean reflects about 6 % of the light from the sun and the sky.
+#define ATMOSPHERE_SEA_ALBEDO 0.06
 
 /* x * (1 - 1/n) + 0.5/n: maps [0, 1] onto the centres of the first and last of n texels. */
 float atmosphere_unit_to_uv(float x, float n) {
@@ -116,16 +121,25 @@ float atmosphere_ozone_mean(float h_a, float h_b) {
 	return (atmosphere_ozone_integral(h_b) - atmosphere_ozone_integral(h_a)) / dh;
 }
 
-/* Mean haze extinction (1/m) along such a segment: what view rays cross. */
-vec3 atmosphere_haze_mean_extinction(float h_a, float h_b, float haze_density, float haze_scale_height) {
-	return vec3(haze_density * atmosphere_exponential_mean(h_a, h_b, haze_scale_height));
+/*
+ * The media along a segment whose altitude goes linearly from h_a to h_b, as mean
+ * coefficients (1/m): the air's scattering, the haze's scattering (grey) and the
+ * extinction of everything (ozone only absorbs).
+ */
+void atmosphere_segment_media(float h_a, float h_b, float haze_density, float haze_scale_height,
+		out vec3 rayleigh, out float haze, out vec3 extinction) {
+	rayleigh = ATMOSPHERE_RAYLEIGH_SCATTERING * atmosphere_exponential_mean(h_a, h_b, ATMOSPHERE_RAYLEIGH_SCALE_HEIGHT);
+	haze = haze_density * atmosphere_exponential_mean(h_a, h_b, haze_scale_height);
+	extinction = rayleigh + haze + ATMOSPHERE_OZONE_ABSORPTION * atmosphere_ozone_mean(h_a, h_b);
 }
 
-/* Mean extinction (1/m) of every medium along such a segment: what light paths cross. */
+/* Mean extinction (1/m) of every medium along such a segment. */
 vec3 atmosphere_mean_extinction(float h_a, float h_b, float haze_density, float haze_scale_height) {
-	return atmosphere_haze_mean_extinction(h_a, h_b, haze_density, haze_scale_height)
-			+ ATMOSPHERE_RAYLEIGH_SCATTERING * atmosphere_exponential_mean(h_a, h_b, ATMOSPHERE_RAYLEIGH_SCALE_HEIGHT)
-			+ ATMOSPHERE_OZONE_ABSORPTION * atmosphere_ozone_mean(h_a, h_b);
+	vec3 rayleigh;
+	float haze;
+	vec3 extinction;
+	atmosphere_segment_media(h_a, h_b, haze_density, haze_scale_height, rayleigh, haze, extinction);
+	return extinction;
 }
 
 /*
@@ -225,6 +239,47 @@ vec3 atmosphere_view_uvw(vec3 direction, float distance, vec3 light_direction, f
 	float y = clamp(atmosphere_view_y(observer_altitude, direction.y), 0.5 / size.y, 1.0 - 0.5 / size.y);
 	float slice = distance < 0.0 ? size.z - 1.0 : sqrt(clamp(distance / max_distance, 0.0, 1.0)) * (size.z - 2.0);
 	return vec3(x, y, (slice + 0.5) / size.z);
+}
+
+/*
+ * Transmittance from space to altitude h along mu, from the transmittance LUT; 0 where
+ * the planet is in the way.
+ */
+vec3 atmosphere_light_transmittance(sampler2D transmittance_lut, float h, float mu, float top) {
+	if (mu < atmosphere_horizon_mu(h)) {
+		return vec3(0.0);
+	}
+	vec2 size = vec2(textureSize(transmittance_lut, 0));
+	return textureLod(transmittance_lut, atmosphere_transmittance_uv(h, mu, top, size), 0.0).rgb;
+}
+
+/*
+ * Multiple-scattering LUT (atmosphere_multiple_scattering.glsl): x the key light's
+ * cosine to the local up, y the altitude, spaced logarithmically in haze scale heights
+ * so a thin sea fog still spans several texels.
+ */
+float atmosphere_ms_y(float h, float top, float haze_scale_height) {
+	return log(1.0 + max(h, 0.0) / haze_scale_height) / log(1.0 + top / haze_scale_height);
+}
+
+float atmosphere_ms_altitude(float y, float top, float haze_scale_height) {
+	return haze_scale_height * (exp(y * log(1.0 + top / haze_scale_height)) - 1.0);
+}
+
+/*
+ * Radiance of every scattering order above the first, per unit of key-light irradiance
+ * and of scattering coefficient: in-scatter += irradiance * scattering * this.
+ */
+vec3 atmosphere_multiple_scattering(sampler2D ms_lut, float h, float mu_light, float top, float haze_scale_height) {
+	vec2 size = vec2(textureSize(ms_lut, 0));
+	vec2 uv = vec2(atmosphere_unit_to_uv(clamp(0.5 * mu_light + 0.5, 0.0, 1.0), size.x),
+			atmosphere_unit_to_uv(clamp(atmosphere_ms_y(h, top, haze_scale_height), 0.0, 1.0), size.y));
+	return textureLod(ms_lut, uv, 0.0).rgb;
+}
+
+/* Rayleigh phase function (1/sr). */
+float atmosphere_rayleigh_phase(float cos_theta) {
+	return 3.0 / (16.0 * ATMOSPHERE_PI) * (1.0 + cos_theta * cos_theta);
 }
 
 /* Henyey-Greenstein phase function (1/sr). */

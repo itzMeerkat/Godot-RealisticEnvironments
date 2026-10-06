@@ -11,20 +11,8 @@
 [ext_resource type="PackedScene" uid="uid://cr5sv0avc8dug" path="res://demo/buoy.tscn" id="13_fdg1k"]
 [ext_resource type="PackedScene" uid="uid://b2pleaxvcdai8" path="res://demo/floating_box.tscn" id="13_floating_box"]
 [ext_resource type="Script" uid="uid://b372vvbghwlxx" path="res://systems/hud/compass_hud.gd" id="14_compass"]
+[ext_resource type="Script" uid="uid://chrxdfdli1lpb" path="res://addons/exposure_system/exposure_controller.gd" id="16_exposure"]
 [ext_resource type="PackedScene" uid="uid://cu6jvrb4ikqbo" path="res://demo/rowboat.tscn" id="15_rowboat"]
-
-[sub_resource type="Curve" id="Curve_fdg1k"]
-_limits = [0.0, 2.0, 0.0, 1.0]
-_data = [Vector2(0, 0.035), 0.0, 0.0, 0, 0, Vector2(0.25, 0.22), 0.0, 0.0, 0, 0, Vector2(0.5, 0.65), 0.0, 0.0, 0, 0, Vector2(0.75, 0.22), 0.0, 0.0, 0, 0, Vector2(1, 0.035), 0.0, 0.0, 0, 0]
-point_count = 5
-
-[sub_resource type="Gradient" id="Gradient_ykfgg"]
-offsets = PackedFloat32Array(0, 0.25, 0.5, 0.75, 1)
-colors = PackedColorArray(0.015, 0.018, 0.035, 1, 1, 0.46, 0.22, 1, 0.58, 0.78, 0.94, 1, 1, 0.36, 0.18, 1, 0.015, 0.018, 0.035, 1)
-
-[sub_resource type="Gradient" id="Gradient_4bnku"]
-offsets = PackedFloat32Array(0, 0.25, 0.5, 0.75, 1)
-colors = PackedColorArray(0.005, 0.008, 0.018, 1, 0.36, 0.3, 0.42, 1, 0.12, 0.42, 0.78, 1, 0.38, 0.24, 0.34, 1, 0.005, 0.008, 0.018, 1)
 
 [sub_resource type="Curve" id="Curve_dls5p"]
 _limits = [0.0, 2.0, 0.0, 1.0]
@@ -33,10 +21,7 @@ point_count = 4
 
 [sub_resource type="Resource" id="Resource_msmub"]
 script = ExtResource("3_nr2wj")
-sky_top_gradient = SubResource("Gradient_4bnku")
-sky_horizon_gradient = SubResource("Gradient_ykfgg")
 star_visibility_curve = SubResource("Curve_dls5p")
-ambient_energy_curve = SubResource("Curve_fdg1k")
 
 [sub_resource type="Resource" id="Resource_adqv5"]
 script = ExtResource("2_pw5n6")
@@ -87,6 +72,11 @@ cycle_enabled = false
 cycle_duration_seconds = 30.0
 profile = SubResource("Resource_msmub")
 cloud_wind_source_path = NodePath("../WindSystem")
+
+[node name="ExposureController" type="Node" parent="." unique_id=1520734419]
+script = ExtResource("16_exposure")
+light_source_path = NodePath("../SkySystem")
+target_path = NodePath("../SkySystem/WorldEnvironment")
 
 [node name="PlayerCameraRig" parent="." unique_id=436407652 instance=ExtResource("4_camera_rig")]
 active_mode = 0

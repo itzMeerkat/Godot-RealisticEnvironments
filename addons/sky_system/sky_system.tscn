@@ -8,19 +8,6 @@
 [ext_resource type="Resource" uid="uid://cslcbjx6mnkne" path="res://addons/sky_system/cloud_presets/fair.tres" id="5_cloud_preset"]
 [ext_resource type="Script" uid="uid://fi3uxaroikar" path="res://addons/sky_system/aerial_perspective_effect.gd" id="6_aerial_perspective"]
 
-[sub_resource type="Curve" id="Curve_2q5k3"]
-_limits = [0.0, 2.0, 0.0, 1.0]
-_data = [Vector2(0, 0.035), 0.0, 0.0, 0, 0, Vector2(0.25, 0.22), 0.0, 0.0, 0, 0, Vector2(0.5, 0.65), 0.0, 0.0, 0, 0, Vector2(0.75, 0.22), 0.0, 0.0, 0, 0, Vector2(1, 0.035), 0.0, 0.0, 0, 0]
-point_count = 5
-
-[sub_resource type="Gradient" id="Gradient_vfaec"]
-offsets = PackedFloat32Array(0, 0.25, 0.5, 0.75, 1)
-colors = PackedColorArray(0.015, 0.018, 0.035, 1, 1, 0.46, 0.22, 1, 0.58, 0.78, 0.94, 1, 1, 0.36, 0.18, 1, 0.015, 0.018, 0.035, 1)
-
-[sub_resource type="Gradient" id="Gradient_ubvhu"]
-offsets = PackedFloat32Array(0, 0.25, 0.5, 0.75, 1)
-colors = PackedColorArray(0.005, 0.008, 0.018, 1, 0.36, 0.3, 0.42, 1, 0.12, 0.42, 0.78, 1, 0.38, 0.24, 0.34, 1, 0.005, 0.008, 0.018, 1)
-
 [sub_resource type="Curve" id="Curve_yya8t"]
 _limits = [0.0, 2.0, 0.0, 1.0]
 _data = [Vector2(0, 0), 0.0, 0.0, 0, 0, Vector2(0.35, 0), 0.0, 0.0, 0, 0, Vector2(0.7, 0.85), 0.0, 0.0, 0, 0, Vector2(1, 1), 0.0, 0.0, 0, 0]
@@ -28,10 +15,7 @@ point_count = 4
 
 [sub_resource type="Resource" id="Resource_oebik"]
 script = ExtResource("2_ckf4a")
-sky_top_gradient = SubResource("Gradient_ubvhu")
-sky_horizon_gradient = SubResource("Gradient_vfaec")
 star_visibility_curve = SubResource("Curve_yya8t")
-ambient_energy_curve = SubResource("Curve_2q5k3")
 
 [sub_resource type="Sky" id="Sky_dynamic"]
 sky_material = ExtResource("2_sky")
@@ -40,8 +24,6 @@ process_mode = 2
 [sub_resource type="Environment" id="Environment_dynamic"]
 background_mode = 2
 sky = SubResource("Sky_dynamic")
-ambient_light_color = Color(0.281, 0.546, 0.83599997, 1)
-ambient_light_energy = 0.6494806
 tonemap_mode = 4
 ssr_enabled = true
 ssao_enabled = true

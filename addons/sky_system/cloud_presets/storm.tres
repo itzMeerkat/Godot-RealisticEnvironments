@@ -19,7 +19,6 @@ density_variation = 0.35
 scattering_albedo = 0.6
 evolution_speed = 0.008
 sun_light_scale = 0.06
-ambient_light_scale = 0.45
 haze_visibility = 3000.0
 haze_scale_height = 700.0
 haze_anisotropy = 0.96

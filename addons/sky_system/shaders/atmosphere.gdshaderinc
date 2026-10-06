@@ -22,6 +22,10 @@ global uniform vec4 atmosphere_observer;
 global uniform vec4 atmosphere_light;
 // Distance (m) of the volume's last regular slice.
 global uniform float atmosphere_max_distance;
+// The camera's exposure (CameraAttributes.exposure_multiplier) the in-scatter is stored
+// at: pre-exposed like Godot's colour buffer, as are the clouds. FOG and the colour
+// buffer take it as is; anything Godot exposes itself (sky, EMISSION) divides by it.
+global uniform float atmosphere_exposure;
 
 float atmosphere_unit_to_uv(float x, float n) {
 	return 0.5 / n + x * (1.0 - 1.0 / n);
@@ -76,11 +80,49 @@ void atmosphere_along(vec3 direction, float distance, out vec3 transmittance, ou
 }
 
 /*
+ * Distance (m) from the observer along direction to the sphere at altitude (m) above
+ * the sea, ahead of the observer; 0 when the observer is at or above it.
+ */
+float atmosphere_distance_to_altitude(vec3 direction, float altitude) {
+	float h = atmosphere_observer.w;
+	if (h >= altitude) {
+		return 0.0;
+	}
+	float c = (altitude - h) * (2.0 * ATMOSPHERE_EARTH_RADIUS + altitude + h);
+	float b = (ATMOSPHERE_EARTH_RADIUS + h) * direction.y;
+	float root = sqrt(b * b + c);
+	return direction.y >= 0.0 ? c / max(b + root, 1e-6) : root - b;
+}
+
+/*
+ * What the observer sees along direction with clouds in the way: the atmosphere up to
+ * the clouds, the cloud (rgb premultiplied radiance, a opacity, as seen at the cloud)
+ * at cloud_distance, and behind it the rest of the atmosphere and space (radiance
+ * arriving from beyond the atmosphere: the sun and moon disks, nothing else). Pre-exposed
+ * (atmosphere_exposure), like the in-scatter and the clouds: space too.
+ */
+vec3 atmosphere_sky_with_clouds(vec3 direction, vec4 cloud, float cloud_distance, vec3 space) {
+	vec3 transmittance_end;
+	vec3 inscatter_end;
+	atmosphere_along(direction, -1.0, transmittance_end, inscatter_end);
+	if (cloud.a <= 0.0) {
+		return inscatter_end + transmittance_end * space;
+	}
+	vec3 transmittance_cloud;
+	vec3 inscatter_cloud;
+	atmosphere_along(direction, cloud_distance, transmittance_cloud, inscatter_cloud);
+	// Behind the cloud: the atmosphere from the cloud to the ray's end, then space.
+	return inscatter_cloud + transmittance_cloud * cloud.rgb
+			+ (1.0 - cloud.a) * (inscatter_end - inscatter_cloud + transmittance_end * space);
+}
+
+/*
  * Aerial perspective for a spatial shader's FOG output, at a world position: Godot
  * blends the lit color toward FOG.rgb by FOG.a, after lighting and before alpha
  * blending, so transparent surfaces are hazed for their own distance. FOG.a uses the
- * mean transmittance (exact while it is grey, as for haze). Transparent materials call
- * it; opaque ones are hazed by AerialPerspectiveEffect and must not.
+ * mean transmittance: exact for grey haze, a little off in hue where the air's blue
+ * colours it (far away). Transparent materials call it; opaque ones are hazed by
+ * AerialPerspectiveEffect and must not.
  */
 vec4 atmosphere_fog(vec3 world_position) {
 	if (!atmosphere_enabled) {

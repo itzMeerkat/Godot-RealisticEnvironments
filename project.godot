@@ -341,3 +341,7 @@ atmosphere_max_distance={
 "type": "float",
 "value": 100000.0
 }
+atmosphere_exposure={
+"type": "float",
+"value": 1.0
+}

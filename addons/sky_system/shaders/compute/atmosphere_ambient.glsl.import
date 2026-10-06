@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://bdkwxvo73fme2"
+path="res://.godot/imported/atmosphere_ambient.glsl-1ea1973a9024824d8d0ab916961133d1.res"
+
+[deps]
+
+source_file="res://addons/sky_system/shaders/compute/atmosphere_ambient.glsl"
+dest_files=["res://.godot/imported/atmosphere_ambient.glsl-1ea1973a9024824d8d0ab916961133d1.res"]
+
+[params]
+

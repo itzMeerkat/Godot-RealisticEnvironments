@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://c1ud2qbix4aaf"
+path="res://.godot/imported/atmosphere_multiple_scattering.glsl-462161928988ea0751981a91863d8098.res"
+
+[deps]
+
+source_file="res://addons/sky_system/shaders/compute/atmosphere_multiple_scattering.glsl"
+dest_files=["res://.godot/imported/atmosphere_multiple_scattering.glsl-462161928988ea0751981a91863d8098.res"]
+
+[params]
+

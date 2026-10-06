@@ -518,18 +518,26 @@ Lighting:
   second with a crossfade, so glints twinkle.
 - `SPECULAR` is 0, which turns off the engine's sky reflection; the shader
   adds its own as `EMISSION`: procedural sky reflection (Fresnel, blurred by
-  the same roughness; the sky gradient over three directions, clouds from the
-  cloud cubemap's mip whose blur matches the reflection lobe, then the
-  atmosphere between the water and the sky) and planar reflection.
-- Atmosphere (`atmosphere_apply_to_sky()`): with a sky source that has
+  the same roughness; the clear sky over three directions, clouds from the
+  cloud cubemap's mip whose blur matches the reflection lobe) and planar
+  reflection.
+- Atmosphere (`atmosphere_sea_lookup()`): with a sky source that has
   `get_atmosphere_sky_volumes()` and `get_atmosphere_light()` (SkySystem), the
-  reflected sky is seen through the atmosphere along the reflected ray, from
-  the sea surface: a lookup of the source's sea-level view volumes at the
-  ray's end (`sky * transmittance + inscatter + lobe * phase`). The texture
-  layout is the sky system's `atmosphere_view_uvw()` for an observer at
-  altitude 0; change both together. The atmosphere between the camera and the
+  reflected clear sky is the atmosphere's, seen from the sea surface: a lookup
+  of the source's sea-level view volumes (two slices: at the cloud base and at
+  the ray's end; `inscatter + lobe * phase`). The clouds sit inside it: the air
+  up to their base in front, the rest of the sky through their gaps. The
+  texture layout is the sky system's `atmosphere_view_uvw()` for an observer
+  at altitude 0; change both together. Without an atmosphere the sky is the
+  gradient of the `sky_*` colours. The atmosphere between the camera and the
   water is not the water's: the sky system's aerial perspective puts it over
   the whole scene.
+- Exposure: Godot exposes `EMISSION` by the camera's exposure
+  (`CameraAttributes.exposure_multiplier`, the camera's or else the world's),
+  but the sky source's clouds and atmosphere and the planar reflection are
+  stored already exposed. The water sums its reflections exposed (the gradient
+  sky is multiplied up) and divides `EMISSION` by `scene_exposure`, which
+  `OceanSystem` sets every frame from the active camera.
 - Reflections use one reflectance: Fresnel averaged over the same slopes as the
   roughness (Bruneton et al. 2010, mean normal plus slope deviation
   `alpha / √2`). Schlick on the filtered normal would make distant water a
