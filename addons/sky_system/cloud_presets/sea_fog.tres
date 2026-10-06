@@ -13,7 +13,6 @@ thickness = 2200.0
 shape_scale = 8000.0
 detail_erosion = 0.4
 density = 0.8
-scattering_albedo = 0.97
 evolution_speed = 0.003
 haze_visibility = 700.0
 haze_scale_height = 150.0

@@ -51,9 +51,11 @@ const GEOMETRIC_BLENDED_PROPERTIES : Array[StringName] = [&"haze_visibility"]
 @export_range(0.0, 8.0, 0.01) var density := 1.0
 ## How much density varies between weather regions.
 @export_range(0.0, 1.0, 0.01) var density_variation := 0.2
-## Share of light the cloud scatters instead of absorbing. Lower values give
-## the dark bases of rain clouds.
-@export_range(0.1, 1.0, 0.01) var scattering_albedo := 0.95
+## Share of light the cloud scatters instead of absorbing. Cloud droplets absorb
+## almost no visible light (1); light scatters dozens to hundreds of times inside a
+## cloud, so lower values darken thick clouds strongly (a stylistic choice). Thick
+## clouds are dark underneath because of their depth, not their albedo.
+@export_range(0.1, 1.0, 0.001) var scattering_albedo := 1.0
 
 @export_group("Motion")
 ## How fast clouds form, dissipate and change shape, on top of drifting with

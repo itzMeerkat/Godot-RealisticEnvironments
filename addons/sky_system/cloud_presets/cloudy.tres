@@ -13,7 +13,6 @@ shape_scale = 10000.0
 detail_erosion = 0.3
 density = 1.2
 density_variation = 0.25
-scattering_albedo = 0.93
 sun_light_scale = 0.7
 haze_visibility = 35000.0
 haze_scale_height = 900.0

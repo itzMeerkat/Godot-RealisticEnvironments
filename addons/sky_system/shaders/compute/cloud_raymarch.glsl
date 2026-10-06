@@ -19,6 +19,25 @@
  * atmosphere), and the sky's light at the layer from above and below
  * (AtmosphereRenderer.sky_ambient_buffer, binding 5).
  *
+ * Droplet optics: Henyey-Greenstein phase (g = march.w, about 0.85) and the preset's
+ * scattering albedo. The phase's forward peak (g^2 of it) sends light on almost
+ * unchanged, so light transport sees the cloud thinner (delta-Eddington, transport
+ * extinction (1 - albedo g^2) of the true one):
+ *   single scattering: the key light down the light march, the true beam with the
+ *     whole phase, and what the peak scattered on the way (the transport beam less
+ *     the true one) with the phase's broad rest;
+ *   every higher order: the delta-Eddington two-stream field of the local column
+ *     (optical depth above and below the sample, measured straight up and down),
+ *     lit by the key light and by the sky's light falling on its top and bottom;
+ *   in-scatter reaches the camera through the transport extinction, and the sky
+ *     behind the cloud that the peak scatters only slightly is added to it; the
+ *     opacity is the true one (consumers show the sky and the sun's disk behind
+ *     through it).
+ * Checked against a Monte Carlo reference of uniform layers (optical depth 2-100, sun
+ * 15-60 degrees, sky light): within about 0.8-1.3, except within a few degrees of the
+ * sun behind thin cloud, where the glow comes out up to 4x too bright (the peak's small
+ * deflections spread it there).
+ *
  * The planet is a sphere (radius camera.w) with its surface at world y = 0;
  * the cloud layer is a spherical shell, which bends the layer down to the
  * horizon. The camera must be below the cloud base (CloudRenderer clamps it).
@@ -37,8 +56,8 @@ layout(set = 0, binding = 4, std430) restrict readonly buffer Params {
 	vec4 motion;          // xy wind offset (world XZ, m), z evolution time, w sky light scale
 	vec4 scales;          // x shape tile (m), y detail tile (m), z detail erosion, w scattering albedo
 	vec4 light_direction; // xyz unit vector toward the key light (sun or moon)
-	vec4 light_color;     // rgb key light irradiance at the cloud layer
-	vec4 march;           // x view steps, y light steps, z first light step (m), w forward phase g
+	vec4 light_color;     // rgb key light at the cloud layer: irradiance / pi (the light's energy)
+	vec4 march;           // x view steps, y light steps, z longest light march (m), w phase g
 } params;
 // AtmosphereRenderer.sky_ambient_buffer (atmosphere_ambient.glsl).
 layout(set = 0, binding = 5, std430) restrict readonly buffer SkyAmbient {
@@ -57,10 +76,10 @@ layout(push_constant, std430) restrict readonly uniform PushConstants {
 } pc;
 
 const int RENDERED_FACES[5] = int[](0, 1, 2, 4, 5); // every face but -Y
-// Two-stream diffusion constant, about 0.75 (1 - g) for cloud droplets.
-const float DIFFUSION = 0.15;
-// Share of the key light that enters the cloud tops as diffuse light.
-const float SUN_DIFFUSE = 0.5;
+const float PI = 3.14159265359;
+// Samples of the local column above and below a sample (cheap density).
+const int COLUMN_STEPS_ABOVE = 3;
+const int COLUMN_STEPS_BELOW = 2;
 
 // Inverse of the cube face selection in the Vulkan spec; st in [-1, 1], t grows downward.
 vec3 cube_direction(int face, vec2 st) {
@@ -146,25 +165,24 @@ float cloud_density(vec3 world_position, float height_fraction, vec4 weather, bo
 	return covered * weather.b;
 }
 
-// Henyey-Greenstein, scaled so that an isotropic phase is 1.
+// Henyey-Greenstein phase function (1/sr).
 float henyey_greenstein(float cos_theta, float g) {
 	float g2 = g * g;
-	return (1.0 - g2) / pow(max(1.0 + g2 - 2.0 * g * cos_theta, 1.0e-4), 1.5);
-}
-
-float cloud_phase(float cos_theta, float g) {
-	return mix(henyey_greenstein(cos_theta, g), henyey_greenstein(cos_theta, -0.25 * g), 0.3);
+	return (1.0 - g2) / (4.0 * PI * pow(max(1.0 + g2 - 2.0 * g * cos_theta, 1.0e-6), 1.5));
 }
 
 float layer_fraction(float altitude) {
 	return (altitude - params.layer.x) / (params.layer.y - params.layer.x);
 }
 
-// Optical depth toward the key light, with steps growing along the ray.
+// Optical depth toward the key light up to the top of the cloud layer (at most
+// march.z away), with steps growing along the ray.
 float light_optical_depth(vec3 world_position, float altitude) {
 	vec3 light_direction = params.light_direction.xyz;
 	int steps = int(params.march.y);
-	float step_length = params.march.z;
+	float distance_to_top = min((params.layer.y - altitude) / max(light_direction.y, 0.05), params.march.z);
+	// Segments 1, 2, ..., steps times this add up to the distance.
+	float step_length = distance_to_top / (0.5 * float(steps * (steps + 1)));
 	float travelled = 0.0;
 	float optical_depth = 0.0;
 	for (int i = 0; i < steps; i++) {
@@ -181,6 +199,69 @@ float light_optical_depth(vec3 world_position, float altitude) {
 		travelled += segment;
 	}
 	return optical_depth * params.weather_area.w;
+}
+
+/*
+ * Optical depth of the local column straight above a sample (up to the cloud top) and
+ * below it (down to the layer's base): the slab the two-stream field is solved in.
+ */
+vec2 column_optical_depths(vec3 world_position, float altitude, float cloud_top, vec4 weather) {
+	float extinction = params.weather_area.w;
+	float above = 0.0;
+	float span = max(cloud_top - altitude, 0.0) / float(COLUMN_STEPS_ABOVE);
+	for (int i = 0; i < COLUMN_STEPS_ABOVE; i++) {
+		float sample_altitude = altitude + span * (float(i) + 0.5);
+		vec3 sample_position = vec3(world_position.x, sample_altitude, world_position.z);
+		above += cloud_density(sample_position, layer_fraction(sample_altitude), weather, false) * span;
+	}
+	float below = 0.0;
+	span = max(altitude - params.layer.x, 0.0) / float(COLUMN_STEPS_BELOW);
+	for (int i = 0; i < COLUMN_STEPS_BELOW; i++) {
+		float sample_altitude = params.layer.x + span * (float(i) + 0.5);
+		vec3 sample_position = vec3(world_position.x, sample_altitude, world_position.z);
+		below += cloud_density(sample_position, layer_fraction(sample_altitude), weather, false) * span;
+	}
+	return vec2(above, below) * extinction;
+}
+
+/*
+ * The delta-Eddington two-stream field (Joseph, Wiscombe and Weinman 1976) at optical
+ * depth tau from the top of a slab of optical depth tau_total (both transport-scaled,
+ * scattering albedo omega and phase g of the scaled medium), lit by the sun (flux 1 on
+ * a surface facing it, cosine mu0 to the up) and by isotropic radiance 1 falling on
+ * the top and on the bottom. Returns the radiance each source scatters toward a
+ * direction going down with cosine mu_v, per unit of scaled extinction: x sun, y top,
+ * z bottom.
+ */
+vec3 two_stream(float tau_total, float tau, float mu0, float mu_v, float omega, float g) {
+	float a = 1.0 - omega * g;
+	float b = 3.0 * (1.0 - omega);
+	// A floor on the decay rate keeps the system well conditioned for conservative scattering.
+	float k = max(sqrt(a * b), 0.01);
+	float p = -k / a;
+	// Particular solution for the sun: I0 = alpha e, I1 = beta e, e = exp(-tau / mu0).
+	float c = 3.0 * omega / (4.0 * PI);
+	float d = c * g * mu0;
+	float det = a * b - 1.0 / (mu0 * mu0);
+	float alpha = (a * c + d / mu0) / det;
+	float beta = (c / mu0 + b * d) / det;
+	// Homogeneous part I0 = A' e^{k (tau - T)} + B e^{-k tau}, I1 = p (A' e^{k (tau - T)} - B e^{-k tau}),
+	// boundaries: diffuse flux in at the top (I0 + 2/3 I1) and at the bottom (I0 - 2/3 I1).
+	float e_kt = exp(-k * tau_total);
+	float m00 = e_kt * (1.0 + 2.0 / 3.0 * p);
+	float m01 = 1.0 - 2.0 / 3.0 * p;
+	float inverse_det = 1.0 / (m00 * m00 - m01 * m01);
+	float e_top = exp(-tau_total / mu0);
+	vec3 rhs_top = vec3(-(alpha + 2.0 / 3.0 * beta), 1.0, 0.0);
+	vec3 rhs_bottom = vec3(-(alpha - 2.0 / 3.0 * beta) * e_top, 0.0, 1.0);
+	vec3 coefficient_a = (m00 * rhs_top - m01 * rhs_bottom) * inverse_det;
+	vec3 coefficient_b = (m00 * rhs_bottom - m01 * rhs_top) * inverse_det;
+	float rising = exp(k * (tau - tau_total));
+	float falling = exp(-k * tau);
+	float e = exp(-tau / mu0);
+	vec3 i0 = coefficient_a * rising + coefficient_b * falling + vec3(alpha * e, 0.0, 0.0);
+	vec3 i1 = p * (coefficient_a * rising - coefficient_b * falling) + vec3(beta * e, 0.0, 0.0);
+	return omega * max(i0 + g * mu_v * i1, vec3(0.0));
 }
 
 vec4 march_clouds(vec3 direction, vec2 noise_position) {
@@ -207,15 +288,29 @@ vec4 march_clouds(vec3 direction, vec2 noise_position) {
 	float jitter = hash12(noise_position + pc.frame_seed);
 
 	vec3 light_direction = params.light_direction.xyz;
-	vec3 light_color = params.light_color.rgb;
+	// Irradiance on a surface facing the light.
+	vec3 light_flux = params.light_color.rgb * PI;
+	vec3 sky_above = sky_ambient.above.rgb * params.motion.w;
+	vec3 sky_below = sky_ambient.below.rgb * params.motion.w;
 	float cos_theta = dot(direction, light_direction);
 	float g = params.march.w;
 	float extinction = params.weather_area.w;
 	float albedo = params.scales.w;
 	float planet_radius = params.camera.w;
+	// Delta-Eddington: the peak's share, the transport extinction's share and the scaled medium.
+	float peak = g * g;
+	float transport_share = 1.0 - albedo * peak;
+	float scaled_albedo = (1.0 - peak) * albedo / transport_share;
+	float scaled_g = g / (1.0 + g);
+	float phase = henyey_greenstein(cos_theta, g);
+	float phase_rest = (1.0 - peak) * henyey_greenstein(cos_theta, scaled_g);
+	float mu0 = max(light_direction.y, 0.05);
+	// The camera sees light going down toward it.
+	float mu_view = max(direction.y, 0.0);
 
 	vec3 radiance = vec3(0.0);
 	float transmittance = 1.0;
+	float transport = 1.0;
 	for (int i = 0; i < steps; i++) {
 		float x = (float(i) + jitter) / float(steps);
 		float t = t_start + path * x * x;
@@ -229,6 +324,8 @@ vec4 march_clouds(vec3 direction, vec2 noise_position) {
 		if (density > 0.0) {
 			float sigma_t = density * extinction;
 			float light_depth = light_optical_depth(world_position, altitude);
+			float cloud_top = params.layer.x + (params.layer.y - params.layer.x) * mix(0.22, 1.0, weather.g);
+			vec2 column = column_optical_depths(world_position, altitude, cloud_top, weather);
 
 			// The planet's shadow: clouds stay lit for a while after sunset.
 			vec3 local_up = normalize(vec3(direction.x * t, planet_radius + camera_altitude + direction.y * t, direction.z * t));
@@ -236,44 +333,33 @@ vec4 march_clouds(vec3 direction, vec2 noise_position) {
 			float horizon_mu = -sqrt(max(altitude * (2.0 * planet_radius + altitude), 0.0)) / sample_radius;
 			float light_visibility = smoothstep(horizon_mu - 0.01, horizon_mu + 0.01, dot(local_up, light_direction));
 
-			// Multiple scattering approximated by octaves of ever weaker
-			// attenuation and flatter phase.
-			float scattering = 0.0;
-			float octave_weight = 1.0;
-			float octave_attenuation = 1.0;
-			float octave_g = 1.0;
-			for (int octave = 0; octave < 3; octave++) {
-				scattering += octave_weight * cloud_phase(cos_theta, g * octave_g) * exp(-light_depth * octave_attenuation);
-				octave_weight *= 0.5;
-				octave_attenuation *= 0.35;
-				octave_g *= 0.5;
-			}
-			// Light from above (sky, plus sunlight diffused through the cloud)
-			// crosses the cloud column over the sample. Multiple scattering makes
-			// that falloff close to two-stream diffusion, 1 / (1 + k tau), rather
-			// than exp(-tau): thin cloud stays bright, deep storm bases go dark.
-			float cloud_top = params.layer.x + (params.layer.y - params.layer.x) * mix(0.22, 1.0, weather.g);
-			float column_depth = sigma_t * max(cloud_top - altitude, 0.0);
-			float diffuse_transmission = 1.0 / (1.0 + DIFFUSION * column_depth);
-			vec3 light_from_above = sky_ambient.above.rgb * params.motion.w + light_color * (SUN_DIFFUSE * light_visibility * max(light_direction.y, 0.0));
-			// Light from below (sea, lower sky) fades as the cover closes.
-			vec3 light_from_below = sky_ambient.below.rgb * params.motion.w * (1.0 - clamp(height_fraction, 0.0, 1.0)) * (1.0 - 0.75 * weather.r);
-			vec3 ambient = light_from_above * diffuse_transmission + light_from_below;
-			vec3 source = albedo * (light_color * scattering * light_visibility + ambient);
+			vec3 sun = light_flux * light_visibility;
+			// Single scattering, per unit of true extinction.
+			float beam = exp(-light_depth);
+			float beam_transport = exp(-light_depth * transport_share);
+			vec3 source = sun * (albedo * (beam * phase + (beam_transport - beam) * phase_rest));
+			// Every higher order: the two-stream field of the column, per unit of true extinction.
+			vec3 field = two_stream((column.x + column.y) * transport_share, column.x * transport_share, mu0, mu_view, scaled_albedo, scaled_g);
+			source += transport_share * (sun * field.x + sky_above * field.y + sky_below * field.z);
 
-			// Energy-conserving integration over the step.
-			float step_transmittance = exp(-sigma_t * step_length);
-			radiance += transmittance * source * (1.0 - step_transmittance);
-			transmittance *= step_transmittance;
-			// The rest of the ray is taken as opaque: the sun disk behind is so
-			// bright that even 1 % of it would show through as a bright spot.
-			if (transmittance < 0.01) {
-				transmittance = 0.0;
+			// Integrated over the step through the transport extinction.
+			float step_transport = exp(-sigma_t * transport_share * step_length);
+			radiance += transport * source * (1.0 - step_transport) / transport_share;
+			transport *= step_transport;
+			transmittance *= exp(-sigma_t * step_length);
+			if (transport < 0.01) {
 				break;
 			}
 		}
 	}
 
+	// The sky behind, scattered on by the peak only: it arrives as if through the gaps.
+	radiance += (transport - transmittance) * sky_above;
+	// What is left is taken as opaque: the sun disk behind is so bright that even 1 %
+	// of it would show through as a bright spot.
+	if (transmittance < 0.01) {
+		transmittance = 0.0;
+	}
 	return vec4(radiance, 1.0 - transmittance);
 }
 

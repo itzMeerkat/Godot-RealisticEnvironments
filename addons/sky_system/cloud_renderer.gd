@@ -18,10 +18,10 @@ const WEATHER_MAP_SIZE := 512
 const PLANET_RADIUS := 6360000.0
 ## Extinction (1/m) of cloud at density 1. CloudPreset.density multiplies it.
 const BASE_EXTINCTION := 0.04
-## Length of the first step toward the light; later steps grow linearly.
-const LIGHT_STEP_LENGTH := 80.0
-## Forward-scattering anisotropy of the cloud phase function.
-const PHASE_G := 0.6
+## Longest march toward the light (m): it ends at the layer's top, or here.
+const MAX_LIGHT_DISTANCE := 10000.0
+## Henyey-Greenstein g of cloud droplets.
+const PHASE_G := 0.85
 ## The camera is kept at least this far below the cloud base.
 const MIN_BASE_CLEARANCE := 50.0
 ## Raymarch faces dispatched: every cube face but -Y.
@@ -211,7 +211,7 @@ func _pack_params(camera_position : Vector3, preset : CloudPreset, wind_offset :
 		preset.shape_scale, preset.detail_scale, preset.detail_erosion, preset.scattering_albedo,
 		light_direction.x, light_direction.y, light_direction.z, 0.0,
 		light_color.r, light_color.g, light_color.b, 0.0,
-		float(view_steps), float(light_steps), LIGHT_STEP_LENGTH, PHASE_G,
+		float(view_steps), float(light_steps), MAX_LIGHT_DISTANCE, PHASE_G,
 	]).to_byte_array()
 
 

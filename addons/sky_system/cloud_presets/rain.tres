@@ -15,7 +15,6 @@ detail_scale = 1800.0
 detail_erosion = 0.25
 density = 1.8
 density_variation = 0.3
-scattering_albedo = 0.8
 evolution_speed = 0.005
 sun_light_scale = 0.15
 haze_visibility = 6000.0

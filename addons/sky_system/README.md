@@ -92,8 +92,8 @@ Mobile renderer).
   `get_sun_visibility()`.
 - Quality: `cloud_cubemap_size`, `cloud_update_stride`, `cloud_view_steps`,
   `cloud_light_steps`, `cloud_max_distance`. Defaults
-  (1024, stride 4, 64/6 steps) cost about 0.5 ms (fair) to 1.3 ms (storm) of
-  GPU time on an RTX 4070 Ti.
+  (1024, stride 4, 64/6 steps) cost about 0.5 ms (storm) to 0.8 ms (fair) of
+  GPU time on an RTX 4070 Ti at 1080p.
 - `get_cloud_cubemap()` returns the cloud texture (or `null` while clouds are
   off) for other shaders, with a full mip chain for blurred lookups; `get_cloud_state()` the blended weather on screen.
 
@@ -254,9 +254,9 @@ units must stay off (they change what Godot's exposure means).
 - The air below the clouds is lit by one mean cloud dome for the whole sky,
   so a lone thick cloud lights the air all around it as much as a deck would
   per unit of cover.
-- The `rain` and `storm` presets darken their clouds with a low
-  `scattering_albedo` (0.8, 0.6; real droplets scatter more than 99 %), a
-  stylistic choice.
+- Clouds are lit as locally plane-parallel columns (the two-stream field):
+  light entering a cumulus through its sides, and shadows cast sideways by
+  neighbouring clouds into a column, are not modelled.
 - Points beyond 100 km (`AtmosphereRenderer.MAX_DISTANCE`) are hazed as at
   100 km; keep cameras' far planes below it. The planar reflection camera's
   transparent surfaces are hazed as seen from the main camera.
@@ -317,14 +317,28 @@ then. When the day cycle advances `time_of_day`, `day_of_year` and
    into the **upper half of a cubemap** around the camera. Per sample:
    coverage-thresholded shape noise times a height profile chosen by cloud
    type (stratus thin and low, cumulonimbus filling the layer), eroded by
-   detail noise; a short march toward the sun or moon for self-shadowing;
-   multiple scattering as three octaves of weaker extinction and flatter
-   dual-lobe Henyey-Greenstein phase; ambient light from above attenuated by
-   two-stream diffusion through the cloud column, plus light from below that
-   fades as the cover closes (both from the atmosphere's `sky_ambient_buffer`);
-   the planet's shadow for twilight. The result is the cloud as seen at the
-   cloud: the sky shader and the ocean put the atmosphere in front of it.
-   Steps are spaced quadratically and jittered per texel and frame.
+   detail noise. Lighting, with droplet optics (Henyey-Greenstein phase
+   g = 0.85, `scattering_albedo` 1 by default):
+   - single scattering of the sun or moon, through a march toward it that
+     reaches the cloud top (at most 10 km);
+   - every higher order from the delta-Eddington two-stream solution of the
+     local column (optical depth straight above and below the sample, five
+     cheap density samples), lit by the key light and by the sky's light on
+     the column's top and bottom (the atmosphere's `sky_ambient_buffer`);
+   - the phase's forward peak (g² of it) counts as unscattered for transport:
+     in-scatter reaches the camera through the transport extinction, and the
+     sky behind that the peak barely deflects is added; the opacity stays the
+     true one;
+   - the planet's shadow for twilight.
+
+   Checked against a Monte Carlo reference of uniform layers (optical depth
+   2–100, sun 15–60°, sky light): within about 0.8–1.3 (sky light alone within
+   1 %), except within a few degrees of the sun behind thin cloud, where the
+   glow is up to 4× too bright. Thick decks pass a physical share of daylight
+   (overcast about 40 %, rain 15 %, storm 4 % at a 15° sun). The result is the
+   cloud as seen at the cloud: the sky shader and the ocean put the atmosphere
+   in front of it. Steps are spaced quadratically and jittered per texel and
+   frame.
 4. `cloud_mip_downsample.glsl`, every frame: rebuilds the cubemap's mip chain
    (2×2 box filter per face, no filtering across face edges). Premultiplied
    radiance and opacity average linearly, so every level composites like the
