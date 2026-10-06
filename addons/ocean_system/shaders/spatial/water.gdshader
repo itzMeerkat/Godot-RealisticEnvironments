@@ -40,12 +40,6 @@ render_mode world_vertex_coords, cull_disabled;
 #define FOAM_TRANSMISSION_POWER 4.0
 // Refinement steps of the planar reflection hit along a pixel's reflected ray.
 #define PLANAR_REFLECTION_STEPS 3
-// Haze over the reflected sky (sky_haze_*), as the sky system's haze.gdshaderinc.
-#define HAZE_STEPS 12
-#define HAZE_TOP_SCALE_HEIGHTS 12.0
-#define HAZE_MAX_RAY_LENGTH 1000000.0
-#define HAZE_FORWARD_SHARE 0.75
-#define HAZE_CLOUD_SHADE_ANGLE 0.04
 
 uniform vec4 foam_color : source_color;
 // Optical properties of the water, per sRGB channel (1/m): absorption, and scattering by
@@ -74,14 +68,14 @@ uniform float sky_sun_visibility : hint_range(0.0, 1.0) = 1.0;
 // radiance, a opacity, with a mip chain for rough reflections. Set at runtime by OceanSystem.
 uniform bool sky_clouds_enabled = false;
 uniform samplerCube sky_cloud_cubemap : filter_linear_mipmap;
-// Haze over the sea from the sky source (SkySystem.get_haze_*()); 0 density = none.
-uniform float sky_haze_density = 0.0; // extinction at sea level (1/m)
-uniform float sky_haze_scale_height = 1000.0;
-uniform float sky_haze_anisotropy = 0.97; // Henyey-Greenstein g of the forward lobe
-uniform vec3 sky_haze_light_direction = vec3(0.0, 1.0, 0.0);
-uniform vec3 sky_haze_light_color = vec3(0.0); // radiance per unit phase function (1/sr)
-uniform vec3 sky_haze_ambient_color = vec3(0.0); // isotropic in-scattered radiance
-uniform float sky_haze_cloud_shadow_strength = 1.0; // multiplies the cloud opacity toward the haze light
+// The atmosphere between the sea and the sky from the sky source (get_atmosphere_sky_volumes():
+// transmittance, isotropic in-scatter, lobe in-scatter per unit phase, for rays leaving the
+// sea; get_atmosphere_light(): xyz toward its light, w the lobe's g). Set at runtime by OceanSystem.
+uniform bool sky_atmosphere_enabled = false;
+uniform sampler3D sky_atmosphere_transmittance : filter_linear, repeat_disable;
+uniform sampler3D sky_atmosphere_inscatter : filter_linear, repeat_disable;
+uniform sampler3D sky_atmosphere_inscatter_lobe : filter_linear, repeat_disable;
+uniform vec4 sky_atmosphere_light = vec4(0.0, 1.0, 0.0, 0.97);
 uniform bool sky_reflection_enabled = true;
 uniform float sky_reflection_strength : hint_range(0.0, 2.0) = 1.0;
 uniform float sky_reflection_f0 : hint_range(0.0, 0.12) = 0.02;
@@ -181,55 +175,31 @@ vec3 earth_curvature_tilt(vec3 direction, vec2 xz, vec3 camera_position) {
 	return vec3(horizontal.x, tilted_up, horizontal.y);
 }
 
-// Haze, copied from the sky system's haze.gdshaderinc (change them together): density
-// falls off exponentially with height above the curved sea.
-float haze_mean_density(float height_a, float height_b) {
-	float a = max(height_a, 0.0) / sky_haze_scale_height;
-	float x = max(height_b, 0.0) / sky_haze_scale_height - a;
-	float density_a = exp(-a);
-	return abs(x) < 1e-4 ? density_a * (1.0 - 0.5 * x) : density_a * (1.0 - exp(-x)) / x;
-}
-
-float haze_optical_depth(float start_height, vec3 direction, float ray_length) {
-	float curvature = (1.0 - direction.y * direction.y) * (0.5 / EARTH_RADIUS);
-	float step_length = ray_length / float(HAZE_STEPS);
-	float previous_height = start_height;
-	float sum = 0.0;
-	for (int i = 1; i <= HAZE_STEPS; ++i) {
-		float t = step_length * float(i);
-		float height = start_height + t * (direction.y + t * curvature);
-		sum += haze_mean_density(previous_height, height);
-		previous_height = height;
-	}
-	return sky_haze_density * step_length * sum;
-}
-
-float haze_ray_length(float start_height, vec3 direction) {
-	float curvature = (1.0 - direction.y * direction.y) * (0.5 / EARTH_RADIUS);
-	float rise = max(HAZE_TOP_SCALE_HEIGHTS * sky_haze_scale_height - start_height, 0.0);
-	float denominator = direction.y + sqrt(direction.y * direction.y + 4.0 * curvature * rise);
-	return min(2.0 * rise / max(denominator, 1e-9), HAZE_MAX_RAY_LENGTH);
-}
-
-/* Share of the haze's light that comes through the clouds (haze_cloud_light_transmittance()). */
-float haze_cloud_light_transmittance() {
-	if (!sky_clouds_enabled) {
-		return 1.0;
-	}
-	vec3 direction = normalize(vec3(sky_haze_light_direction.x, max(sky_haze_light_direction.y, HAZE_CLOUD_SHADE_ANGLE), sky_haze_light_direction.z));
-	float lod = log2(max(HAZE_CLOUD_SHADE_ANGLE * float(textureSize(sky_cloud_cubemap, 0).x) * 0.5, 1.0));
-	return 1.0 - clamp(textureLod(sky_cloud_cubemap, direction, lod).a * sky_haze_cloud_shadow_strength, 0.0, 1.0);
-}
-
-/* The sky seen from the sea surface along direction, through the haze. */
-vec3 haze_apply_to_sky(vec3 sky, vec3 direction) {
-	float transmittance = exp(-haze_optical_depth(0.0, direction, haze_ray_length(0.0, direction)));
-	float g = sky_haze_anisotropy;
-	float denominator = 1.0 + g * g - 2.0 * g * dot(direction, sky_haze_light_direction);
-	float lobe = (1.0 - g * g) / (4.0 * PI * denominator * sqrt(denominator));
-	float phase = mix(1.0 / (4.0 * PI), lobe, HAZE_FORWARD_SHARE);
-	vec3 inscattered = sky_haze_light_color * (haze_cloud_light_transmittance() * phase) + sky_haze_ambient_color;
-	return sky * transmittance + inscattered * (1.0 - transmittance);
+/*
+ * The sky seen from the sea surface along direction, through the atmosphere: a lookup of
+ * the sky source's sea-level view volumes at the ray's end. The mapping is the sky
+ * system's atmosphere_view_uvw() (shaders/compute/atmosphere_common.glslinc and
+ * atmosphere.gdshaderinc) for an observer at altitude 0, whose horizon is level. Change
+ * them together.
+ */
+vec3 atmosphere_apply_to_sky(vec3 sky, vec3 direction) {
+	vec3 size = vec3(textureSize(sky_atmosphere_transmittance, 0));
+	vec2 light_xz = sky_atmosphere_light.xz;
+	float d = length(direction.xz);
+	float l = length(light_xz);
+	float cos_phi = d > 1e-5 && l > 1e-5 ? dot(direction.xz, light_xz) / (d * l) : 1.0;
+	float x = acos(clamp(cos_phi, -1.0, 1.0)) / PI;
+	// Zenith angle over the half-turn from the zenith to the level horizon, squeezed
+	// toward the horizon; directions below it (none here: reflections point up) mirror it.
+	float zenith = acos(clamp(direction.y, -1.0, 1.0)) / (0.5 * PI);
+	float y = zenith < 1.0 ? 0.5 * (1.0 - sqrt(1.0 - zenith)) : 0.5 + 0.5 * sqrt(min(zenith - 1.0, 1.0));
+	vec3 uvw = vec3(0.5 / size.x + x * (1.0 - 1.0 / size.x), clamp(y, 0.5 / size.y, 1.0 - 0.5 / size.y), (size.z - 0.5) / size.z);
+	float g = sky_atmosphere_light.w;
+	float denominator = 1.0 + g * g - 2.0 * g * dot(direction, sky_atmosphere_light.xyz);
+	float phase = (1.0 - g * g) / (4.0 * PI * denominator * sqrt(denominator));
+	vec3 transmittance = textureLod(sky_atmosphere_transmittance, uvw, 0.0).rgb;
+	vec3 inscatter = textureLod(sky_atmosphere_inscatter, uvw, 0.0).rgb + textureLod(sky_atmosphere_inscatter_lobe, uvw, 0.0).rgb * phase;
+	return sky * transmittance + inscatter;
 }
 
 /* 1 inside the interaction window, fading to 0 before its absorbing border. */
@@ -791,10 +761,11 @@ void fragment() {
 	sky_reflection_amount = saturate(sky_reflection_strength * sky_fresnel * clear_water_mask);
 	if (sky_reflection_enabled) {
 		reflected_sky_color = sample_rough_procedural_environment(reflection_direction, effective_reflection_roughness);
-		// The water is at the bottom of the haze; the camera's own path to the water
-		// is hazed afterwards, with the rest of the scene (SkyHazeEffect).
-		if (sky_haze_density > 0.0) {
-			reflected_sky_color = haze_apply_to_sky(reflected_sky_color, reflection_direction);
+		// The water is at the bottom of the atmosphere; the camera's own path to the
+		// water is hazed afterwards, with the rest of the scene (the sky source's
+		// aerial perspective).
+		if (sky_atmosphere_enabled) {
+			reflected_sky_color = atmosphere_apply_to_sky(reflected_sky_color, reflection_direction);
 		}
 	}
 	vec3 reflected_color = reflected_sky_color;

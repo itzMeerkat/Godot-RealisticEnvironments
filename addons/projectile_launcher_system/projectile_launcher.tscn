@@ -1,6 +1,6 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene format=3 uid="uid://cpi87gv104psq"]
 
-[ext_resource type="Script" path="res://addons/projectile_launcher_system/projectile_launcher.gd" id="1_launcher"]
+[ext_resource type="Script" uid="uid://bk7q7exx3o8af" path="res://addons/projectile_launcher_system/projectile_launcher.gd" id="1_launcher"]
 
-[node name="ProjectileLauncher" type="Node3D"]
+[node name="ProjectileLauncher" type="Node3D" unique_id=1655113482]
 script = ExtResource("1_launcher")

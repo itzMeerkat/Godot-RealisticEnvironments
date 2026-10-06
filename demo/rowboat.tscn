@@ -6,7 +6,7 @@
 [ext_resource type="Script" uid="uid://by55imxv5cm3" path="res://addons/hitbox_damage_system/projectile_hitbox.gd" id="4_m4qgx"]
 [ext_resource type="Resource" uid="uid://cr70nmqqf1o77" path="res://demo/rowboat_hull_profile.tres" id="5_2yvxr"]
 [ext_resource type="PackedScene" uid="uid://c4ku7e1gt62nr" path="res://demo/assets/low_poly_boat/scene.gltf" id="6_oojqr"]
-[ext_resource type="PackedScene" path="res://addons/projectile_launcher_system/projectile_launcher.tscn" id="7_ojoqu"]
+[ext_resource type="PackedScene" uid="uid://cpi87gv104psq" path="res://addons/projectile_launcher_system/projectile_launcher.tscn" id="7_ojoqu"]
 
 [sub_resource type="ConvexPolygonShape3D" id="ConvexPolygonShape3D_c6sjc"]
 points = PackedVector3Array(1.1206816, 0.6560346, 0.04337907, 1.1206816, 0.5842583, 0.04337907, 1.0660518, 0.6714586, -0.597523, 1.0886496, 0.7794266, 0.647012, 1.0886496, 0.7794266, 0.7893667, 1.1182684, 0.64814043, 0.7453773, 1.1182684, 0.5762427, 0.7453773, 1.0283154, 0.1487428, 0.045211792, 0.97917044, 0.16525984, -0.55781007, 1.0660518, 0.59968233, -0.597523, 0.94779646, 0.6925907, -1.1883256, 0.7602118, 0.7166375, -1.7394158, 0.52501786, 0.7417774, -2.2446835, 0.26722598, 0.76655304, -2.6974082, -0.0002193451, 0.7905998, -3.1208067, 1.0346779, 0.7794266, 0.81991506, 0.6726723, 0.65822065, 3.1201968, 0.8815385, 0.6511766, 2.3008933, 1.0421375, 0.6469259, 1.5023623, 1.0421375, 0.57514966, 1.5023623, 1.0173455, 0.15845871, 0.7209387, 0.81242836, -0.21074574, -0.51870847, 0.8359039, -0.21111009, 0.064151764, 0.7240113, -0.17066762, -1.0435271, 0.86398673, 0.2087385, -1.1089003, 0.94779646, 0.62069297, -1.1883256, 0.7602118, 0.6448612, -1.7394158, 0.52501786, 0.67000115, -2.2446835, 0.26722598, 0.6946553, -2.6974082, -0.0002193451, 0.71882355, -3.1208067, -0.26744533, 0.76655304, -2.6974082, -1.088869, 0.7794266, 0.647012, -1.088869, 0.7794266, 0.7893667, -1.0348973, 0.7794266, 0.81991506, -0.6728916, 0.65822065, 3.1201968, 0.6726723, 0.5864444, 3.1201968, 0.8815385, 0.5794003, 2.3008933, 0.9401177, 0.19550061, 1.4522634, 0.80387187, -0.17601138, 0.73987865, 0.4611733, -0.408343, -0.47227502, 0.42299807, -0.38563204, -0.96532345, 0.4620508, -0.3912187, 0.08675742, 0.34094346, -0.32272154, -1.4492075, -0.0002193451, -0.20078693, -2.5715494, 0.5686779, -0.09136152, -1.5457399, 0.6825452, 0.27687132, -1.6276093, 0.37889922, 0.0039758086, -2.0064073, -0.26744533, 0.6946553, -2.6974082, -0.52523726, 0.7417774, -2.2446835, -0.7604312, 0.7166375, -1.7394158, -0.9480159, 0.6925907, -1.1883256, -1.0662711, 0.6714586, -0.597523, -1.1206816, 0.6560346, 0.04337907, -1.1184877, 0.64814043, 0.7453773, -1.0423567, 0.6469259, 1.5023623, -0.8817579, 0.6511766, 2.3008933, -0.6728916, 0.5864444, 3.1201968, 0, 0.012598664, 2.9912834, 0.22290766, 0.030330181, 2.9912834, 0.48223543, 0.11850202, 2.9912834, 0.6154096, 0.33710992, 2.9912834, 0.796193, 0.25901836, 2.2141361, 0.61321557, -0.0024609864, 2.2306323, 0.7259859, -0.105692506, 1.4754801, 0.43550372, -0.3380241, 0.7643173, 0, -0.44999993, -0.4270637, -0.0002193451, -0.43931243, -0.88712, -0.0002193451, -0.40214908, -1.3490094, -0.0002193451, -0.3454325, -1.7950135, 0, -0.42874637, 0.10875225, -0.0002193451, -0.2763281, -2.1970282, -0.5688973, -0.09136152, -1.5457399, -0.37911862, 0.0039758086, -2.0064073, -0.52523726, 0.67000115, -2.2446835, -0.34116286, -0.32272154, -1.4492075, -0.72423065, -0.17066762, -1.0435271, -0.7604312, 0.6448612, -1.7394158, -0.9480159, 0.62069297, -1.1883256, -1.0662711, 0.59968233, -0.597523, -1.1206816, 0.5842583, 0.04337907, -1.1184877, 0.5762427, 0.7453773, -1.0423567, 0.57514966, 1.5023623, -0.8817579, 0.5794003, 2.3008933, -0.61562896, 0.33710992, 2.9912834, -0.48245478, 0.11850202, 2.9912834, -0.22312707, 0.030330181, 2.9912834, -0.79641235, 0.25901836, 2.2141361, 0, -0.14042687, 2.272789, 0.30956972, -0.118566066, 2.252627, 0.383726, -0.24693748, 1.5078611, 0, -0.37045094, 0.787534, -0.46139258, -0.408343, -0.47227502, -0.4622702, -0.3912187, 0.08675742, -0.42321748, -0.38563204, -0.96532345, -0.43572313, -0.3380241, 0.7643173, -0.68276453, 0.27687132, -1.6276093, -0.86420614, 0.2087385, -1.1089003, -0.81264776, -0.21074574, -0.51870847, -0.9793898, 0.16525984, -0.55781007, -1.0285348, 0.1487428, 0.045211792, -1.0175649, 0.15845871, 0.7209387, -0.940337, 0.19550061, 1.4522634, -0.613435, -0.0024609864, 2.2306323, -0.30978906, -0.118566066, 2.252627, 0, -0.27353477, 1.5371876, -0.38394535, -0.24693748, 1.5078611, -0.8361233, -0.21111009, 0.064151764, -0.8040913, -0.17601138, 0.73987865, -0.7262052, -0.105692506, 1.4754801)
@@ -193,22 +193,22 @@ extra_lateral_damping = 0.8
 local_angular_damping = Vector3(8, 1, 3)
 roll_righting_torque_per_kg = 4.0
 
-[node name="CollisionShape3D" parent="." index="0"]
+[node name="CollisionShape3D" parent="." index="0" unique_id=302983775]
 shape = SubResource("ConvexPolygonShape3D_c6sjc")
 
-[node name="BuoyantBody" parent="." index="1"]
+[node name="BuoyantBody" parent="." index="1" unique_id=1177248212]
 heave_damping = 10.0
 longitudinal_water_drag = 0.3
 lateral_water_drag = 2.0
 
-[node name="BuoyancyProbeVolume" parent="." index="2"]
+[node name="BuoyancyProbeVolume" parent="." index="2" unique_id=782435554]
 source_paths = Array[NodePath]([NodePath("../Model/Sketchfab_model/Wooden_boat_fbx/RootNode/Boat/Boat_Boat_texture_0")])
 physical_probe_count = 6
 fx_probe_count = 8
 generated_probe_volume_cubic_meters = 0.277
 generated_probe_buoyancy_height = 0.85
 
-[node name="Probe_000" type="MeshInstance3D" parent="BuoyancyProbeVolume/GeneratedProbes" index="0" unique_id=593001351]
+[node name="Probe_000" type="MeshInstance3D" parent="BuoyancyProbeVolume/GeneratedProbes" parent_id_path=PackedInt32Array(846300433) index="0" unique_id=593001351]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.6474036, 0.4, -1.440659)
 material_override = SubResource("StandardMaterial3D_prqhi")
 cast_shadow = 0
@@ -218,7 +218,7 @@ script = ExtResource("2_prqhi")
 max_submerged_volume_cubic_meters = 0.277
 buoyancy_height = 0.85
 
-[node name="Probe_001" type="MeshInstance3D" parent="BuoyancyProbeVolume/GeneratedProbes" index="1" unique_id=2001664983]
+[node name="Probe_001" type="MeshInstance3D" parent="BuoyancyProbeVolume/GeneratedProbes" parent_id_path=PackedInt32Array(846300433) index="1" unique_id=2001664983]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.6474036, 0.4, -1.440659)
 material_override = SubResource("StandardMaterial3D_45tsj")
 cast_shadow = 0
@@ -228,7 +228,7 @@ script = ExtResource("2_prqhi")
 max_submerged_volume_cubic_meters = 0.277
 buoyancy_height = 0.85
 
-[node name="Probe_002" type="MeshInstance3D" parent="BuoyancyProbeVolume/GeneratedProbes" index="2" unique_id=1076791936]
+[node name="Probe_002" type="MeshInstance3D" parent="BuoyancyProbeVolume/GeneratedProbes" parent_id_path=PackedInt32Array(846300433) index="2" unique_id=1076791936]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.9470791, 0.4, 0.1291163)
 material_override = SubResource("StandardMaterial3D_m4qgx")
 cast_shadow = 0
@@ -238,7 +238,7 @@ script = ExtResource("2_prqhi")
 max_submerged_volume_cubic_meters = 0.277
 buoyancy_height = 0.85
 
-[node name="Probe_003" type="MeshInstance3D" parent="BuoyancyProbeVolume/GeneratedProbes" index="3" unique_id=907318834]
+[node name="Probe_003" type="MeshInstance3D" parent="BuoyancyProbeVolume/GeneratedProbes" parent_id_path=PackedInt32Array(846300433) index="3" unique_id=907318834]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.9470791, 0.4, 0.1291163)
 material_override = SubResource("StandardMaterial3D_2yvxr")
 cast_shadow = 0
@@ -248,7 +248,7 @@ script = ExtResource("2_prqhi")
 max_submerged_volume_cubic_meters = 0.277
 buoyancy_height = 0.85
 
-[node name="Probe_004" type="MeshInstance3D" parent="BuoyancyProbeVolume/GeneratedProbes" index="4" unique_id=1012934551]
+[node name="Probe_004" type="MeshInstance3D" parent="BuoyancyProbeVolume/GeneratedProbes" parent_id_path=PackedInt32Array(846300433) index="4" unique_id=1012934551]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.7447672, 0.4, 1.6988916)
 material_override = SubResource("StandardMaterial3D_oojqr")
 cast_shadow = 0
@@ -258,7 +258,7 @@ script = ExtResource("2_prqhi")
 max_submerged_volume_cubic_meters = 0.277
 buoyancy_height = 0.85
 
-[node name="Probe_005" type="MeshInstance3D" parent="BuoyancyProbeVolume/GeneratedProbes" index="5" unique_id=467498748]
+[node name="Probe_005" type="MeshInstance3D" parent="BuoyancyProbeVolume/GeneratedProbes" parent_id_path=PackedInt32Array(846300433) index="5" unique_id=467498748]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.7447672, 0.4, 1.6988916)
 material_override = SubResource("StandardMaterial3D_ojoqu")
 cast_shadow = 0
@@ -268,7 +268,7 @@ script = ExtResource("2_prqhi")
 max_submerged_volume_cubic_meters = 0.277
 buoyancy_height = 0.85
 
-[node name="FxProbe_000_Bow" type="MeshInstance3D" parent="BuoyancyProbeVolume/GeneratedProbes" index="6" unique_id=1007023945]
+[node name="FxProbe_000_Bow" type="MeshInstance3D" parent="BuoyancyProbeVolume/GeneratedProbes" parent_id_path=PackedInt32Array(846300433) index="6" unique_id=1007023945]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.5616118, 0, -1.6368809)
 material_override = SubResource("StandardMaterial3D_f4agx")
 cast_shadow = 0
@@ -277,7 +277,7 @@ mesh = SubResource("SphereMesh_l816l")
 script = ExtResource("3_45tsj")
 tag = "bow"
 
-[node name="FxProbe_001_Bow" type="MeshInstance3D" parent="BuoyancyProbeVolume/GeneratedProbes" index="7" unique_id=892103083]
+[node name="FxProbe_001_Bow" type="MeshInstance3D" parent="BuoyancyProbeVolume/GeneratedProbes" parent_id_path=PackedInt32Array(846300433) index="7" unique_id=892103083]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.56161165, 0, -1.6368809)
 material_override = SubResource("StandardMaterial3D_h8tny")
 cast_shadow = 0
@@ -286,7 +286,7 @@ mesh = SubResource("SphereMesh_b8a85")
 script = ExtResource("3_45tsj")
 tag = "bow"
 
-[node name="FxProbe_002_Side" type="MeshInstance3D" parent="BuoyancyProbeVolume/GeneratedProbes" index="8" unique_id=725613695]
+[node name="FxProbe_002_Side" type="MeshInstance3D" parent="BuoyancyProbeVolume/GeneratedProbes" parent_id_path=PackedInt32Array(846300433) index="8" unique_id=725613695]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.91356707, 0, -0.45954946)
 material_override = SubResource("StandardMaterial3D_ew0jj")
 cast_shadow = 0
@@ -294,7 +294,7 @@ extra_cull_margin = 10000.0
 mesh = SubResource("SphereMesh_ui4bw")
 script = ExtResource("3_45tsj")
 
-[node name="FxProbe_003_Side" type="MeshInstance3D" parent="BuoyancyProbeVolume/GeneratedProbes" index="9" unique_id=1431635577]
+[node name="FxProbe_003_Side" type="MeshInstance3D" parent="BuoyancyProbeVolume/GeneratedProbes" parent_id_path=PackedInt32Array(846300433) index="9" unique_id=1431635577]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.9135672, 0, -0.45954946)
 material_override = SubResource("StandardMaterial3D_0mgae")
 cast_shadow = 0
@@ -302,7 +302,7 @@ extra_cull_margin = 10000.0
 mesh = SubResource("SphereMesh_kpa6m")
 script = ExtResource("3_45tsj")
 
-[node name="FxProbe_004_Side" type="MeshInstance3D" parent="BuoyancyProbeVolume/GeneratedProbes" index="10" unique_id=799565447]
+[node name="FxProbe_004_Side" type="MeshInstance3D" parent="BuoyancyProbeVolume/GeneratedProbes" parent_id_path=PackedInt32Array(846300433) index="10" unique_id=799565447]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.9172245, 0, 0.717782)
 material_override = SubResource("StandardMaterial3D_6g6sw")
 cast_shadow = 0
@@ -310,7 +310,7 @@ extra_cull_margin = 10000.0
 mesh = SubResource("SphereMesh_g5csg")
 script = ExtResource("3_45tsj")
 
-[node name="FxProbe_005_Side" type="MeshInstance3D" parent="BuoyancyProbeVolume/GeneratedProbes" index="11" unique_id=1212356704]
+[node name="FxProbe_005_Side" type="MeshInstance3D" parent="BuoyancyProbeVolume/GeneratedProbes" parent_id_path=PackedInt32Array(846300433) index="11" unique_id=1212356704]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.9168283, 0, 0.717782)
 material_override = SubResource("StandardMaterial3D_3g8mh")
 cast_shadow = 0
@@ -318,7 +318,7 @@ extra_cull_margin = 10000.0
 mesh = SubResource("SphereMesh_s82gm")
 script = ExtResource("3_45tsj")
 
-[node name="FxProbe_006_Side" type="MeshInstance3D" parent="BuoyancyProbeVolume/GeneratedProbes" index="12" unique_id=989778000]
+[node name="FxProbe_006_Side" type="MeshInstance3D" parent="BuoyancyProbeVolume/GeneratedProbes" parent_id_path=PackedInt32Array(846300433) index="12" unique_id=989778000]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.696897, 0, 1.8951135)
 material_override = SubResource("StandardMaterial3D_fdhsh")
 cast_shadow = 0
@@ -326,7 +326,7 @@ extra_cull_margin = 10000.0
 mesh = SubResource("SphereMesh_1idph")
 script = ExtResource("3_45tsj")
 
-[node name="FxProbe_007_Side" type="MeshInstance3D" parent="BuoyancyProbeVolume/GeneratedProbes" index="13" unique_id=1761540663]
+[node name="FxProbe_007_Side" type="MeshInstance3D" parent="BuoyancyProbeVolume/GeneratedProbes" parent_id_path=PackedInt32Array(846300433) index="13" unique_id=1761540663]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.69689727, 0, 1.8951135)
 material_override = SubResource("StandardMaterial3D_4i34n")
 cast_shadow = 0
@@ -334,7 +334,7 @@ extra_cull_margin = 10000.0
 mesh = SubResource("SphereMesh_ij4ci")
 script = ExtResource("3_45tsj")
 
-[node name="Hitboxes" parent="." index="3"]
+[node name="Hitboxes" parent="." index="3" unique_id=1581731188]
 group_max_health = {
 "hull": 60.0
 }
@@ -348,22 +348,22 @@ hitbox_group = &"hull"
 [node name="CollisionShape3D" type="CollisionShape3D" parent="Hitboxes/HullHitbox" index="0" unique_id=560455868]
 shape = SubResource("ConvexPolygonShape3D_c6sjc")
 
-[node name="Weapons" parent="." index="4"]
+[node name="Weapons" parent="." index="4" unique_id=1799022156]
 min_pitch_degrees = -10.0
 
-[node name="HullWaterFootprint" parent="." index="5"]
+[node name="HullWaterFootprint" parent="." index="5" unique_id=1721786654]
 profile = ExtResource("5_2yvxr")
 cutout_height_offset = 0.3
 wake_strength = 2.11
 bake_source_paths = Array[NodePath]([NodePath("../Model/Sketchfab_model/Wooden_boat_fbx/RootNode/Boat/Boat_Boat_texture_0")])
 
-[node name="ThirdPersonFocus" parent="CameraTargets" index="0"]
+[node name="ThirdPersonFocus" parent="CameraTargets" parent_id_path=PackedInt32Array(1262110883) index="0" unique_id=398705810]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0.3)
 
-[node name="FirstPersonSeat" parent="CameraTargets" index="1"]
+[node name="FirstPersonSeat" parent="CameraTargets" parent_id_path=PackedInt32Array(1262110883) index="1" unique_id=812544978]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.35, 2.6)
 
-[node name="BowSpray" parent="." index="7"]
+[node name="BowSpray" parent="." index="7" unique_id=177942471]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.05, -2.45)
 
 [node name="Model" parent="." index="8" unique_id=1101353392 instance=ExtResource("6_oojqr")]

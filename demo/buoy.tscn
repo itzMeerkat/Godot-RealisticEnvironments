@@ -12,7 +12,7 @@
 radius = 0.9291992
 height = 5.154297
 
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_t66q4"]
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_571ab"]
 transparency = 1
 cull_mode = 2
 no_depth_test = true
@@ -23,7 +23,7 @@ albedo_color = Color(0.1, 0.8, 1, 0.32)
 radius = 0.16
 height = 0.32
 
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_xapa5"]
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_t66q4"]
 transparency = 1
 cull_mode = 2
 no_depth_test = true
@@ -34,7 +34,7 @@ albedo_color = Color(0.1, 0.8, 1, 0.32)
 radius = 0.16
 height = 0.32
 
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_1kh0k"]
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_3aspy"]
 transparency = 1
 cull_mode = 2
 no_depth_test = true
@@ -45,7 +45,7 @@ albedo_color = Color(0.1, 0.8, 1, 0.32)
 radius = 0.16
 height = 0.32
 
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_i3j5b"]
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_xapa5"]
 transparency = 1
 cull_mode = 2
 no_depth_test = true
@@ -56,7 +56,7 @@ albedo_color = Color(0.1, 0.8, 1, 0.32)
 radius = 0.16
 height = 0.32
 
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_t6yrx"]
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_y2khd"]
 transparency = 1
 cull_mode = 2
 no_depth_test = true
@@ -67,7 +67,7 @@ albedo_color = Color(0.1, 0.8, 1, 0.32)
 radius = 0.16
 height = 0.32
 
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_2p8vy"]
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_1kh0k"]
 transparency = 1
 cull_mode = 2
 no_depth_test = true
@@ -78,7 +78,7 @@ albedo_color = Color(0.1, 0.8, 1, 0.32)
 radius = 0.16
 height = 0.32
 
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_qo6cr"]
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_yspub"]
 transparency = 1
 cull_mode = 2
 no_depth_test = true
@@ -89,7 +89,7 @@ albedo_color = Color(0.1, 0.8, 1, 0.32)
 radius = 0.16
 height = 0.32
 
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_whww0"]
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_i3j5b"]
 transparency = 1
 cull_mode = 2
 no_depth_test = true
@@ -125,7 +125,7 @@ debug_enabled = false
 
 [node name="Probe_000" type="MeshInstance3D" parent="RigidBody3D/Node3D/GeneratedProbes" unique_id=958575109]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.44630045, -0.8164333, -0.44630045)
-material_override = SubResource("StandardMaterial3D_t66q4")
+material_override = SubResource("StandardMaterial3D_571ab")
 cast_shadow = 0
 extra_cull_margin = 10000.0
 mesh = SubResource("SphereMesh_3aspy")
@@ -135,7 +135,7 @@ buoyancy_height = 1.6078372
 
 [node name="Probe_001" type="MeshInstance3D" parent="RigidBody3D/Node3D/GeneratedProbes" unique_id=282954885]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.4463004, -0.8164333, -0.44630045)
-material_override = SubResource("StandardMaterial3D_xapa5")
+material_override = SubResource("StandardMaterial3D_t66q4")
 cast_shadow = 0
 extra_cull_margin = 10000.0
 mesh = SubResource("SphereMesh_y2khd")
@@ -145,7 +145,7 @@ buoyancy_height = 1.6078372
 
 [node name="Probe_002" type="MeshInstance3D" parent="RigidBody3D/Node3D/GeneratedProbes" unique_id=606315226]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.44630045, 0.7914039, -0.44630045)
-material_override = SubResource("StandardMaterial3D_1kh0k")
+material_override = SubResource("StandardMaterial3D_3aspy")
 cast_shadow = 0
 extra_cull_margin = 10000.0
 mesh = SubResource("SphereMesh_yspub")
@@ -155,7 +155,7 @@ buoyancy_height = 1.6078372
 
 [node name="Probe_003" type="MeshInstance3D" parent="RigidBody3D/Node3D/GeneratedProbes" unique_id=2073005665]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.4463004, 0.7914039, -0.44630045)
-material_override = SubResource("StandardMaterial3D_i3j5b")
+material_override = SubResource("StandardMaterial3D_xapa5")
 cast_shadow = 0
 extra_cull_margin = 10000.0
 mesh = SubResource("SphereMesh_nrol3")
@@ -165,7 +165,7 @@ buoyancy_height = 1.6078372
 
 [node name="Probe_004" type="MeshInstance3D" parent="RigidBody3D/Node3D/GeneratedProbes" unique_id=826536182]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.44630045, -0.8164333, 0.44630057)
-material_override = SubResource("StandardMaterial3D_t6yrx")
+material_override = SubResource("StandardMaterial3D_y2khd")
 cast_shadow = 0
 extra_cull_margin = 10000.0
 mesh = SubResource("SphereMesh_wjqy0")
@@ -175,7 +175,7 @@ buoyancy_height = 1.6078372
 
 [node name="Probe_005" type="MeshInstance3D" parent="RigidBody3D/Node3D/GeneratedProbes" unique_id=601307136]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.4463004, -0.8164333, 0.44630057)
-material_override = SubResource("StandardMaterial3D_2p8vy")
+material_override = SubResource("StandardMaterial3D_1kh0k")
 cast_shadow = 0
 extra_cull_margin = 10000.0
 mesh = SubResource("SphereMesh_d63e2")
@@ -185,7 +185,7 @@ buoyancy_height = 1.6078372
 
 [node name="Probe_006" type="MeshInstance3D" parent="RigidBody3D/Node3D/GeneratedProbes" unique_id=1325008678]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.44630045, 0.7914039, 0.44630057)
-material_override = SubResource("StandardMaterial3D_qo6cr")
+material_override = SubResource("StandardMaterial3D_yspub")
 cast_shadow = 0
 extra_cull_margin = 10000.0
 mesh = SubResource("SphereMesh_gpwpt")
@@ -195,7 +195,7 @@ buoyancy_height = 1.6078372
 
 [node name="Probe_007" type="MeshInstance3D" parent="RigidBody3D/Node3D/GeneratedProbes" unique_id=701507295]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.4463004, 0.7914039, 0.44630057)
-material_override = SubResource("StandardMaterial3D_whww0")
+material_override = SubResource("StandardMaterial3D_i3j5b")
 cast_shadow = 0
 extra_cull_margin = 10000.0
 mesh = SubResource("SphereMesh_67ip0")

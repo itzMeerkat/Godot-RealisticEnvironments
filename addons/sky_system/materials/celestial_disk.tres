@@ -1,6 +1,6 @@
-[gd_resource type="ShaderMaterial" format=4]
+[gd_resource type="ShaderMaterial" format=3 uid="uid://xx363c1cmbe4"]
 
-[ext_resource type="Shader" path="res://addons/sky_system/shaders/celestial_disk.gdshader" id="1_disk"]
+[ext_resource type="Shader" uid="uid://c06rajf110qna" path="res://addons/sky_system/shaders/celestial_disk.gdshader" id="1_disk"]
 
 [resource]
 render_priority = -5

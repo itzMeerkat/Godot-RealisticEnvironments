@@ -1,6 +1,6 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene format=3 uid="uid://clrjnofocfcpe"]
 
-[ext_resource type="Script" path="res://addons/wind_system/wind_system.gd" id="1_wind"]
+[ext_resource type="Script" uid="uid://btyuqnmfuyrr6" path="res://addons/wind_system/wind_system.gd" id="1_wind"]
 
-[node name="WindSystem" type="Node"]
+[node name="WindSystem" type="Node" unique_id=138637095]
 script = ExtResource("1_wind")

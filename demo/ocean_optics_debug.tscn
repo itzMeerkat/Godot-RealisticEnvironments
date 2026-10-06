@@ -4,7 +4,6 @@
 [ext_resource type="PackedScene" uid="uid://ckdc57htjsaad" path="res://addons/sky_system/sky_system.tscn" id="2_sky"]
 [ext_resource type="PackedScene" uid="uid://lsh7kr3nyl2t" path="res://addons/ocean_system/ocean_system.tscn" id="3_water"]
 [ext_resource type="Script" uid="uid://btyuqnmfuyrr6" path="res://addons/wind_system/wind_system.gd" id="4_wind"]
-[ext_resource type="PlaneMesh" path="res://addons/ocean_system/editor_water_preview_mesh.tres" id="5_e5x87"]
 [ext_resource type="PackedScene" uid="uid://bm4bg7uoyr0xy" path="res://systems/debug/ocean_debug_panel.tscn" id="5_panel"]
 
 [node name="OceanOpticsDebug" type="Node3D" unique_id=1794523757]
@@ -21,13 +20,10 @@ radiance_sun_halo_strength = 0.28
 script = ExtResource("4_wind")
 
 [node name="Water" parent="." unique_id=1264596026 instance=ExtResource("3_water")]
-extra_cull_margin = 362.03867
-mesh = ExtResource("5_e5x87")
 sky_source_path = NodePath("../SkySystem")
 foam_intensity = 0.0
 use_external_wind = true
 wind_source_path = NodePath("../WindSystem")
-simulation_map_size = 512
 
 [node name="Camera3D" type="Camera3D" parent="." unique_id=537177153]
 current = true

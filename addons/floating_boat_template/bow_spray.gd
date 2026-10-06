@@ -10,6 +10,9 @@ extends Node3D
 ## any moving hull.
 
 const MAX_PARTICLES := 2500
+## Hazes itself through the sky system's atmosphere: transparent surfaces are drawn
+## after its aerial perspective.
+const SPRAY_SHADER := preload("res://addons/floating_boat_template/bow_spray.gdshader")
 ## Elevation range (radians) of slam jets, measured from the side direction.
 const SLAM_JET_ELEVATION_MIN := 0.6
 const SLAM_JET_ELEVATION_MAX := 1.4
@@ -189,12 +192,9 @@ func _build_particles() -> void:
 	droplet_texture.height = 64
 
 	# Streaks: quads stretched along the particle velocity, facing the camera.
-	var material := StandardMaterial3D.new()
-	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	material.vertex_color_use_as_albedo = true
-	material.albedo_texture = droplet_texture
-	material.roughness = 0.35
-	material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	var material := ShaderMaterial.new()
+	material.shader = SPRAY_SHADER
+	material.set_shader_parameter(&"droplet", droplet_texture)
 	var quad := QuadMesh.new()
 	quad.size = Vector2(1.0, 4.0)
 	quad.material = material

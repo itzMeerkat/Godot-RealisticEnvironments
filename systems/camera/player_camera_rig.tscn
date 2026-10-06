@@ -1,21 +1,21 @@
-[gd_scene load_steps=3 format=3 uid="uid://c4amd8o0cttut"]
+[gd_scene format=3 uid="uid://c4amd8o0cttut"]
 
-[ext_resource type="Script" path="res://systems/camera/player_camera_rig.gd" id="1_camera_rig"]
+[ext_resource type="Script" uid="uid://c53ojp2qc3m77" path="res://systems/camera/player_camera_rig.gd" id="1_camera_rig"]
 
 [sub_resource type="SphereShape3D" id="SphereShape3D_camera_collision"]
 radius = 0.35
 
-[node name="PlayerCameraRig" type="Node3D"]
+[node name="PlayerCameraRig" type="Node3D" unique_id=604745725]
 script = ExtResource("1_camera_rig")
 
-[node name="YawPivot" type="Node3D" parent="."]
+[node name="YawPivot" type="Node3D" parent="." unique_id=978906057]
 
-[node name="PitchPivot" type="Node3D" parent="YawPivot"]
+[node name="PitchPivot" type="Node3D" parent="YawPivot" unique_id=53025361]
 
-[node name="SpringArm3D" type="SpringArm3D" parent="YawPivot/PitchPivot"]
-spring_length = 12.0
+[node name="SpringArm3D" type="SpringArm3D" parent="YawPivot/PitchPivot" unique_id=1236477057]
 shape = SubResource("SphereShape3D_camera_collision")
+spring_length = 12.0
 
-[node name="Camera3D" type="Camera3D" parent="YawPivot/PitchPivot/SpringArm3D"]
+[node name="Camera3D" type="Camera3D" parent="YawPivot/PitchPivot/SpringArm3D" unique_id=586690157]
 current = true
 far = 60000.0

@@ -19,11 +19,20 @@ const CLOUD_MOONLIGHT_SUN_HEIGHT := -0.12
 ## Share of the horizon colour that lights cloud bases from below (sea and
 ## horizon glow). Dimmed further by CloudPreset.ambient_light_scale.
 const CLOUD_BASE_AMBIENT := 0.4
-## As shaders/haze.gdshaderinc.
-const HAZE_EARTH_RADIUS := 6371000.0
-const HAZE_STEPS := 12
-const HAZE_TOP_SCALE_HEIGHTS := 12.0
-const HAZE_MAX_RAY_LENGTH := 1000000.0
+## As shaders/compute/atmosphere_common.glslinc.
+const ATMOSPHERE_EARTH_RADIUS := 6371000.0
+## As TRANSMITTANCE_STEPS in shaders/compute/atmosphere_transmittance.glsl.
+const ATMOSPHERE_TRANSMITTANCE_STEPS := 40
+## The sky's radiance map (ambient light and reflections) is refreshed when the
+## camera's altitude changes by more than this share (or 2 m), see _process_atmosphere().
+const RADIANCE_ALTITUDE_TOLERANCE := 0.1
+## Global shader uniforms the atmosphere publishes (project.godot [shader_globals];
+## read through shaders/atmosphere.gdshaderinc).
+const GLOBAL_ENABLED := &"atmosphere_enabled"
+const GLOBAL_VIEW_TEXTURES : Array[StringName] = [&"atmosphere_view_transmittance", &"atmosphere_view_inscatter", &"atmosphere_view_inscatter_lobe"]
+const GLOBAL_OBSERVER := &"atmosphere_observer"
+const GLOBAL_LIGHT := &"atmosphere_light"
+const GLOBAL_MAX_DISTANCE := &"atmosphere_max_distance"
 
 ## Normalized day time. 0 is midnight, 0.25 sunrise, 0.5 noon, 0.75 sunset.
 @export_range(0.0, 1.0, 0.001) var time_of_day := 0.35 :
@@ -87,7 +96,7 @@ const HAZE_MAX_RAY_LENGTH := 1000000.0
 @export_group("Visuals")
 ## World height of the sea surface. The sea's horizon lies below eye level by
 ## sqrt(2 h / R) for a camera h meters above it (earth radius R), and the sky
-## shows down to there. The haze (CloudPreset haze_*) is densest here.
+## shows down to there. The atmosphere's haze (CloudPreset haze_*) is densest here.
 @export var sea_level := 0.0 :
 	set(value):
 		sea_level = value
@@ -157,7 +166,8 @@ const HAZE_MAX_RAY_LENGTH := 1000000.0
 @export_range(0.0, 8.0, 0.01) var cloud_light_intensity := 1.0
 ## Brightness of the sky light that fills cloud shadows.
 @export_range(0.0, 8.0, 0.01) var cloud_ambient_intensity := 1.0
-## How strongly clouds toward the sun or moon block the haze's glow around it:
+## How strongly clouds toward the sun or moon block the atmosphere's light (the
+## haze's glow around it and its brightness):
 ## multiplies their opacity (clamped to 1). 1 uses the opacity as rendered; 2
 ## blocks the glow fully behind half-opaque cloud; 0 never blocks it.
 @export_range(0.0, 8.0, 0.01, "or_greater") var cloud_haze_shadow_strength := 1.0 :
@@ -212,17 +222,27 @@ var _sky_top_color := Color.WHITE
 var _sky_horizon_color := Color.WHITE
 ## pi * sun color * energy above the haze and clouds (the sky shader's disk).
 var _sun_irradiance := Color.BLACK
-# Haze over the sea, from the weather (CloudPreset haze_*), recomputed by _update_sky().
+# The atmosphere's haze, from the weather (CloudPreset haze_*), recomputed by _update_sky().
 ## Extinction at sea level (1/m); 0 without a cloud_preset.
 var _haze_density := 0.0
 var _haze_scale_height := 1000.0
 var _haze_anisotropy := 0.97
-## The light scattered by the haze: the sun, or the moon at night (as the clouds).
+## The light the atmosphere scatters: the sun, or the moon at night (as the clouds).
 var _haze_light_direction := Vector3.UP
-## Radiance per unit phase function (1/sr): pi * light color * energy after the haze.
+## That light above the atmosphere, per unit phase function (1/sr): pi * color * energy.
 var _haze_light_color := Color.BLACK
 ## Isotropic in-scattered radiance.
 var _haze_ambient_color := Color.BLACK
+
+## The SkySystem whose atmosphere the global shader uniforms show: the one set up
+## last. Another one leaving the tree (e.g. the previous scene) must not clear them.
+static var _global_atmosphere_owner : SkySystem
+## Null when there is no RenderingDevice.
+var _atmosphere_renderer : AtmosphereRenderer
+## Bound to the atmosphere's global textures while there is no atmosphere.
+var _placeholder_volume : ImageTexture3D
+## Camera altitude the sky's radiance map was last rendered for.
+var _radiance_observer_altitude := -1.0
 
 ## Null while clouds are disabled or unavailable.
 var _cloud_renderer : CloudRenderer
@@ -253,16 +273,19 @@ func _ready() -> void:
 	if cloud_preset:
 		_cloud_state = cloud_preset.duplicate()
 	_resolve_cloud_wind_source()
+	_setup_atmosphere()
 	_setup_clouds()
 
 
 func _enter_tree() -> void:
 	if is_node_ready():
+		_setup_atmosphere()
 		_setup_clouds()
 
 
 func _exit_tree() -> void:
 	_release_clouds()
+	_release_atmosphere()
 
 
 func _process(delta : float) -> void:
@@ -282,6 +305,8 @@ func _process(delta : float) -> void:
 		_process_weather_transition(delta)
 	if _cloud_renderer:
 		_process_clouds(delta)
+	if _atmosphere_renderer:
+		_process_atmosphere()
 
 
 func _ensure_unique_runtime_resources() -> void:
@@ -368,43 +393,23 @@ func get_cloud_state() -> CloudPreset:
 	return _cloud_state if _cloud_renderer else null
 
 
-## Haze over the sea for consumers that draw their own sky (the ocean's sky
-## reflection), as shaders/haze.gdshaderinc: extinction at sea level (1/m), 0
-## when there is none.
-func get_haze_density() -> float:
-	return _haze_density
+## The sky seen from the sea surface through the atmosphere, for consumers that
+## draw their own sky (the ocean's sky reflection): view volumes holding only the
+## rays' ends ([transmittance, isotropic in-scatter, lobe in-scatter per unit
+## phase]; layout as shaders/compute/atmosphere_common.glslinc for an observer at
+## altitude 0), or an empty array without an atmosphere. The textures stay the
+## same objects while the atmosphere exists; lighting_changed fires when they change.
+func get_atmosphere_sky_volumes() -> Array[Texture3D]:
+	if _atmosphere_renderer == null:
+		return []
+	return [_atmosphere_renderer.sea_transmittance, _atmosphere_renderer.sea_inscatter, _atmosphere_renderer.sea_inscatter_lobe]
 
 
-## Height (m) over which the haze thins to 1/e.
-func get_haze_scale_height() -> float:
-	return _haze_scale_height
-
-
-## Henyey-Greenstein g of the haze's forward lobe (75 % of its scattering; the
-## rest is isotropic).
-func get_haze_anisotropy() -> float:
-	return _haze_anisotropy
-
-
-## Toward the light the haze scatters (the sun, or the moon at night).
-func get_haze_light_direction() -> Vector3:
-	return _haze_light_direction
-
-
-## Radiance the haze scatters from that light per unit phase function (1/sr).
-func get_haze_light_color() -> Color:
-	return _haze_light_color
-
-
-## Isotropic radiance the haze scatters (skylight and multiply scattered light).
-func get_haze_ambient_color() -> Color:
-	return _haze_ambient_color
-
-
-## Multiplies the cloud cubemap's opacity toward the haze light before it shades
-## the haze's direct light (cloud_haze_shadow_strength).
-func get_haze_cloud_shadow_strength() -> float:
-	return cloud_haze_shadow_strength
+## xyz toward the light the atmosphere scatters (the sun, or the moon at night),
+## w the Henyey-Greenstein g of the haze's forward lobe, whose phase function
+## multiplies the lobe in-scatter.
+func get_atmosphere_light() -> Vector4:
+	return Vector4(_haze_light_direction.x, _haze_light_direction.y, _haze_light_direction.z, _haze_anisotropy)
 
 
 ## Makes preset the cloud_preset, blending to it over seconds (0 = at once).
@@ -447,9 +452,9 @@ func _update_sky() -> void:
 	_sun_irradiance = _sun_color * (clear_sun_energy * PI)
 	var moon_color : Color = active_profile.sample_moon_color(_profile_sample_time)
 	var moon_energy : float = active_profile.sample_moon_energy(_profile_sample_time) * _moon_visibility * _moon_phase * _night_factor * moon_energy_multiplier * cloud_light_scale
-	# The lights reach the scene through the haze between the sea and space.
-	var sun_transmittance := _get_haze_transmittance_to_space(_sun_direction)
-	var moon_transmittance := _get_haze_transmittance_to_space(_moon_direction)
+	# The lights reach the scene through the atmosphere between space and the sea.
+	var sun_transmittance := _get_atmosphere_transmittance(_sun_direction)
+	var moon_transmittance := _get_atmosphere_transmittance(_moon_direction)
 	_update_light(_sun_light, _sun_direction, _sun_color, sun_energy * sun_transmittance)
 	_update_light(_moon_light, _moon_direction, moon_color, moon_energy * moon_transmittance)
 	if _sun_direction.y >= CLOUD_MOONLIGHT_SUN_HEIGHT:
@@ -457,7 +462,7 @@ func _update_sky() -> void:
 	else:
 		_update_haze_lighting(_moon_direction, moon_color * moon_energy, moon_transmittance)
 	_update_environment(active_profile, _sun_direction, _moon_direction, _sun_visibility, _moon_visibility)
-	_push_haze_parameters()
+	_push_atmosphere_parameters()
 	_update_starfield_visibility(active_profile.sample_star_visibility(_star_visibility) * star_brightness)
 	_update_visual_colors(active_profile, _sun_visibility, _moon_visibility)
 	_update_visual_positions()
@@ -474,84 +479,79 @@ func _update_haze_medium() -> void:
 	_haze_anisotropy = _cloud_state.haze_anisotropy
 
 
-## In-scattering of a light whose color * energy above the haze is irradiance and
-## which reaches the sea with transmittance.
+## The light the atmosphere scatters: color * energy above the atmosphere is
+## irradiance, and it reaches the sea with transmittance. The atmosphere dims it
+## down to each of its points itself (AtmosphereRenderer).
 func _update_haze_lighting(direction : Vector3, irradiance : Color, transmittance : float) -> void:
 	_haze_light_direction = direction
-	_haze_light_color = irradiance * (PI * transmittance)
-	# Isotropic part. The sky profile's horizon color is the light an optically thick
-	# horizontal path of lit air sends toward the eye, which the haze, being thick
-	# along such paths, sends too. On top: the light the haze took out of the beam,
-	# scattered on many times, about half of it upward.
+	_haze_light_color = irradiance * PI
+	# Isotropic part, standing in for multiple scattering. The sky profile's horizon
+	# color is the light an optically thick horizontal path of lit air sends toward
+	# the eye, which the haze, being thick along such paths, sends too. On top: the
+	# light the haze took out of the beam, scattered on many times, about half of it
+	# upward.
 	var cloud_ambient_scale := _cloud_state.ambient_light_scale if _cloud_renderer else 1.0
 	_haze_ambient_color = _sky_horizon_color * cloud_ambient_scale + irradiance * (0.5 * maxf(direction.y, 0.0) * (1.0 - transmittance))
 
 
-## Share of a light from direction that crosses the haze down to the sea.
-func _get_haze_transmittance_to_space(direction : Vector3) -> float:
+## Share of a light from direction that crosses the atmosphere down to the sea, for
+## the scene's lights: the transmittance LUT's integral for altitude 0
+## (shaders/compute/atmosphere_transmittance.glsl, same steps). 0 below the horizon.
+func _get_atmosphere_transmittance(direction : Vector3) -> float:
 	if _haze_density <= 0.0:
 		return 1.0
-	return exp(-_get_haze_optical_depth(0.0, direction, _get_haze_ray_length(0.0, direction)))
-
-
-## As haze_optical_depth() in shaders/haze.gdshaderinc.
-func _get_haze_optical_depth(start_height : float, direction : Vector3, ray_length : float) -> float:
-	var curvature := (1.0 - direction.y * direction.y) * (0.5 / HAZE_EARTH_RADIUS)
-	var step_length := ray_length / HAZE_STEPS
-	var previous_height := start_height
-	var sum := 0.0
-	for i in range(1, HAZE_STEPS + 1):
-		var t := step_length * i
-		var height := start_height + t * (direction.y + t * curvature)
+	var mu := direction.normalized().y
+	if mu < 0.0:
+		return 0.0
+	var top := AtmosphereRenderer.TOP_SCALE_HEIGHTS * _haze_scale_height
+	# Distance from the sea to the top along mu (atmosphere_distance_to_top()).
+	var c := top * (2.0 * ATMOSPHERE_EARTH_RADIUS + top)
+	var b := ATMOSPHERE_EARTH_RADIUS * mu
+	var ray_length := c / (b + sqrt(b * b + c))
+	var optical_depth := 0.0
+	var previous_t := 0.0
+	var previous_height := 0.0
+	for i in range(1, ATMOSPHERE_TRANSMITTANCE_STEPS + 1):
+		var step := float(i) / ATMOSPHERE_TRANSMITTANCE_STEPS
+		var t := ray_length * step * step
+		# Altitude along the ray (atmosphere_altitude_along()).
+		var k := t * (2.0 * ATMOSPHERE_EARTH_RADIUS * mu + t)
+		var height := k / (sqrt(ATMOSPHERE_EARTH_RADIUS * ATMOSPHERE_EARTH_RADIUS + k) + ATMOSPHERE_EARTH_RADIUS)
+		# Mean extinction over the step (atmosphere_mean_extinction()).
 		var a := maxf(previous_height, 0.0) / _haze_scale_height
 		var x := maxf(height, 0.0) / _haze_scale_height - a
-		sum += exp(-a) * (1.0 - 0.5 * x if absf(x) < 1e-4 else (1.0 - exp(-x)) / x)
+		var mean_density := exp(-a) * (1.0 - 0.5 * x if absf(x) < 1e-4 else (1.0 - exp(-x)) / x)
+		optical_depth += _haze_density * mean_density * (t - previous_t)
+		previous_t = t
 		previous_height = height
-	return _haze_density * step_length * sum
+	return exp(-optical_depth)
 
 
-## As haze_ray_length() in shaders/haze.gdshaderinc.
-func _get_haze_ray_length(start_height : float, direction : Vector3) -> float:
-	var curvature := (1.0 - direction.y * direction.y) * (0.5 / HAZE_EARTH_RADIUS)
-	var rise := maxf(HAZE_TOP_SCALE_HEIGHTS * _haze_scale_height - start_height, 0.0)
-	var denominator := direction.y + sqrt(direction.y * direction.y + 4.0 * curvature * rise)
-	return minf(2.0 * rise / maxf(denominator, 1e-9), HAZE_MAX_RAY_LENGTH)
-
-
-## Haze uniforms of the sky and starfield (shaders/haze.gdshaderinc) and the
-## parameters of the WorldEnvironment's SkyHazeEffect.
-func _push_haze_parameters() -> void:
-	var materials : Array[Material] = []
-	if _world_environment and _world_environment.environment and _world_environment.environment.sky and _world_environment.environment.sky.sky_material:
-		materials.push_back(_world_environment.environment.sky.sky_material)
-	if _starfield and _starfield.material_override:
-		materials.push_back(_starfield.material_override)
-	for material in materials:
-		material.set(&"shader_parameter/sea_level", sea_level)
-		material.set(&"shader_parameter/haze_density", _haze_density)
-		material.set(&"shader_parameter/haze_scale_height", _haze_scale_height)
-		material.set(&"shader_parameter/haze_anisotropy", _haze_anisotropy)
-		material.set(&"shader_parameter/haze_light_direction", _haze_light_direction)
-		material.set(&"shader_parameter/haze_light_color", Vector3(_haze_light_color.r, _haze_light_color.g, _haze_light_color.b))
-		material.set(&"shader_parameter/haze_ambient_color", Vector3(_haze_ambient_color.r, _haze_ambient_color.g, _haze_ambient_color.b))
-		material.set(&"shader_parameter/haze_cloud_shadow_strength", cloud_haze_shadow_strength)
-	var effect := _get_haze_effect()
+## The atmosphere's parameters that follow the weather and the lights. The camera's
+## are set every frame by _process_atmosphere().
+func _push_atmosphere_parameters() -> void:
+	if _atmosphere_renderer == null:
+		return
+	_atmosphere_renderer.haze_density = _haze_density
+	_atmosphere_renderer.haze_scale_height = _haze_scale_height
+	_atmosphere_renderer.light_direction = _haze_light_direction
+	_atmosphere_renderer.light_color = _haze_light_color
+	_atmosphere_renderer.ambient_color = _haze_ambient_color
+	_atmosphere_renderer.cloud_shadow_strength = cloud_haze_shadow_strength
+	if _global_atmosphere_owner == self:
+		RenderingServer.global_shader_parameter_set(GLOBAL_LIGHT, get_atmosphere_light())
+	var effect := _get_aerial_perspective_effect()
 	if effect:
-		effect.sea_level = sea_level
-		effect.haze_density = _haze_density
-		effect.haze_scale_height = _haze_scale_height
-		effect.haze_anisotropy = _haze_anisotropy
+		effect.active = _haze_density > 0.0
 		effect.light_direction = _haze_light_direction
-		effect.light_color = _haze_light_color
-		effect.ambient_color = _haze_ambient_color
-		effect.cloud_shadow_strength = cloud_haze_shadow_strength
+		effect.phase_g = _haze_anisotropy
 
 
-func _get_haze_effect() -> SkyHazeEffect:
+func _get_aerial_perspective_effect() -> AerialPerspectiveEffect:
 	if _world_environment == null or _world_environment.compositor == null:
 		return null
 	for effect in _world_environment.compositor.compositor_effects:
-		if effect is SkyHazeEffect:
+		if effect is AerialPerspectiveEffect:
 			return effect
 	return null
 
@@ -594,6 +594,7 @@ func _update_environment(active_profile, sun_direction : Vector3, moon_direction
 			shader_material.set_shader_parameter(&"moon_color", moon_color)
 			shader_material.set_shader_parameter(&"moon_visibility", moon_visibility if render_bodies_in_sky else 0.0)
 			shader_material.set_shader_parameter(&"moon_phase", _moon_phase)
+			_radiance_observer_altitude = _get_atmosphere_observer_altitude()
 		else:
 			material.set(&"sky_top_color", top_color)
 			material.set(&"sky_horizon_color", horizon_color)
@@ -871,10 +872,89 @@ func _push_cloud_material_parameters() -> void:
 	for material : Material in [_world_environment.environment.sky.sky_material, _starfield.material_override]:
 		RenderingServer.material_set_param(material.get_rid(), &"clouds_enabled", enabled)
 		RenderingServer.material_set_param(material.get_rid(), &"cloud_cubemap", texture_rid)
-	# The haze over the scene is shaded by the clouds toward its light.
-	var effect := _get_haze_effect()
+	_radiance_observer_altitude = _get_atmosphere_observer_altitude()
+
+
+func _setup_atmosphere() -> void:
+	_release_atmosphere()
+	var device := RenderingServer.get_rendering_device()
+	if device == null:
+		push_error("SkySystem's atmosphere needs a RenderingDevice (Forward+ or Mobile renderer); there is no haze.")
+		return
+	_atmosphere_renderer = AtmosphereRenderer.new(device)
+	_global_atmosphere_owner = self
+	RenderingServer.global_shader_parameter_set(GLOBAL_MAX_DISTANCE, AtmosphereRenderer.MAX_DISTANCE)
+	var volumes : Array[Texture3DRD] = [_atmosphere_renderer.view_transmittance, _atmosphere_renderer.view_inscatter, _atmosphere_renderer.view_inscatter_lobe]
+	var volume_rids : Array[RID] = []
+	for i in volumes.size():
+		RenderingServer.global_shader_parameter_set(GLOBAL_VIEW_TEXTURES[i], volumes[i])
+		volume_rids.push_back(volumes[i].texture_rd_rid)
+	var effect := _get_aerial_perspective_effect()
 	if effect:
-		effect.cloud_cubemap = _cloud_renderer.cubemap.texture_rd_rid if enabled else RID()
+		effect.view_textures = volume_rids
+		effect.max_distance = AtmosphereRenderer.MAX_DISTANCE
+	_update_sky()
+	# Consumers start reading once the volumes hold this frame's atmosphere.
+	_process_atmosphere()
+	RenderingServer.global_shader_parameter_set(GLOBAL_ENABLED, true)
+
+
+## Unbinds the atmosphere's textures from every consumer, then frees them.
+func _release_atmosphere() -> void:
+	if _atmosphere_renderer == null:
+		return
+	if _global_atmosphere_owner == self:
+		_global_atmosphere_owner = null
+		RenderingServer.global_shader_parameter_set(GLOBAL_ENABLED, false)
+		if _placeholder_volume == null:
+			var image := Image.create_empty(1, 1, false, Image.FORMAT_RGBAH)
+			image.fill(Color.WHITE)
+			_placeholder_volume = ImageTexture3D.new()
+			_placeholder_volume.create(Image.FORMAT_RGBAH, 1, 1, 1, false, [image])
+		for global in GLOBAL_VIEW_TEXTURES:
+			RenderingServer.global_shader_parameter_set(global, _placeholder_volume)
+	var effect := _get_aerial_perspective_effect()
+	if effect:
+		effect.active = false
+		effect.view_textures = []
+	var renderer := _atmosphere_renderer
+	_atmosphere_renderer = null
+	# Sky sources' consumers (the ocean) drop the sea-level volumes on this signal.
+	lighting_changed.emit()
+	renderer.release()
+
+
+## Renders the atmosphere for the active camera and points its consumers at that
+## camera. Refreshes the sky's radiance map once the camera's altitude has moved on.
+func _process_atmosphere() -> void:
+	var camera_position := _get_cloud_camera_position()
+	var observer_altitude := _get_atmosphere_observer_altitude()
+	var cloud_cubemap := _cloud_renderer.cubemap.texture_rd_rid if _cloud_renderer else RID()
+	_atmosphere_renderer.render(camera_position.y - sea_level, cloud_cubemap)
+	if _global_atmosphere_owner == self:
+		RenderingServer.global_shader_parameter_set(GLOBAL_OBSERVER, Vector4(camera_position.x, camera_position.y, camera_position.z, observer_altitude))
+	var effect := _get_aerial_perspective_effect()
+	if effect:
+		effect.observer_position = camera_position
+		effect.observer_altitude = observer_altitude
+	if absf(observer_altitude - _radiance_observer_altitude) > maxf(2.0, RADIANCE_ALTITUDE_TOLERANCE * _radiance_observer_altitude):
+		_refresh_sky_radiance()
+
+
+## The camera altitude the atmosphere's camera volume is built for (0 without one).
+func _get_atmosphere_observer_altitude() -> float:
+	if _atmosphere_renderer == null:
+		return 0.0
+	return _atmosphere_renderer.get_observer_altitude(_get_cloud_camera_position().y - sea_level)
+
+
+## The sky reads the camera's altitude from the atmosphere, not POSITION (which
+## re-renders the radiance map on every camera move), so the engine does not see
+## it change. Re-sending a sky parameter makes it render the radiance map again.
+func _refresh_sky_radiance() -> void:
+	_radiance_observer_altitude = _get_atmosphere_observer_altitude()
+	var material := _world_environment.environment.sky.sky_material
+	RenderingServer.material_set_param(material.get_rid(), &"sun_direction", _sun_direction)
 
 
 func _get_cloud_sun_light_scale() -> float:

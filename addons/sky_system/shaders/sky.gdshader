@@ -1,6 +1,6 @@
 shader_type sky;
 
-#include "res://addons/sky_system/shaders/haze.gdshaderinc"
+#include "res://addons/sky_system/shaders/atmosphere.gdshaderinc"
 
 uniform vec4 sky_top_color : source_color = vec4(0.12, 0.42, 0.78, 1.0);
 uniform vec4 sky_horizon_color : source_color = vec4(0.58, 0.78, 0.94, 1.0);
@@ -26,8 +26,7 @@ uniform float moon_phase : hint_range(0.0, 1.0) = 1.0;
 
 // Volumetric clouds rendered by CloudRenderer: rgb is premultiplied radiance,
 // a is opacity. SkySystem sets both through the RenderingServer so the runtime
-// texture is never saved into the material. The sky shows mip 0; a blurred mip
-// shades the haze (haze_cloud_light_transmittance()).
+// texture is never saved into the material. The sky shows mip 0.
 uniform bool clouds_enabled = false;
 uniform samplerCube cloud_cubemap : filter_linear_mipmap;
 
@@ -72,9 +71,11 @@ float moon_lighting(vec3 view_direction, vec3 body_direction, vec3 light_directi
 
 void sky() {
 	// The sea's horizon is below eye level (the earth curves away): the sky reaches
-	// down to it, and the gradients run from it rather than from eye level.
-	float camera_height = POSITION.y - sea_level;
-	float horizon_dip = sqrt(2.0 * max(camera_height, 0.0) / HAZE_EARTH_RADIUS);
+	// down to it, and the gradients run from it rather than from eye level. The
+	// camera's altitude comes from the atmosphere, not POSITION: a sky that reads
+	// POSITION re-renders its radiance map whenever the camera moves (SkySystem
+	// refreshes it instead, see _refresh_sky_radiance()).
+	float horizon_dip = sqrt(2.0 * atmosphere_observer.w / ATMOSPHERE_EARTH_RADIUS);
 	float elevation = EYEDIR.y + horizon_dip;
 	float horizon_blend = smoothstep(-0.08, 0.45, elevation);
 	vec3 upper_sky = mix(sky_horizon_color.rgb, sky_top_color.rgb, horizon_blend);
@@ -89,9 +90,9 @@ void sky() {
 
 	// The disk at its real radiance: the sun's irradiance over the disk's solid angle,
 	// far brighter than anything around it, the haze's glow included; that glow is the
-	// sun's halo (haze.gdshaderinc). The radiance map (ambient light and reflections)
-	// keeps a faint disk and halo instead: a disk that bright would sparkle in every
-	// glossy reflection.
+	// sun's halo (the atmosphere's forward lobe). The radiance map (ambient light and
+	// reflections) keeps a faint disk and halo instead: a disk that bright would sparkle
+	// in every glossy reflection.
 	vec3 sun_disk_color = sun_irradiance / (PI * sun_disk_size * sun_disk_size);
 	float sun_halo_strength = 0.0;
 	if (AT_CUBEMAP_PASS) {
@@ -105,11 +106,12 @@ void sky() {
 		vec4 cloud = textureLod(cloud_cubemap, EYEDIR, 0.0);
 		sky_color = sky_color * (1.0 - cloud.a) + cloud.rgb;
 	}
-	// Clouds sit above the haze, so it lies over them too, and clouds in front of the
-	// light shade it: the glow around a covered sun goes out.
-	if (haze_density > 0.0) {
-		float haze_light_visibility = clouds_enabled ? haze_cloud_light_transmittance(cloud_cubemap, haze_light_direction) : 1.0;
-		sky_color = haze_apply(sky_color, EYEDIR, haze_optical_depth(camera_height, EYEDIR, haze_ray_length(camera_height, EYEDIR)), haze_light_visibility);
+	// Clouds and the bodies lie beyond the atmosphere, which lies over all of them.
+	if (atmosphere_enabled) {
+		vec3 transmittance;
+		vec3 inscatter;
+		atmosphere_along(EYEDIR, -1.0, transmittance, inscatter);
+		sky_color = sky_color * transmittance + inscatter;
 	}
 	COLOR = sky_color;
 }

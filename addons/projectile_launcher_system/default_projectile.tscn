@@ -1,7 +1,7 @@
-[gd_scene load_steps=6 format=3]
+[gd_scene format=3 uid="uid://bkunapul4de5r"]
 
-[ext_resource type="Script" path="res://addons/projectile_launcher_system/projectile.gd" id="1_projectile"]
-[ext_resource type="PackedScene" path="res://addons/projectile_launcher_system/default_water_impact.tscn" id="2_water_impact"]
+[ext_resource type="Script" uid="uid://bn0q2riall17t" path="res://addons/projectile_launcher_system/projectile.gd" id="1_projectile"]
+[ext_resource type="PackedScene" uid="uid://bd00hu527p6mp" path="res://addons/projectile_launcher_system/default_water_impact.tscn" id="2_water_impact"]
 
 [sub_resource type="SphereShape3D" id="SphereShape3D_projectile"]
 radius = 0.15
@@ -15,17 +15,16 @@ roughness = 0.45
 radius = 0.15
 height = 0.3
 
-[node name="DefaultProjectile" type="RigidBody3D"]
+[node name="DefaultProjectile" type="RigidBody3D" unique_id=1315410513]
 collision_layer = 2
 collision_mask = 4
-mass = 1.0
 continuous_cd = true
 script = ExtResource("1_projectile")
 water_impact_effect_scene = ExtResource("2_water_impact")
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1319593915]
 shape = SubResource("SphereShape3D_projectile")
 
-[node name="Visual" type="MeshInstance3D" parent="."]
+[node name="Visual" type="MeshInstance3D" parent="." unique_id=1269567752]
 material_override = SubResource("StandardMaterial3D_projectile")
 mesh = SubResource("SphereMesh_projectile")

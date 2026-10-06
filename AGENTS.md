@@ -66,10 +66,18 @@ before touching its code; this file only records what is easy to get wrong.
     frame. Optional `get_cloud_cubemap()` returns a cubemap (rgb premultiplied
     cloud radiance, a opacity; `null` = no clouds) with a full mip chain, that
     the water composites into its sky reflection as `sky * (1 - a) + rgb`,
-    reading the mip that matches its roughness. Optional haze getters
-    (`get_haze_density/scale_height/anisotropy/light_direction/light_color/
-    ambient_color/cloud_shadow_strength()`, `density` 0 = none) describe the haze over the sea that
-    the water puts over its sky reflection.
+    reading the mip that matches its roughness. Optional
+    `get_atmosphere_sky_volumes()` (`[transmittance, inscatter,
+    inscatter_lobe]` `Texture3D`s for an observer on the sea, ray ends only;
+    empty = no atmosphere) and `get_atmosphere_light()` (`Vector4`: toward the
+    light, w the lobe's Henyey-Greenstein g) give the atmosphere the water
+    puts over its sky reflection; a source must emit `lighting_changed` before
+    freeing those textures.
+  - Atmosphere globals: global shader uniforms `atmosphere_*` (declared in
+    `project.godot` `[shader_globals]`, published by `SkySystem`, read through
+    `sky_system/shaders/atmosphere.gdshaderinc`). Transparent materials that
+    should be hazed include it and write `FOG = atmosphere_fog(...)`; only
+    `sky_system` and `floating_boat_template` may include it.
   - Hull cutouts: `HullWaterFootprint` nodes (group `ocean_hull`) with a baked
     `HullProfile`. Profiles are editor-baked and saved as `.tres`; never
     hand-edit their image. At most 8 hulls near the camera are cut out.
@@ -211,13 +219,18 @@ before touching its code; this file only records what is easy to get wrong.
   (sky shader, starfield, water) all composite `sky * (1 - a) + rgb`; change
   the encoding in all of them together. The mip chain is rebuilt every frame
   after the raymarch (`cloud_mip_downsample.glsl`, 2×2 box per face); the sky
-  and starfield show mip 0, the water blurred mips, and every haze copy a
-  blurred mip toward the light to shade the haze.
+  and starfield show mip 0, the water blurred mips, and the atmosphere's view
+  pass a blurred mip toward the light to shade the atmosphere's light.
 - The sky and starfield cloud uniforms (`clouds_enabled`, `cloud_cubemap`)
   are set only through `RenderingServer.material_set_param`, never
   `set_shader_parameter`, so the runtime texture is never saved into
   `materials/*.tres`. `SkySystem` re-sends them once per full cloud refresh,
   which is also what re-renders the sky radiance map.
+- The sky shader must not read `POSITION` (or `TIME`): either makes Godot
+  re-render the radiance map whenever the camera moves (REALTIME mode). The
+  camera's altitude comes from `atmosphere_observer.w`; the `Sky` is in
+  INCREMENTAL mode, and `SkySystem` asks for radiance refreshes itself
+  (`_refresh_sky_radiance()`: lighting, cloud refreshes, camera altitude).
 - The cloud weather map (r coverage, g type, b density) is written only by
   `cloud_weather.glsl` and only read by `cloud_raymarch.glsl`. Cloud motion
   and evolution belong in the producer; keep the raymarcher a pure reader.
@@ -232,24 +245,37 @@ before touching its code; this file only records what is easy to get wrong.
   its altitude). After editing `cloud_noise.glslinc` reimport
   `cloud_noise_bake.glsl` and `cloud_weather.glsl`.
 
-## Haze invariants
-- The haze model lives in `sky_system/shaders/haze.gdshaderinc` (sky and
-  starfield) with copies in `SkyHazeEffect.HAZE_SHADER`, `SkySystem`'s
-  `_get_haze_optical_depth()` (light transmittance) and the ocean's
-  `water.gdshader` (its sky reflection, across the addon boundary). Change all
-  of them together. Clouds shade the haze: its direct-light term is multiplied
-  by `haze_cloud_light_transmittance()` (cloud cubemap opacity toward the haze
-  light, times `SkySystem.cloud_haze_shadow_strength`, clamped);
-  `SkySystem` hands `SkyHazeEffect.cloud_cubemap` the RD texture and must clear
-  it before releasing the clouds.
+## Atmosphere invariants
+- The atmosphere model (media, light, integration) lives only in
+  `AtmosphereRenderer`'s compute passes (`sky_system/shaders/compute/
+  atmosphere_transmittance.glsl`, `atmosphere_view.glsl`, shared code in
+  `atmosphere_common.glslinc`). Consumers only sample the lookup textures; add
+  new media (air, ozone, multiple scattering) there, never in a consumer. The
+  one other copy of physics is `SkySystem._get_atmosphere_transmittance()`
+  (the transmittance LUT's integral for the scene's lights): same steps.
+- The view-volume layout (`atmosphere_view_uvw()`, slice distances) and the
+  lobe's phase are copied in `atmosphere_common.glslinc`,
+  `atmosphere.gdshaderinc` and the ocean's `water.gdshader`
+  (`atmosphere_apply_to_sky()`, observer at altitude 0). Change them together.
+  Consumers composite `background * transmittance + inscatter + lobe * phase`.
+- The global uniforms' list (`SkySystem.GLOBAL_*`, `atmosphere.gdshaderinc`,
+  `project.godot` `[shader_globals]`) changes in all three places together.
+  Only the owning SkySystem (`_global_atmosphere_owner`) writes them.
+- `AerialPerspectiveEffect` sits in `sky_system.tscn`'s WorldEnvironment
+  compositor and has no exported state (SkySystem sets its parameters), so
+  nothing runtime is saved. It runs before the transparent pass, blending
+  into the multisampled colour buffer per sample when MSAA is on (writes to
+  the resolved buffer before the transparent pass would be overwritten by its
+  resolve). Transparent surfaces haze themselves (`atmosphere_fog()`); opaque
+  materials must not write `FOG` or they are hazed twice. Keep Godot's
+  Environment fog off.
 - Haze settings are weather: `CloudPreset.haze_*`, listed in
   `BLENDED_PROPERTIES` (`haze_visibility` also in
   `GEOMETRIC_BLENDED_PROPERTIES`). `SkySystem.sea_level` must match the
   ocean's water height.
-- `SkyHazeEffect` sits in `sky_system.tscn`'s WorldEnvironment compositor and
-  has no exported state (SkySystem sets its parameters), so nothing runtime is
-  saved. It runs after the transparent pass (MSAA resolves over earlier
-  writes). Keep Godot's Environment fog off.
+- After editing `atmosphere_common.glslinc` reimport
+  `atmosphere_transmittance.glsl`, `atmosphere_view.glsl` and
+  `aerial_perspective.glsl` (delete their `.godot/imported/<name>-*` files).
 
 ## Physics layers
 - Layer 2 `Projectile`, layer 3 `Hitbox` (bit values 2 and 4). Launchers put

@@ -1,7 +1,7 @@
-[gd_scene load_steps=2 format=4 uid="uid://bm4bg7uoyr0xy"]
+[gd_scene format=3 uid="uid://bm4bg7uoyr0xy"]
 
-[ext_resource type="Script" path="res://systems/debug/ocean_debug_panel.gd" id="1_qo80x"]
+[ext_resource type="Script" uid="uid://dfkhmm10ikt5l" path="res://systems/debug/ocean_debug_panel.gd" id="1_qo80x"]
 
-[node name="OceanDebugPanel" type="CanvasLayer"]
+[node name="OceanDebugPanel" type="CanvasLayer" unique_id=1999762775]
 layer = 64
 script = ExtResource("1_qo80x")

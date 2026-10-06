@@ -12,48 +12,48 @@
 [sub_resource type="BoxShape3D" id="BoxShape3D_template"]
 size = Vector3(2, 1, 5)
 
-[node name="FloatingBoat" type="RigidBody3D"]
+[node name="FloatingBoat" type="RigidBody3D" unique_id=2115368152]
 mass = 1000.0
 center_of_mass_mode = 1
 script = ExtResource("1_boat")
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=302983775]
 shape = SubResource("BoxShape3D_template")
 
-[node name="BuoyantBody" type="Node" parent="."]
+[node name="BuoyantBody" type="Node" parent="." unique_id=1177248212]
 script = ExtResource("2_buoyant")
 heave_damping = 1.0
 sinking_enabled = true
 
-[node name="BuoyancyProbeVolume" type="Node3D" parent="."]
+[node name="BuoyancyProbeVolume" type="Node3D" parent="." unique_id=782435554]
 script = ExtResource("3_probe_volume")
 editor_auto_generate_if_empty = false
 debug_enabled = false
 
-[node name="GeneratedProbes" type="Node3D" parent="BuoyancyProbeVolume"]
+[node name="GeneratedProbes" type="Node3D" parent="BuoyancyProbeVolume" unique_id=846300433]
 
-[node name="Hitboxes" type="Node3D" parent="."]
+[node name="Hitboxes" type="Node3D" parent="." unique_id=1581731188]
 script = ExtResource("4_health")
 group_max_health = {
 "hull": 100.0
 }
 hit_effect_scene = ExtResource("5_hit_smoke")
 
-[node name="Weapons" type="Node3D" parent="."]
+[node name="Weapons" type="Node3D" parent="." unique_id=1799022156]
 script = ExtResource("6_weapons")
 
-[node name="HullWaterFootprint" type="Node3D" parent="."]
+[node name="HullWaterFootprint" type="Node3D" parent="." unique_id=1721786654]
 script = ExtResource("7_footprint")
 
-[node name="CameraTargets" type="Node3D" parent="."]
+[node name="CameraTargets" type="Node3D" parent="." unique_id=1262110883]
 
-[node name="ThirdPersonFocus" type="Marker3D" parent="CameraTargets"]
+[node name="ThirdPersonFocus" type="Marker3D" parent="CameraTargets" unique_id=398705810]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2, 0)
 
-[node name="FirstPersonSeat" type="Marker3D" parent="CameraTargets"]
+[node name="FirstPersonSeat" type="Marker3D" parent="CameraTargets" unique_id=812544978]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2, -1)
 
-[node name="BowSpray" type="Node3D" parent="."]
+[node name="BowSpray" type="Node3D" parent="." unique_id=177942471]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -2.5)
 script = ExtResource("8_bow_spray")
 

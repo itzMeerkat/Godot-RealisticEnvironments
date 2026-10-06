@@ -98,7 +98,10 @@ Spray at the stem. Every physics tick it queries the water at its own position
   Emits `slammed(impact_speed, position)`.
 
 Droplets are velocity-aligned streaks, emitted in world space with the hull's
-horizontal velocity, fading and growing over `particle_lifetime`.
+horizontal velocity, fading and growing over `particle_lifetime`. They are
+transparent, so they haze themselves through the sky system's atmosphere
+(`bow_spray.gdshader` includes its `atmosphere.gdshaderinc`; this template is
+the one place allowed to use both).
 
 ## `FloatingBoat`
 

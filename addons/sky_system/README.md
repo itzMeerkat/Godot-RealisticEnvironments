@@ -1,17 +1,18 @@
 # Sky System
 
 Day/night sky with astronomically positioned sun and moon, directional lights,
-a procedural sky shader, a rotating starfield, volumetric clouds and haze over
-the sea with weather presets, and getters that other systems (the ocean) read
-for lighting.
+a procedural sky shader, a rotating starfield, volumetric clouds, an atmosphere
+(haze over the sea) with weather presets, and getters that other systems (the
+ocean) read for lighting.
 
 ## Quick start
 
 Instance `sky_system.tscn`. It contains a `WorldEnvironment` with the sky
-material and a compositor holding the haze effect (`SkyHazeEffect`),
+material and a compositor holding the aerial perspective (`AerialPerspectiveEffect`),
 `SunLight` / `MoonLight` (`DirectionalLight3D`), optional
 `SunVisual` / `MoonVisual` meshes and a `Starfield` sphere. Remove any other
-`WorldEnvironment` or directional light from the scene.
+`WorldEnvironment` or directional light from the scene. The project must
+declare the atmosphere's global shader uniforms (see [Atmosphere](#atmosphere)).
 
 To drive the ocean, set `OceanSystem.sky_source_path` to this node.
 
@@ -31,13 +32,18 @@ To drive the ocean, set `OceanSystem.sky_source_path` to this node.
 - **Visuals** — `render_bodies_in_sky` draws sun/moon disks in the sky shader
   (default) instead of the billboard meshes. The sun disk has its real
   radiance (the sun light's irradiance over the disk's solid angle), so it is
-  the brightest thing in view; its glow comes from the haze. The radiance map
+  the brightest thing in view; its glow comes from the atmosphere. The radiance map
   that lights and reflects the scene keeps a faint disk and halo
   (`radiance_sun_disk_strength`, `radiance_sun_halo_strength`), as a disk that
   bright would sparkle in glossy reflections; `follow_active_camera` keeps the
   starfield and meshes centred on the camera. `sea_level`: world height of the
   sea. The sea's horizon is `√(2h/R)` below eye level for a camera `h` above it,
-  and the sky reaches down to there; the haze is densest at it.
+  and the sky reaches down to there; the haze is densest at it. The sky reads the
+  camera's altitude from the atmosphere instead of `POSITION`: a sky shader that
+  reads `POSITION` makes Godot re-render the radiance map on every camera move
+  (in REALTIME mode). The `Sky` uses INCREMENTAL mode, and SkySystem refreshes
+  the radiance map when the lighting, the clouds (once per full refresh) or the
+  camera's altitude (by more than 10 % or 2 m) change.
 
 ## Clouds
 
@@ -68,7 +74,7 @@ Mobile renderer).
 - `get_cloud_cubemap()` returns the cloud texture (or `null` while clouds are
   off) for other shaders, with a full mip chain for blurred lookups; `get_cloud_state()` the blended weather on screen.
 
-## Haze
+## Atmosphere
 
 Aerosol haze or fog over the sea, part of the weather: every `CloudPreset`
 has `haze_visibility` (m, at sea level: clear marine air 50–70 km, mist 1–5 km,
@@ -78,36 +84,69 @@ for sea fog) and `haze_anisotropy` (how small the glow around the sun is). It
 blends with the rest of the weather, the visibility geometrically, and works
 with clouds disabled too.
 
-- Model (`shaders/haze.gdshaderinc`): extinction `3.912 / visibility` at sea
-  level, falling off exponentially with height. A ray's optical depth follows
-  its height above the curved sea, so the horizon itself is fully hazed while
-  the sky overhead stays clear. Light scattered toward the eye: the sun (or the
-  moon at night, as the clouds pick it) with a sharp forward lobe of
-  Henyey-Greenstein `g = haze_anisotropy` (about 0.97) holding 75 % of the
-  scattering plus 25 % isotropic, the shape of Mie scattering by sea salt and
-  droplets (mean g about 0.73), which is the glow around the sun; plus an
-  isotropic part, the sky profile's horizon colour (the light a thick
-  horizontal path of lit air sends) and the light the haze took out of the
-  sunbeam, scattered on many times. Single scattering; the haze is grey.
-- Clouds shade it: they lie above the haze, so the light it scatters
-  directly (not the isotropic part) is multiplied by the clouds' transmittance
-  toward the light, read from a blurred mip of the cloud cubemap
-  (`haze_cloud_light_transmittance()`, about 2.3° wide). A sun behind a cloud
-  loses its glow; one in a gap keeps it, over the clouds around it too.
-  `cloud_haze_shadow_strength` (Clouds → Cloud Lighting) multiplies that
-  opacity, clamped to 1, to tune how much the clouds block.
-- Where it applies: the sky shader puts it over the sky and clouds along each
-  view ray to infinity; the starfield dims through it; `SkyHazeEffect` (in the
-  WorldEnvironment's compositor) puts it over every opaque pixel by its depth;
-  the sun and moon lights are dimmed by the haze between the sea and space
-  (a hazy low sun gets weak); consumers that draw their own sky read it with
-  the haze getters (the ocean's sky reflection).
-- `SkyHazeEffect` runs after the transparent pass (with MSAA the transparent
-  pass resolves over anything written earlier), so transparent surfaces are
-  hazed by the opaque depth behind them. It costs about 0.1 ms at 2580 × 1080.
-  It needs a RenderingDevice; the Compatibility renderer shows the sky's haze
-  only. Godot's own Environment fog stays off: its height fog depends only on
-  a pixel's height, not its distance.
+The model lives in one place, the compute passes of `AtmosphereRenderer`
+(`shaders/compute/atmosphere_*.glsl`, shared code in
+`atmosphere_common.glslinc`). Every consumer samples their lookup textures, so
+new media (air molecules, ozone, multiple scattering) are added there only.
+
+- Medium: a sphere of sea (radius 6371 km) under an atmosphere that ends 12
+  haze scale heights up. Haze extinction `3.912 / visibility` at sea level,
+  falling off exponentially with altitude, scattering albedo 1, grey. Rays
+  follow the curved sea, so the horizon itself is fully hazed while the sky
+  overhead stays clear; rays below the horizon end at the sea.
+- Light: the key light (the sun, or the moon at night, as the clouds pick it)
+  at its colour × energy above the atmosphere, dimmed down to every point by the
+  transmittance LUT (haze high up is lit more than haze near the sea under a
+  low sun) and shadowed by the planet; times the clouds' transmittance toward
+  the light over the camera (blurred cloud cubemap mip, about 2.3° wide; a sun
+  behind a cloud loses its glow, `cloud_haze_shadow_strength` multiplies that
+  opacity). Phase: a sharp forward Henyey-Greenstein lobe `g = haze_anisotropy`
+  (about 0.97) holding 75 % of the scattering plus 25 % isotropic, the shape of
+  Mie scattering by sea salt and droplets. Plus an isotropic ambient term
+  standing in for multiple scattering: the sky profile's horizon colour and the
+  light the haze took out of the sunbeam.
+- Passes, every frame (`AtmosphereRenderer.render()`):
+  1. `atmosphere_transmittance.glsl`: transmittance LUT (256 × 64), from space
+     to any altitude along any direction above the horizon (Bruneton's layout).
+  2. `atmosphere_view.glsl`: **view volumes** (32 × 128 × slices, rgba16f),
+     one ray per azimuth from the light × view angle (squeezed toward the
+     horizon, which falls on a texel edge). Three textures: transmittance,
+     isotropic in-scatter, and the lobe's in-scatter per unit phase (the lobe
+     is narrower than a texel, so consumers apply its phase per pixel). The
+     camera volume stores 64 distance slices (`d = 100 km · (k/62)²`, the last
+     one at the ray's end); the sea-level volume stores only the rays' ends
+     (the sky the water reflects).
+- Consumers composite `background · transmittance + inscatter + lobe · phase`:
+  - the sky shader and the starfield, at the ray's end;
+  - `AerialPerspectiveEffect` (in the WorldEnvironment's compositor), every
+    opaque pixel by its depth. It runs **before the transparent pass** as one
+    fullscreen triangle with dual-source blending, into the multisampled
+    colour buffer per sample when MSAA is on (the transparent pass's resolve
+    keeps it);
+  - transparent materials, each for its own distance (below);
+  - the ocean's sky reflection, from `get_atmosphere_sky_volumes()`;
+  - the sun and moon lights, dimmed by the transmittance from space to the sea
+    (`_get_atmosphere_transmittance()`, the LUT's integral on the CPU).
+- Global shader uniforms: SkySystem publishes the camera volume through
+  `atmosphere_enabled`, `atmosphere_view_transmittance`,
+  `atmosphere_view_inscatter`, `atmosphere_view_inscatter_lobe` (`sampler3D`),
+  `atmosphere_observer` (`vec4`: world position of the camera the volume is
+  built for, w its altitude as used), `atmosphere_light` (`vec4`: toward the
+  light, w the lobe's g) and `atmosphere_max_distance` (`float`). A project
+  using the sky system declares them in `project.godot` `[shader_globals]`
+  (this project does). The last SkySystem set up owns them.
+- Transparent materials: Godot draws them after the aerial perspective, so
+  they haze themselves. Include `shaders/atmosphere.gdshaderinc` and write
+  `FOG = atmosphere_fog(world_position);` (e.g. `BowSpray`'s
+  `bow_spray.gdshader`). `FOG` blends the lit colour by the mean transmittance
+  before alpha blending; it is exact while the transmittance is grey. A shader
+  that writes `FOG` must write it on every path. Transparent
+  `StandardMaterial3D`s are not hazed.
+- Cost on an RTX 4070 Ti at 3840 × 2160 internal: the passes about 0.05 ms,
+  the aerial perspective about 0.26 ms with 2× MSAA; the sky shader got cheaper
+  (a lookup instead of a march). It all needs a RenderingDevice; the
+  Compatibility renderer has no atmosphere. Godot's own Environment fog stays
+  off: its height fog depends only on a pixel's height, not its distance.
 
 ### Limits
 
@@ -115,6 +154,11 @@ with clouds disabled too.
   clamped under it, so flying into or above the clouds is not supported.
 - Clouds do not cast shadows on the scene; heavy cover only dims the lights
   through `sun_light_scale` / `ambient_light_scale`.
+- The atmosphere is horizontally uniform, and the clouds shade its light with
+  one value for the whole sky (toward the light over the camera).
+- Points beyond 100 km (`AtmosphereRenderer.MAX_DISTANCE`) are hazed as at
+  100 km; keep cameras' far planes below it. The planar reflection camera's
+  transparent surfaces are hazed as seen from the main camera.
 - A refreshed texel blends with its previous value, so fast changes (a preset
   jump, a fast day cycle) settle over roughly half a second.
 
@@ -124,12 +168,11 @@ with clouds disabled too.
 the body), `get_sun_color()`, `get_sky_top_color()`, `get_sky_horizon_color()`,
 `get_sky_ground_horizon_color()`, `get_sky_ground_bottom_color()`,
 `get_sun_visibility()`, `get_moon_visibility()`, `get_moon_phase()`,
-`get_night_factor()`, `get_star_visibility()`, `get_time_of_day()`. Haze:
-`get_haze_density()` (extinction at sea level, 1/m; 0 = none),
-`get_haze_scale_height()`, `get_haze_anisotropy()`,
-`get_haze_light_direction()`, `get_haze_light_color()` (radiance per unit
-phase function), `get_haze_ambient_color()` and
-`get_haze_cloud_shadow_strength()`, as `shaders/haze.gdshaderinc` uses them.
+`get_night_factor()`, `get_star_visibility()`, `get_time_of_day()`.
+Atmosphere: `get_atmosphere_sky_volumes()` (the sea-level view volumes,
+`[transmittance, inscatter, inscatter_lobe]` as `Texture3D`s, or empty without
+an atmosphere) and `get_atmosphere_light()` (`Vector4`: toward the light, w
+the lobe's g).
 
 Signals: `time_of_day_changed(time_of_day)`, `lighting_changed`.
 
@@ -208,6 +251,9 @@ the runtime texture is never stored in `materials/*.tres`.
 `sky_system.gd` / `.tscn`, `sky_profile.gd` (`SkyProfile`),
 `cloud_preset.gd` (`CloudPreset`), `cloud_presets/*.tres`,
 `cloud_renderer.gd` (`CloudRenderer`), `shaders/compute/cloud_*.glsl` and
-`cloud_noise.glslinc`, `sky_haze_effect.gd` (`SkyHazeEffect`),
-`shaders/haze.gdshaderinc`, `shaders/sky.gdshader`, `shaders/starfield.gdshader`,
+`cloud_noise.glslinc`, `atmosphere_renderer.gd` (`AtmosphereRenderer`),
+`shaders/compute/atmosphere_*.glsl` and `atmosphere_common.glslinc`,
+`aerial_perspective_effect.gd` (`AerialPerspectiveEffect`),
+`shaders/aerial_perspective.glsl`, `shaders/atmosphere.gdshaderinc`,
+`shaders/sky.gdshader`, `shaders/starfield.gdshader`,
 `shaders/celestial_disk.gdshader`, `materials/*.tres`.

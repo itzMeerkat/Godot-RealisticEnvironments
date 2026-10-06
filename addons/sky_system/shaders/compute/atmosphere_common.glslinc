@@ -1,0 +1,194 @@
+/*
+ * The atmosphere over the sea: geometry, the participating media and the layouts of
+ * the lookup textures AtmosphereRenderer builds from them. Shared by the atmosphere
+ * passes (atmosphere_transmittance.glsl, atmosphere_view.glsl) and the aerial
+ * perspective pass (aerial_perspective.glsl).
+ *
+ * The planet is a sphere of radius ATMOSPHERE_EARTH_RADIUS whose surface is the sea
+ * (altitude 0). The atmosphere is horizontally uniform and ends at top_altitude.
+ * Media today: haze (aerosols and droplets, CloudPreset haze_*), extinction
+ * haze_density * exp(-altitude / haze_scale_height), scattering albedo 1. New media
+ * (air molecules, ozone) are added to atmosphere_extinction() and the scattering
+ * sums of atmosphere_view.glsl; consumers only read the lookup textures.
+ *
+ * Godot-shader copy of the view-volume lookup (atmosphere_view_uv() and the phase):
+ * shaders/atmosphere.gdshaderinc, and the ocean's water.gdshader. Change them together.
+ */
+
+#define ATMOSPHERE_PI 3.14159265359
+#define ATMOSPHERE_EARTH_RADIUS 6371000.0
+// Share of the haze's scattering in its forward (Henyey-Greenstein) lobe; the rest is isotropic.
+#define ATMOSPHERE_HAZE_FORWARD_SHARE 0.75
+
+/* x * (1 - 1/n) + 0.5/n: maps [0, 1] onto the centres of the first and last of n texels. */
+float atmosphere_unit_to_uv(float x, float n) {
+	return 0.5 / n + x * (1.0 - 1.0 / n);
+}
+
+float atmosphere_uv_to_unit(float u, float n) {
+	return (u - 0.5 / n) / (1.0 - 1.0 / n);
+}
+
+/*
+ * Distance from altitude h along a ray whose direction has cosine mu with the local up
+ * to the sphere at altitude top (h <= top). Written so planet-sized radii keep their
+ * precision: (R + top)^2 - (R + h)^2 is factored, and the root that would cancel uses
+ * the product of the roots.
+ */
+float atmosphere_distance_to_top(float h, float mu, float top) {
+	float r = ATMOSPHERE_EARTH_RADIUS + h;
+	float c = max(top - h, 0.0) * (2.0 * ATMOSPHERE_EARTH_RADIUS + top + h);
+	float b = r * mu;
+	float root = sqrt(b * b + c);
+	return mu >= 0.0 ? c / max(b + root, 1e-6) : root - b;
+}
+
+/* Distance from altitude h >= 0 along mu to the sea, or -1 when the ray misses it. */
+float atmosphere_distance_to_sea(float h, float mu) {
+	if (mu >= 0.0) {
+		return -1.0;
+	}
+	float b = (ATMOSPHERE_EARTH_RADIUS + h) * mu;
+	float c = h * (2.0 * ATMOSPHERE_EARTH_RADIUS + h);
+	float discriminant = b * b - c;
+	if (discriminant < 0.0) {
+		return -1.0;
+	}
+	return c / (sqrt(discriminant) - b);
+}
+
+/* Altitude after distance t along a ray leaving altitude h with cosine mu. */
+float atmosphere_altitude_along(float h, float mu, float t) {
+	float r = ATMOSPHERE_EARTH_RADIUS + h;
+	// r(t)^2 - r^2, then r(t) - r = that / (r(t) + r) without cancellation.
+	float k = t * (2.0 * r * mu + t);
+	return h + k / (sqrt(r * r + k) + r);
+}
+
+/* Cosine between the local up and the horizon direction at altitude h (<= 0). */
+float atmosphere_horizon_mu(float h) {
+	float hh = max(h, 0.0);
+	return -sqrt(hh * (2.0 * ATMOSPHERE_EARTH_RADIUS + hh)) / (ATMOSPHERE_EARTH_RADIUS + hh);
+}
+
+/* Extinction (1/m) at altitude h, per colour channel. */
+vec3 atmosphere_extinction(float h, float haze_density, float haze_scale_height) {
+	return vec3(haze_density * exp(-max(h, 0.0) / haze_scale_height));
+}
+
+/*
+ * Mean extinction along a segment whose altitude goes linearly from h_a to h_b: exact
+ * for the exponential haze profile, so long steps through thin air stay accurate.
+ */
+vec3 atmosphere_mean_extinction(float h_a, float h_b, float haze_density, float haze_scale_height) {
+	float a = max(h_a, 0.0) / haze_scale_height;
+	float x = max(h_b, 0.0) / haze_scale_height - a;
+	float density_a = exp(-a);
+	float mean = abs(x) < 1e-4 ? density_a * (1.0 - 0.5 * x) : density_a * (1.0 - exp(-x)) / x;
+	return vec3(haze_density * mean);
+}
+
+/*
+ * Transmittance LUT (atmosphere_transmittance.glsl): transmittance from altitude h to
+ * space along mu, for rays that do not hit the sea. Bruneton's parameterisation: x is
+ * the distance to the top between its minimum and maximum, y the distance to the
+ * horizon; both concentrate texels near the horizon.
+ */
+vec2 atmosphere_transmittance_uv(float h, float mu, float top, vec2 size) {
+	float top_horizon = sqrt(top * (2.0 * ATMOSPHERE_EARTH_RADIUS + top));
+	float rho = sqrt(max(h, 0.0) * (2.0 * ATMOSPHERE_EARTH_RADIUS + max(h, 0.0)));
+	float d = atmosphere_distance_to_top(h, mu, top);
+	float d_min = top - h;
+	float d_max = rho + top_horizon;
+	float x_mu = (d - d_min) / max(d_max - d_min, 1e-6);
+	float x_r = rho / top_horizon;
+	return vec2(atmosphere_unit_to_uv(clamp(x_mu, 0.0, 1.0), size.x), atmosphere_unit_to_uv(clamp(x_r, 0.0, 1.0), size.y));
+}
+
+/* Inverse of atmosphere_transmittance_uv(): (altitude, mu) of a texel. */
+vec2 atmosphere_transmittance_altitude_mu(vec2 uv, float top, vec2 size) {
+	float x_mu = atmosphere_uv_to_unit(uv.x, size.x);
+	float x_r = atmosphere_uv_to_unit(uv.y, size.y);
+	float top_horizon = sqrt(top * (2.0 * ATMOSPHERE_EARTH_RADIUS + top));
+	float rho = top_horizon * x_r;
+	float h = rho * rho / (sqrt(rho * rho + ATMOSPHERE_EARTH_RADIUS * ATMOSPHERE_EARTH_RADIUS) + ATMOSPHERE_EARTH_RADIUS);
+	float d_min = top - h;
+	float d_max = rho + top_horizon;
+	float d = d_min + x_mu * (d_max - d_min);
+	float r = ATMOSPHERE_EARTH_RADIUS + h;
+	// (R + top)^2 - r^2 = top_horizon^2 - rho^2.
+	float mu = d <= 0.0 ? 1.0 : (top_horizon * top_horizon - rho * rho - d * d) / (2.0 * r * d);
+	return vec2(h, clamp(mu, -1.0, 1.0));
+}
+
+/*
+ * View volume (atmosphere_view.glsl): seen from an observer at altitude h, x is the
+ * azimuth from the light (0 toward it, 1 away; the atmosphere is symmetric about the
+ * light's vertical plane), y the view angle (0 zenith, 0.5 horizon, 1 nadir), squeezed
+ * toward the horizon on both sides (Hillaire 2020). The horizon falls on a texel edge,
+ * so the sky and the sea below it never blend.
+ */
+float atmosphere_view_y(float h, float mu) {
+	float horizon_mu = atmosphere_horizon_mu(h);
+	// Angular size of the sea seen from h, and the zenith angle of the horizon.
+	float beta = acos(clamp(-horizon_mu, -1.0, 1.0));
+	float zenith_horizon = ATMOSPHERE_PI - beta;
+	float zenith = acos(clamp(mu, -1.0, 1.0));
+	if (zenith < zenith_horizon) {
+		return 0.5 * (1.0 - sqrt(max(1.0 - zenith / zenith_horizon, 0.0)));
+	}
+	return 0.5 + 0.5 * sqrt(clamp((zenith - zenith_horizon) / max(beta, 1e-6), 0.0, 1.0));
+}
+
+float atmosphere_view_mu(float h, float y) {
+	float horizon_mu = atmosphere_horizon_mu(h);
+	float beta = acos(clamp(-horizon_mu, -1.0, 1.0));
+	float zenith_horizon = ATMOSPHERE_PI - beta;
+	float zenith;
+	if (y < 0.5) {
+		float s = 1.0 - 2.0 * y;
+		zenith = zenith_horizon * (1.0 - s * s);
+	} else {
+		float s = 2.0 * y - 1.0;
+		zenith = zenith_horizon + beta * s * s;
+	}
+	return cos(zenith);
+}
+
+/* Azimuth coordinate (x) of a world direction, against the light direction. */
+float atmosphere_view_x(vec3 direction, vec3 light_direction) {
+	float d = length(direction.xz);
+	float l = length(light_direction.xz);
+	// Straight up or down, or a light at the zenith: every azimuth is the same.
+	float cos_phi = d > 1e-5 && l > 1e-5 ? dot(direction.xz, light_direction.xz) / (d * l) : 1.0;
+	return acos(clamp(cos_phi, -1.0, 1.0)) / ATMOSPHERE_PI;
+}
+
+/*
+ * Distance of view-volume slice k (of slice_count): slice 0 at the observer, slices up
+ * to slice_count - 2 at max_distance * (k / (slice_count - 2))^2, and the last slice at
+ * the ray's end (the sea, or space). A volume with one slice holds only the ray's end.
+ */
+float atmosphere_slice_distance(int k, int slice_count, float max_distance) {
+	float s = float(k) / float(slice_count - 2);
+	return max_distance * s * s;
+}
+
+/*
+ * Texture coordinates in a view volume for a point at distance from the observer along
+ * direction; distance < 0 means the ray's end (the sky behind everything). Every axis
+ * stays on texel centres, so neither the sampler's repeat mode nor the ray-end slice
+ * leak into a lookup.
+ */
+vec3 atmosphere_view_uvw(vec3 direction, float distance, vec3 light_direction, float observer_altitude, float max_distance, vec3 size) {
+	float x = atmosphere_unit_to_uv(atmosphere_view_x(direction, light_direction), size.x);
+	float y = clamp(atmosphere_view_y(observer_altitude, direction.y), 0.5 / size.y, 1.0 - 0.5 / size.y);
+	float slice = distance < 0.0 ? size.z - 1.0 : sqrt(clamp(distance / max_distance, 0.0, 1.0)) * (size.z - 2.0);
+	return vec3(x, y, (slice + 0.5) / size.z);
+}
+
+/* Henyey-Greenstein phase function (1/sr). */
+float atmosphere_henyey_greenstein(float cos_theta, float g) {
+	float denominator = 1.0 + g * g - 2.0 * g * cos_theta;
+	return (1.0 - g * g) / (4.0 * ATMOSPHERE_PI * denominator * sqrt(denominator));
+}

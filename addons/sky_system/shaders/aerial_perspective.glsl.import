@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://cie4g111g88rf"
+path="res://.godot/imported/aerial_perspective.glsl-1535be49e4fa078e024a859221020347.res"
+
+[deps]
+
+source_file="res://addons/sky_system/shaders/aerial_perspective.glsl"
+dest_files=["res://.godot/imported/aerial_perspective.glsl-1535be49e4fa078e024a859221020347.res"]
+
+[params]
+

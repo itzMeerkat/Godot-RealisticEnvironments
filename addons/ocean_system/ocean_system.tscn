@@ -1,7 +1,9 @@
 [gd_scene format=3 uid="uid://lsh7kr3nyl2t"]
 
 [ext_resource type="Script" uid="uid://dbxip3y4rh1va" path="res://addons/ocean_system/ocean_system.gd" id="1_ocean"]
+[ext_resource type="PlaneMesh" path="res://addons/ocean_system/editor_water_preview_mesh.tres" id="1_rlqii"]
 [ext_resource type="Script" uid="uid://cqbpvt36rest3" path="res://addons/ocean_system/wave_cascade_parameters.gd" id="2_params"]
+
 [sub_resource type="Resource" id="Resource_primary_swell"]
 script = ExtResource("2_params")
 tile_length = Vector2(128, 128)
@@ -45,7 +47,8 @@ foam_lifetime = 0.8
 process_priority = 100
 sorting_offset = 999.0
 cast_shadow = 0
-extra_cull_margin = 7000.0
+extra_cull_margin = 362.03867
+mesh = ExtResource("1_rlqii")
 script = ExtResource("1_ocean")
 parameters = Array[ExtResource("2_params")]([SubResource("Resource_primary_swell"), SubResource("Resource_secondary_swell"), SubResource("Resource_surface_detail")])
 mesh_base_cell_size = 0.5

@@ -96,8 +96,8 @@ Heights match the rendered mesh:
 - **Sky Reflection** — procedural sky reflection, `sun_specular_strength`, sun
   glitter; `manual_*` values are used when no sky source is set or the source
   lacks a value. A sky source with `get_cloud_cubemap()` (SkySystem) also puts
-  its clouds into the reflection, and one with `get_haze_density()` its haze
-  (see Lighting below).
+  its clouds into the reflection, and one with `get_atmosphere_sky_volumes()`
+  its atmosphere (see Lighting below).
 - **Planar Reflections** — mirrored-camera reflection of scene geometry,
   resolution, strength, and clipping of submerged pixels.
 - **External Wind** — `use_external_wind`, `wind_source_path`.
@@ -519,15 +519,17 @@ Lighting:
 - `SPECULAR` is 0, which turns off the engine's sky reflection; the shader
   adds its own as `EMISSION`: procedural sky reflection (Fresnel, blurred by
   the same roughness; the sky gradient over three directions, clouds from the
-  cloud cubemap's mip whose blur matches the reflection lobe, then the haze
-  between the water and the sky) and planar reflection.
-- Haze (`haze_apply_to_sky()`): with a sky source that has the haze getters
-  (SkySystem), the reflected sky is seen through the haze along the reflected
-  ray, from the sea surface. It is a copy of the sky system's
-  `shaders/haze.gdshaderinc`; change both together. Its light is shaded by
-  the clouds toward it, from the same cloud cubemap. The haze between the
-  camera and the water is not the water's: the sky system's compositor effect
-  puts it over the whole scene.
+  cloud cubemap's mip whose blur matches the reflection lobe, then the
+  atmosphere between the water and the sky) and planar reflection.
+- Atmosphere (`atmosphere_apply_to_sky()`): with a sky source that has
+  `get_atmosphere_sky_volumes()` and `get_atmosphere_light()` (SkySystem), the
+  reflected sky is seen through the atmosphere along the reflected ray, from
+  the sea surface: a lookup of the source's sea-level view volumes at the
+  ray's end (`sky * transmittance + inscatter + lobe * phase`). The texture
+  layout is the sky system's `atmosphere_view_uvw()` for an observer at
+  altitude 0; change both together. The atmosphere between the camera and the
+  water is not the water's: the sky system's aerial perspective puts it over
+  the whole scene.
 - Reflections use one reflectance: Fresnel averaged over the same slopes as the
   roughness (Bruneton et al. 2010, mean normal plus slope deviation
   `alpha / √2`). Schlick on the filtered normal would make distant water a

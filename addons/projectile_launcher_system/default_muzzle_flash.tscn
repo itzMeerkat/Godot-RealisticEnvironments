@@ -1,6 +1,6 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene format=3 uid="uid://bd45cvqmw6l6w"]
 
-[ext_resource type="Script" path="res://addons/projectile_launcher_system/muzzle_flash.gd" id="1_flash"]
+[ext_resource type="Script" uid="uid://uavo3lrkyqws" path="res://addons/projectile_launcher_system/muzzle_flash.gd" id="1_flash"]
 
-[node name="DefaultMuzzleFlash" type="Node3D"]
+[node name="DefaultMuzzleFlash" type="Node3D" unique_id=888359837]
 script = ExtResource("1_flash")

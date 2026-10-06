@@ -865,19 +865,15 @@ func _update_sky_lighting_shader_parameters() -> void:
 	var cloud_cubemap : Texture = sky_source.call(&'get_cloud_cubemap') if sky_source != null and sky_source.has_method(&'get_cloud_cubemap') else null
 	_set_water_shader_parameter(&'sky_clouds_enabled', cloud_cubemap != null)
 	_set_water_shader_parameter(&'sky_cloud_cubemap', cloud_cubemap)
-	# Optional haze over the sea, put over the reflected sky; a source without it
-	# lacks the methods.
-	var has_haze := sky_source != null and sky_source.has_method(&'get_haze_density')
-	_set_water_shader_parameter(&'sky_haze_density', float(sky_source.call(&'get_haze_density')) if has_haze else 0.0)
-	if has_haze:
-		_set_water_shader_parameter(&'sky_haze_scale_height', float(sky_source.call(&'get_haze_scale_height')))
-		_set_water_shader_parameter(&'sky_haze_anisotropy', float(sky_source.call(&'get_haze_anisotropy')))
-		_set_water_shader_parameter(&'sky_haze_light_direction', sky_source.call(&'get_haze_light_direction'))
-		var light_color : Color = sky_source.call(&'get_haze_light_color')
-		var ambient_color : Color = sky_source.call(&'get_haze_ambient_color')
-		_set_water_shader_parameter(&'sky_haze_light_color', Vector3(light_color.r, light_color.g, light_color.b))
-		_set_water_shader_parameter(&'sky_haze_ambient_color', Vector3(ambient_color.r, ambient_color.g, ambient_color.b))
-		_set_water_shader_parameter(&'sky_haze_cloud_shadow_strength', float(sky_source.call(&'get_haze_cloud_shadow_strength')))
+	# Optional atmosphere between the sea and the reflected sky; a source without one
+	# lacks the method or returns no volumes.
+	var volumes : Array = sky_source.call(&'get_atmosphere_sky_volumes') if sky_source != null and sky_source.has_method(&'get_atmosphere_sky_volumes') else []
+	_set_water_shader_parameter(&'sky_atmosphere_enabled', not volumes.is_empty())
+	_set_water_shader_parameter(&'sky_atmosphere_transmittance', volumes[0] if not volumes.is_empty() else null)
+	_set_water_shader_parameter(&'sky_atmosphere_inscatter', volumes[1] if not volumes.is_empty() else null)
+	_set_water_shader_parameter(&'sky_atmosphere_inscatter_lobe', volumes[2] if not volumes.is_empty() else null)
+	if not volumes.is_empty():
+		_set_water_shader_parameter(&'sky_atmosphere_light', sky_source.call(&'get_atmosphere_light'))
 
 # The sky source is duck-typed and may provide only some values; missing ones
 # fall back to the manual_* exports.

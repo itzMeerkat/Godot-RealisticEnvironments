@@ -1,7 +1,66 @@
-[gd_resource type="ShaderMaterial" format=3 uid="uid://byumtcccq4ew3"]
+[gd_resource type="ShaderMaterial" format=4 uid="uid://byumtcccq4ew3"]
 
 [ext_resource type="Shader" uid="uid://cjhn8nkfr4mn0" path="res://addons/ocean_system/shaders/spatial/water.gdshader" id="1_uffek"]
 
 [resource]
 render_priority = 1
 shader = ExtResource("1_uffek")
+shader_parameter/foam_color = Color(0, 0, 0, 1)
+shader_parameter/water_absorption = Vector3(0.45, 0.07, 0.03)
+shader_parameter/water_scattering = Vector3(0.03, 0.035, 0.04)
+shader_parameter/water_scattering_anisotropy = 0.85
+shader_parameter/clear_roughness = 0.1
+shader_parameter/foam_roughness = 0.24
+shader_parameter/normal_strength = 1.0
+shader_parameter/foam_intensity = 1.0
+shader_parameter/foam_detail_tile_size = 3.0
+shader_parameter/sky_top_color = Color(0.12, 0.42, 0.78, 1)
+shader_parameter/sky_horizon_color = Color(0.58, 0.78, 0.94, 1)
+shader_parameter/sky_ground_horizon_color = Color(0.16, 0.24, 0.28, 1)
+shader_parameter/sky_ground_bottom_color = Color(0.01, 0.02, 0.03, 1)
+shader_parameter/sky_sun_direction = Vector3(0, 0.2, -1)
+shader_parameter/sky_sun_visibility = 1.0
+shader_parameter/sky_clouds_enabled = false
+shader_parameter/sky_haze_density = 0.0
+shader_parameter/sky_haze_scale_height = 1000.0
+shader_parameter/sky_haze_anisotropy = 0.97
+shader_parameter/sky_haze_light_direction = Vector3(0, 1, 0)
+shader_parameter/sky_haze_light_color = Vector3(0, 0, 0)
+shader_parameter/sky_haze_ambient_color = Vector3(0, 0, 0)
+shader_parameter/sky_haze_cloud_shadow_strength = 1.0
+shader_parameter/sky_reflection_enabled = true
+shader_parameter/sky_reflection_strength = 1.0
+shader_parameter/sky_reflection_f0 = 0.02
+shader_parameter/sky_horizon_boost = 0.85
+shader_parameter/sun_specular_strength = 1.0
+shader_parameter/sun_glitter_density = 1000000.0
+shader_parameter/sun_glitter_rate = 12.0
+shader_parameter/water_debug_view = 0
+shader_parameter/planar_reflection_enabled = false
+shader_parameter/planar_reflection_view_projection = Projection(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1)
+shader_parameter/planar_reflection_camera_position = Vector3(0, 0, 0)
+shader_parameter/planar_reflection_texel_angle = 0.001
+shader_parameter/planar_reflection_strength = 0.0
+shader_parameter/planar_reflection_plane_y = 0.0
+shader_parameter/use_bicubic_normals = true
+shader_parameter/fragment_cascade_limit = 3
+shader_parameter/lod_grid_enabled = false
+shader_parameter/lod_ranges = PackedFloat32Array(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+shader_parameter/lod_morph_starts = PackedFloat32Array(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+shader_parameter/lod_top_level = 0
+shader_parameter/near_hull_count = 0
+shader_parameter/near_hull_world_to_local_x = PackedVector4Array(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+shader_parameter/near_hull_world_to_local_y = PackedVector4Array(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+shader_parameter/near_hull_world_to_local_z = PackedVector4Array(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+shader_parameter/near_hull_spheres = PackedVector4Array(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+shader_parameter/near_hull_rects = PackedVector4Array(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+shader_parameter/near_hull_params = PackedVector4Array(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+shader_parameter/near_hull_top_offsets = PackedFloat32Array(0, 0, 0, 0, 0, 0, 0, 0)
+shader_parameter/interaction_enabled = false
+shader_parameter/interaction_window = Vector4(0, 0, 0, 0)
+shader_parameter/interaction_inv_extent = 0.0
+shader_parameter/interaction_cell_size = 0.5
+shader_parameter/map_scales = PackedVector4Array(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+shader_parameter/spectrum_blend_states = PackedVector4Array(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+shader_parameter/num_cascades = 0
+shader_parameter/wave_frame_blends = PackedVector4Array(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)

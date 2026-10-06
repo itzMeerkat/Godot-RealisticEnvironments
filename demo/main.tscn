@@ -5,7 +5,6 @@
 [ext_resource type="Script" uid="uid://bw2332cbm64tv" path="res://addons/sky_system/sky_profile.gd" id="3_nr2wj"]
 [ext_resource type="PackedScene" uid="uid://c4amd8o0cttut" path="res://systems/camera/player_camera_rig.tscn" id="4_camera_rig"]
 [ext_resource type="PackedScene" uid="uid://lsh7kr3nyl2t" path="res://addons/ocean_system/ocean_system.tscn" id="7_s0x5e"]
-[ext_resource type="PlaneMesh" path="res://addons/ocean_system/editor_water_preview_mesh.tres" id="8_fdg1k"]
 [ext_resource type="PackedScene" uid="uid://bm4bg7uoyr0xy" path="res://systems/debug/ocean_debug_panel.tscn" id="9_gb4mm"]
 [ext_resource type="Script" uid="uid://btyuqnmfuyrr6" path="res://addons/wind_system/wind_system.gd" id="10_tfjfv"]
 [ext_resource type="PackedScene" uid="uid://ckdc57htjsaad" path="res://addons/sky_system/sky_system.tscn" id="11_sky"]
@@ -124,10 +123,7 @@ script = ExtResource("10_tfjfv")
 wind_direction = 0.0
 
 [node name="Water" parent="." unique_id=1159832475 instance=ExtResource("7_s0x5e")]
-extra_cull_margin = 362.03867
 gi_mode = 0
-mesh = ExtResource("8_fdg1k")
-skeleton = NodePath("")
 sky_source_path = NodePath("../SkySystem")
 interaction_viscosity = 0.05
 use_external_wind = true
