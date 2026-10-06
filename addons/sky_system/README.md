@@ -131,6 +131,10 @@ new media (multiple scattering, the air's own glow) are added there only.
   clouds toward the light over it (a blurred cloud cubemap mip, about 2.3°
   wide: a sun behind a cloud loses its glow), farther than 5 km by the mean
   cover overhead; `cloud_haze_shadow_strength` multiplies those opacities.
+  There the cloud base lights the air and the sea instead: a dome of the
+  clouds' mean radiance overhead (the cloud cubemap's top face, last mip),
+  scattered isotropically. Under an overcast deck that is nearly all the light
+  (the air and the horizon below a rain deck are as grey as its base).
   Phase: the air's Rayleigh phase; the haze's sharp forward Henyey-Greenstein
   lobe `g = haze_anisotropy` (about 0.97) holding 75 % of its scattering plus
   25 % isotropic, the shape of Mie scattering by sea salt and droplets. Every
@@ -239,9 +243,12 @@ units must stay off (they change what Godot's exposure means).
   the sun at night) has no haze glow around it, and its sky is mirrored about
   the key light's vertical plane (the volume's layout): exact for a full moon
   opposite the sun, approximate otherwise.
-- Thick cloud decks (overcast, rain) are too dark underneath, and so is the air
-  below them: the clouds' lighting does not yet carry enough light through a
-  thick layer.
+- The air below the clouds is lit by one mean cloud dome for the whole sky,
+  so a lone thick cloud lights the air all around it as much as a deck would
+  per unit of cover.
+- The `rain` and `storm` presets darken their clouds with a low
+  `scattering_albedo` (0.8, 0.6; real droplets scatter more than 99 %), a
+  stylistic choice.
 - Points beyond 100 km (`AtmosphereRenderer.MAX_DISTANCE`) are hazed as at
   100 km; keep cameras' far planes below it. The planar reflection camera's
   transparent surfaces are hazed as seen from the main camera.

@@ -31,6 +31,10 @@
  * is laid out around the key light and symmetric about its vertical plane, so the
  * secondary light's phase and angle are averaged over each texel's two mirrored
  * directions, and the clouds shade it by their mean cover.
+ *
+ * Below the cloud layer the clouds also light the air and the sea: the cloud base, seen
+ * as a dome of its mean radiance overhead (cloud_dome), scatters isotropically. Under an
+ * overcast deck that is nearly all the light there is.
  */
 
 #include "atmosphere_common.glslinc"
@@ -80,6 +84,8 @@ vec3 inscatter_lobe;
 // observer, and through the mean cover overhead.
 float cloud_light_local;
 float cloud_light_mean;
+// The clouds' mean radiance overhead (premultiplied: the gaps count as black).
+vec3 cloud_dome;
 
 void init_cloud_light() {
 	vec3 direction = normalize(vec3(pc.light_direction.x, max(pc.light_direction.y, CLOUD_SHADE_ANGLE), pc.light_direction.z));
@@ -88,7 +94,9 @@ void init_cloud_light() {
 	cloud_light_local = 1.0 - clamp(textureLod(cloud_cubemap, direction, lod).a * pc.cloud_shadow_strength, 0.0, 1.0);
 	// The top face's last mip: its mean opacity, about 45 degrees around the zenith.
 	float mean_lod = float(textureQueryLevels(cloud_cubemap) - 1);
-	cloud_light_mean = 1.0 - clamp(textureLod(cloud_cubemap, vec3(0.0, 1.0, 0.0), mean_lod).a * pc.cloud_shadow_strength, 0.0, 1.0);
+	vec4 mean_cloud = textureLod(cloud_cubemap, vec3(0.0, 1.0, 0.0), mean_lod);
+	cloud_light_mean = 1.0 - clamp(mean_cloud.a * pc.cloud_shadow_strength, 0.0, 1.0);
+	cloud_dome = mean_cloud.rgb;
 }
 
 /*
@@ -108,6 +116,16 @@ float cloud_shade(float h, float t) {
 float cloud_shade_secondary(float h) {
 	float below = 1.0 - smoothstep(pc.cloud_altitude, pc.cloud_top_altitude, h);
 	return mix(1.0, cloud_light_mean, below);
+}
+
+/*
+ * Light the cloud base sends to a point at altitude h, per unit of scattering
+ * coefficient: a dome of radiance cloud_dome over the upper hemisphere, scattered
+ * isotropically (the Rayleigh phase averages the same over a hemisphere): half of it.
+ */
+vec3 cloud_dome_inscatter(float h) {
+	float below = 1.0 - smoothstep(pc.cloud_altitude, pc.cloud_top_altitude, h);
+	return cloud_dome * (0.5 * below);
 }
 
 // The secondary light in the volume's frame for the texel's direction: its cosine to the
@@ -154,6 +172,7 @@ void march(float mu, float cos_light, vec3 key_light, float t_start, float t_end
 		vec3 multiple_secondary = light_secondary * atmosphere_multiple_scattering(ms_lut, h_mid, mu_secondary, pc.top_altitude, pc.haze_scale_height);
 		inscatter += path * (rayleigh * (sun_secondary * secondary_rayleigh_phase + multiple_secondary)
 				+ haze * (sun_secondary / (4.0 * ATMOSPHERE_PI) + multiple_secondary));
+		inscatter += path * (rayleigh + haze) * cloud_dome_inscatter(h_mid);
 		transmittance *= segment_transmittance;
 		previous_t = t;
 		previous_h = h;
@@ -223,6 +242,8 @@ void main() {
 		vec3 sea_irradiance = key_light * cloud_shade(0.0, t_end) * atmosphere_light_transmittance(transmittance_lut, 0.0, mu_light_sea, pc.top_altitude) * max(mu_light_sea, 0.0);
 		float mu_secondary_sea = clamp(((ATMOSPHERE_EARTH_RADIUS + h0) * pc.secondary_direction.y + t_end * secondary_cos) / ATMOSPHERE_EARTH_RADIUS, -1.0, 1.0);
 		sea_irradiance += pc.secondary_color * cloud_shade_secondary(0.0) * atmosphere_light_transmittance(transmittance_lut, 0.0, mu_secondary_sea, pc.top_altitude) * max(mu_secondary_sea, 0.0);
+		// The cloud dome's irradiance: pi times its radiance.
+		sea_irradiance += 2.0 * ATMOSPHERE_PI * cloud_dome_inscatter(0.0);
 		inscatter += transmittance * sea_irradiance * (ATMOSPHERE_SEA_ALBEDO / ATMOSPHERE_PI);
 	}
 	store(ivec3(texel, size.z - 1));
