@@ -19,7 +19,13 @@
  * atmosphere gets back from it.
  * Light: single scattering of the key light (the air with the Rayleigh phase, the haze
  * with a forward lobe and an isotropic share) plus all higher orders from the
- * multiple-scattering LUT (Hillaire 2020), isotropic. New media are added here (to
+ * multiple-scattering LUT (Hillaire 2020), isotropic.
+ * Transport (delta-Eddington): the forward peak of the haze's lobe sends light on almost
+ * unchanged, so light travelling to a point (transmittance LUT), the higher orders
+ * (multiple-scattering LUT) and in-scatter on its way to the observer see only the rest
+ * of the haze (atmosphere_haze_transport_share()). Only the transmittance of what lies
+ * behind (objects, the sky's background) uses all of it: what the peak scatters out of
+ * an image arrives as glow, not as the image. New media are added here (to
  * atmosphere_segment_media()); consumers only read the lookup textures.
  *
  * Godot-shader copy of the view-volume lookup (atmosphere_view_uv() and the phase):
@@ -37,6 +43,15 @@
 #define ATMOSPHERE_OZONE_ABSORPTION vec3(0.650e-6, 1.881e-6, 0.085e-6)
 #define ATMOSPHERE_OZONE_CENTER 25000.0
 #define ATMOSPHERE_OZONE_HALF_WIDTH 15000.0
+/*
+ * Share of the haze's extinction that light transport sees: its forward lobe (HG g) is
+ * truncated to a delta peak of g^2 of it (delta-Eddington) and that peak counts as
+ * unscattered light.
+ */
+float atmosphere_haze_transport_share(float g) {
+	return 1.0 - ATMOSPHERE_HAZE_FORWARD_SHARE * g * g;
+}
+
 // Diffuse albedo of the sea for light it sends back up into the atmosphere: the open
 // ocean reflects about 6 % of the light from the sun and the sky.
 #define ATMOSPHERE_SEA_ALBEDO 0.06

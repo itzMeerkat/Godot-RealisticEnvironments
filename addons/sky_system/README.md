@@ -137,7 +137,15 @@ new media (multiple scattering, the air's own glow) are added there only.
   (the air and the horizon below a rain deck are as grey as its base).
   Phase: the air's Rayleigh phase; the haze's sharp forward Henyey-Greenstein
   lobe `g = haze_anisotropy` (about 0.97) holding 75 % of its scattering plus
-  25 % isotropic, the shape of Mie scattering by sea salt and droplets. Every
+  25 % isotropic, the shape of Mie scattering by sea salt and droplets. For
+  light transport the lobe's forward peak (g² of it, delta-Eddington) counts as
+  unscattered: light on its way to a point, the higher orders and in-scatter on
+  its way to the camera see only the rest of the haze, while objects and the sky
+  behind fade by all of it. Checked against a Monte Carlo reference of the same
+  atmosphere (all orders): within 6 % in clear air and light haze; near the
+  sun along long hazy paths the glow comes out too bright (30 % in sea fog, up
+  to 60 % in red beside a setting sun: the peak's small deflections add up);
+  without it, fog near the sun was 12× too dark. Every
   higher order of scattering (the light of the sky itself, what keeps twilight
   and shadows blue) comes from the multiple-scattering LUT, isotropic. The other
   body lights the atmosphere the same way, without the lobe (its phase averaged

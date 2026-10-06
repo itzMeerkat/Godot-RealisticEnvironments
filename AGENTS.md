@@ -279,7 +279,10 @@ before touching its code; this file only records what is easy to get wrong.
   new media there, never in a consumer. The one other copy of physics is
   `SkySystem._get_atmosphere_transmittance()` (the transmittance LUT's
   integral on the CPU, for the scene's lights, the sky's disks and the
-  clouds' light): same media constants and steps. Light and view rays cross
+  clouds' light): same media constants and steps, but the whole haze (the direct
+  beam; the passes' transport haze drops the haze lobe's forward peak,
+  `atmosphere_haze_transport_share()`, delta-Eddington, and the glow it
+  scatters reaches the scene through the sky). Light and view rays cross
   every medium. The whole sky (blue sky, twilight, ground below the horizon)
   is the atmosphere's; don't add sky colour gradients or ambient terms.
 - The sun's and moon's light colours come only from that transmittance (white

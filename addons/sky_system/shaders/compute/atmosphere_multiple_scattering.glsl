@@ -11,7 +11,9 @@
  * direction integrates the second order (isotropic phase, light dimmed by the
  * transmittance LUT, plus the sea's diffuse reflection where the ray ends on it) and
  * the share of isotropic light the path scatters back toward the point. Treating every
- * higher order like the second gives the geometric series L2 / (1 - f).
+ * higher order like the second gives the geometric series L2 / (1 - f). The haze is
+ * the transport haze (atmosphere_haze_transport_share()): with its forward peak taken
+ * out, what is left scatters nearly isotropically, as the series assumes.
  */
 
 #include "atmosphere_common.glslinc"
@@ -29,7 +31,7 @@ layout(push_constant, std430) restrict readonly uniform PushConstants {
 	float haze_density;      // extinction at sea level (1/m)
 	float haze_scale_height; // m
 	float top_altitude;      // m
-	float pad;
+	float haze_anisotropy;   // the lobe's g
 } pc;
 
 shared vec3 shared_second_order[MS_DIRECTIONS];
@@ -54,6 +56,7 @@ void main() {
 	float cos_light = dot(direction, light);
 
 	float r0 = ATMOSPHERE_EARTH_RADIUS + h;
+	float haze_density = pc.haze_density * atmosphere_haze_transport_share(pc.haze_anisotropy);
 	float t_sea = atmosphere_distance_to_sea(h, mu);
 	float t_end = t_sea >= 0.0 ? t_sea : atmosphere_distance_to_top(h, mu, pc.top_altitude);
 	vec3 transmittance = vec3(1.0);
@@ -68,7 +71,7 @@ void main() {
 		vec3 rayleigh;
 		float haze;
 		vec3 extinction;
-		atmosphere_segment_media(previous_h, step_h, pc.haze_density, pc.haze_scale_height, rayleigh, haze, extinction);
+		atmosphere_segment_media(previous_h, step_h, haze_density, pc.haze_scale_height, rayleigh, haze, extinction);
 		vec3 segment_transmittance = exp(-extinction * (t - previous_t));
 		// Integral of transmittance * scattering over the segment.
 		vec3 scattered = transmittance * (1.0 - segment_transmittance) / max(extinction, vec3(1e-12)) * (rayleigh + haze);

@@ -56,9 +56,11 @@ var sky_ambient_buffer : RID
 ## back by SkySystem).
 var camera_sky_light_buffer : RID
 
-## Haze (CloudPreset haze_*): extinction at sea level (1/m) and scale height (m).
+## Haze (CloudPreset haze_*): extinction at sea level (1/m), scale height (m) and its
+## forward lobe's Henyey-Greenstein g.
 var haze_density := 0.0
 var haze_scale_height := 1000.0
+var haze_anisotropy := 0.97
 ## Toward the key light (sun or moon).
 var light_direction := Vector3.UP
 ## The key light above the atmosphere: pi * energy, white.
@@ -166,7 +168,7 @@ func get_observer_altitude(camera_altitude : float) -> float:
 ## (pre-exposed: the light is scaled by it).
 func render(camera_altitude : float, cloud_cubemap : RID, exposure : float) -> void:
 	var top := get_top_altitude()
-	var media_push := _pack([haze_density, haze_scale_height, top, 0.0])
+	var media_push := _pack([haze_density, haze_scale_height, top, haze_anisotropy])
 	var compute_list := _device.compute_list_begin()
 	_device.compute_list_bind_compute_pipeline(compute_list, _transmittance_pipeline)
 	_device.compute_list_bind_uniform_set(compute_list, _transmittance_set, 0)
@@ -199,7 +201,7 @@ func render(camera_altitude : float, cloud_cubemap : RID, exposure : float) -> v
 			volume[0], haze_density, haze_scale_height, top,
 			light_direction.x, light_direction.y, light_direction.z, MAX_DISTANCE,
 			light_color.r * exposure, light_color.g * exposure, light_color.b * exposure, cloud_shadow_strength,
-			cloud_altitude, cloud_top_altitude, 0.0, 0.0,
+			cloud_altitude, cloud_top_altitude, haze_anisotropy, 0.0,
 			secondary_direction.x, secondary_direction.y, secondary_direction.z, 0.0,
 			secondary_color.r * exposure, secondary_color.g * exposure, secondary_color.b * exposure, 0.0,
 		])

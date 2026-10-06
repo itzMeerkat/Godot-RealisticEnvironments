@@ -12,7 +12,9 @@
  *                        phase function (1/sr); consumers multiply by
  *                        atmosphere_henyey_greenstein(dot(view, light), g)
  * so a consumer composites background * transmittance + inscatter + lobe * phase. The
- * lobe's phase is left out because it is far narrower than a texel.
+ * lobe's phase is left out because it is far narrower than a texel. In-scatter reaches
+ * the observer through the transport haze (atmosphere_haze_transport_share()), the
+ * background through all of it.
  *
  * Slices, by the volume's depth:
  *   more than 2: atmosphere_slice_distance() (the camera's volume);
@@ -68,7 +70,7 @@ layout(push_constant, std430) restrict readonly uniform PushConstants {
 	float cloud_shadow_strength; // multiplies the cloud opacity toward the light
 	float cloud_altitude;    // m, the cloud layer's base: where a two-slice volume stores its first slice
 	float cloud_top_altitude; // m, the cloud layer's top: above it the clouds shade nothing
-	float pad_1;
+	float haze_anisotropy;   // the lobe's g
 	float pad_2;
 	vec3 secondary_direction; // world, toward the other body
 	float pad_3;
@@ -77,8 +79,13 @@ layout(push_constant, std430) restrict readonly uniform PushConstants {
 } pc;
 
 vec3 transmittance;
+// Transmittance through the transport haze, which in-scatter reaches the observer by.
+vec3 transport;
 vec3 inscatter;
 vec3 inscatter_lobe;
+
+// atmosphere_haze_transport_share() of the haze's g.
+float haze_transport_share;
 
 // Share of the key light that comes through the clouds: toward the light over the
 // observer, and through the mean cover overhead.
@@ -152,10 +159,13 @@ void march(float mu, float cos_light, vec3 key_light, float t_start, float t_end
 		float haze;
 		vec3 extinction;
 		atmosphere_segment_media(previous_h, h, pc.haze_density, pc.haze_scale_height, rayleigh, haze, extinction);
+		float haze_transport = haze * haze_transport_share;
+		vec3 extinction_transport = extinction - vec3(haze - haze_transport);
 		vec3 segment_transmittance = exp(-extinction * (t - previous_t));
-		// Integral of the transmittance from the observer over the segment, per unit of
-		// scattering coefficient.
-		vec3 path = transmittance * (1.0 - segment_transmittance) / max(extinction, vec3(1e-12));
+		vec3 segment_transport = exp(-extinction_transport * (t - previous_t));
+		// Integral of the transport transmittance from the observer over the segment, per
+		// unit of scattering coefficient.
+		vec3 path = transport * (1.0 - segment_transport) / max(extinction_transport, vec3(1e-12));
 		float t_mid = 0.5 * (previous_t + t);
 		float h_mid = min(atmosphere_altitude_along(h0, mu, t_mid), pc.top_altitude);
 		// The light's cosine to the local up there: the planet curves under the ray.
@@ -165,15 +175,16 @@ void march(float mu, float cos_light, vec3 key_light, float t_start, float t_end
 		vec3 multiple = light * atmosphere_multiple_scattering(ms_lut, h_mid, mu_light, pc.top_altitude, pc.haze_scale_height);
 		inscatter_lobe += path * haze * sun * ATMOSPHERE_HAZE_FORWARD_SHARE;
 		inscatter += path * (rayleigh * (sun * rayleigh_phase + multiple)
-				+ haze * (sun * ((1.0 - ATMOSPHERE_HAZE_FORWARD_SHARE) / (4.0 * ATMOSPHERE_PI)) + multiple));
+				+ haze * sun * ((1.0 - ATMOSPHERE_HAZE_FORWARD_SHARE) / (4.0 * ATMOSPHERE_PI)) + haze_transport * multiple);
 		float mu_secondary = clamp((r0 * pc.secondary_direction.y + t_mid * secondary_cos) / (ATMOSPHERE_EARTH_RADIUS + h_mid), -1.0, 1.0);
 		vec3 light_secondary = pc.secondary_color * cloud_shade_secondary(h_mid);
 		vec3 sun_secondary = light_secondary * atmosphere_light_transmittance(transmittance_lut, h_mid, mu_secondary, pc.top_altitude);
 		vec3 multiple_secondary = light_secondary * atmosphere_multiple_scattering(ms_lut, h_mid, mu_secondary, pc.top_altitude, pc.haze_scale_height);
 		inscatter += path * (rayleigh * (sun_secondary * secondary_rayleigh_phase + multiple_secondary)
-				+ haze * (sun_secondary / (4.0 * ATMOSPHERE_PI) + multiple_secondary));
-		inscatter += path * (rayleigh + haze) * cloud_dome_inscatter(h_mid);
+				+ haze * sun_secondary / (4.0 * ATMOSPHERE_PI) + haze_transport * multiple_secondary);
+		inscatter += path * (rayleigh + haze_transport) * cloud_dome_inscatter(h_mid);
 		transmittance *= segment_transmittance;
+		transport *= segment_transport;
 		previous_t = t;
 		previous_h = h;
 	}
@@ -200,6 +211,7 @@ void main() {
 	vec3 light = vec3(sqrt(max(1.0 - pc.light_direction.y * pc.light_direction.y, 0.0)), pc.light_direction.y, 0.0);
 	float cos_light = dot(direction, light);
 	vec3 key_light = pc.light_color;
+	haze_transport_share = atmosphere_haze_transport_share(pc.haze_anisotropy);
 	init_cloud_light();
 	// The secondary light in the frame: x along the key light's horizontal direction.
 	vec2 key_xz = length(pc.light_direction.xz) > 1e-5 ? normalize(pc.light_direction.xz) : vec2(1.0, 0.0);
@@ -212,6 +224,7 @@ void main() {
 	float t_sea = atmosphere_distance_to_sea(h0, mu);
 	float t_end = t_sea >= 0.0 ? t_sea : atmosphere_distance_to_top(h0, mu, pc.top_altitude);
 	transmittance = vec3(1.0);
+	transport = vec3(1.0);
 	inscatter = vec3(0.0);
 	inscatter_lobe = vec3(0.0);
 	float t = 0.0;
@@ -244,7 +257,7 @@ void main() {
 		sea_irradiance += pc.secondary_color * cloud_shade_secondary(0.0) * atmosphere_light_transmittance(transmittance_lut, 0.0, mu_secondary_sea, pc.top_altitude) * max(mu_secondary_sea, 0.0);
 		// The cloud dome's irradiance: pi times its radiance.
 		sea_irradiance += 2.0 * ATMOSPHERE_PI * cloud_dome_inscatter(0.0);
-		inscatter += transmittance * sea_irradiance * (ATMOSPHERE_SEA_ALBEDO / ATMOSPHERE_PI);
+		inscatter += transport * sea_irradiance * (ATMOSPHERE_SEA_ALBEDO / ATMOSPHERE_PI);
 	}
 	store(ivec3(texel, size.z - 1));
 }

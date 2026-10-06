@@ -583,7 +583,9 @@ static func _light_color(transmittance : Color) -> Color:
 
 ## Share of the light from direction that crosses the atmosphere from space down to
 ## altitude (m above the sea), per channel: the transmittance LUT's integral
-## (shaders/compute/atmosphere_transmittance.glsl, same media and steps), with or
+## (shaders/compute/atmosphere_transmittance.glsl, same media and steps, but the whole
+## haze: this is the direct beam, while the LUT's transport haze also lets through the
+## light its forward peak scatters, which reaches the scene as the sky's glow), with or
 ## without the haze. Black where the planet is in the way.
 func _get_atmosphere_transmittance(altitude : float, direction : Vector3, with_haze : bool) -> Color:
 	var h := maxf(altitude, 0.0)
@@ -649,6 +651,7 @@ func _push_atmosphere_parameters() -> void:
 		return
 	_atmosphere_renderer.haze_density = _haze_density
 	_atmosphere_renderer.haze_scale_height = _haze_scale_height
+	_atmosphere_renderer.haze_anisotropy = _haze_anisotropy
 	_atmosphere_renderer.light_direction = _haze_light_direction
 	_atmosphere_renderer.light_color = _haze_light_color
 	_atmosphere_renderer.secondary_direction = _haze_secondary_direction
