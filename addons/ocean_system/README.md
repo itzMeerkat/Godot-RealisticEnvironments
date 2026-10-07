@@ -679,6 +679,13 @@ to add the interaction simulation (set per owner by `submit_surface_query`). Dis
   the frame pair;
 - horizontal-displacement inversion.
 
+Normals come from the rendered surface's tangents at the surface point over the
+query point: the displaced positions of its rest neighbours ±0.25 m in X/Z (no
+inversion needed; heights at world offsets would need four), plus the
+simulation's slope where it is included. They are the geometry's, not the
+shading's: the slope maps hold the waves' physical slope (`normal_scale`), while
+`displacement_scale` steepens only the geometry.
+
 Godot doesn't track include dependencies: reimport `surface_query.glsl` and
 `iwave_pressure.glsl` after editing the include (delete their
 `.godot/imported/<name>-*` files; the importer compares content, not dates).
