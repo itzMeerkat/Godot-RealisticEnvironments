@@ -663,8 +663,14 @@ vec2 find_refracted_scene(vec3 origin, vec3 direction, vec3 up, float bottom_dep
 				}
 			}
 			// The ray's own depth change over the final interval bounds the gap at a surface.
+			// A ray that meets an object crosses its surface inside the object's silhouette, so
+			// both ends of the interval see that surface; one that slips behind the object's edge
+			// sees the background, much deeper, at the near end.
 			float interval_depth = (1.0 / mix(start_k, end_k, far_u)) - (1.0 / mix(start_k, end_k, near_u));
-			if (far_gap <= interval_depth + REFRACTION_THICKNESS)
+			float near_scene = scene_view_depth(start_uv + delta * near_u, inv_projection);
+			float far_scene = scene_view_depth(start_uv + delta * far_u, inv_projection);
+			bool silhouette = near_scene > far_scene + interval_depth + REFRACTION_THICKNESS;
+			if (far_gap <= interval_depth + REFRACTION_THICKNESS && !silhouette)
 				return start_uv + delta * far_u;
 			if (!hidden) // A few pixels back from the object's silhouette, so filtering does not pick it up.
 				last_seen_uv = start_uv + delta * near_u - delta / max(length(delta), 1e-6) * REFRACTION_SILHOUETTE_MARGIN * screen_pixel;

@@ -572,6 +572,10 @@ Lighting:
   scene to behind it, a bisection finds the transition: just behind the
   surface there means it passes through it (a screen point and its depth are
   one point); far behind means it went behind an object and continues hidden.
+  So does a ray whose transition sees the far background at its near end and
+  the object at its far end: it slipped behind the object's edge instead of
+  crossing its surface (which happens inside the silhouette); counting those
+  as hits drew a dotted outline of the object around its hidden region.
   Scene above the water (higher than the surface point) or sky is nothing the
   ray can meet. A hidden ray that finds nothing afterwards meets what the
   screen does not show, and the scene where it was last seen (3 px off the
