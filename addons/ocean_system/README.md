@@ -167,7 +167,8 @@ tiles for swell and short tiles for chop. Per cascade:
   path, 5 crest scattering phase, 6 crest scattering (sun), 7 deep-water albedo,
   8 reflection direction, 9 roughness, 10 slope deviation, 11 foam,
   12 transmittance to the scene behind the surface, 13 refracted path through
-  the water (/ 32 m), 14 refraction offset on screen (× 20). The ocean
+  the water (/ 32 m), 14 refraction offset on screen (× 20), 15 caustic light
+  factor (× 0.25). The ocean
   resets it to 0 on ready, so set it on the material at runtime.
 
 ## Hull cutouts
@@ -589,6 +590,24 @@ Lighting:
   in `ocean_system.tscn`): the light under the surface is the `K_d` term. Only
   opaque geometry shows through; other transparent objects under the surface
   are hidden by the water's depth.
+- Caustics (`caustic_light()`): everything under the water is seen through it,
+  so the water lights it. Refraction turns a slope `s` into a ray deviation
+  `k s` (`k = 1 − cos i / (n cos t)`), so after a path `D` the sun's light
+  that entered at `x` lands at `x + D (t0 − k s(x))`, and the irradiance there
+  is scaled by `1 / det(I − D k H)`, `H` the height's Hessian (differenced from
+  the slope maps; the singularity softened by `CAUSTIC_SOFTENING`). Light
+  reaching a point comes from a surface patch `r = D k σ` wide, `σ` the
+  deviation of the slopes of waves shorter than `r` (the mips' variance, found
+  by fixed-point iteration): those waves focus far above it and their light
+  arrives mixed, so `H` is filtered at `r`, the sun disk's blur over the path,
+  or the pixel's footprint, whichever is widest. Rough seas therefore show
+  broad patches and calm ones a sharp network. Only the direct sun is
+  redistributed: the scene behind is multiplied by `1 + share (focus − 1)`
+  (mean 1), `share` from a clear sky's direct share (0.8), the sun's
+  visibility, the beam not scattered on the way down, and how much the surface
+  faces the light (`hint_normal_roughness_texture`). Shadows are unknown to
+  the water: a shadowed surface below still shows the pattern, at its dimmer
+  brightness. Debug view 15 shows the factor (× 0.25).
 - Exposure: Godot exposes `EMISSION` by the camera's exposure
   (`CameraAttributes.exposure_multiplier`, the camera's or else the world's),
   but the sky source's clouds and atmosphere and the planar reflection are

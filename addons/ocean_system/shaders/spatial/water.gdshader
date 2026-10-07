@@ -56,6 +56,12 @@ render_mode world_vertex_coords, cull_disabled, depth_draw_always;
 #define REFRACTION_SILHOUETTE_MARGIN 3.0
 #define REFRACTION_NEAR 0.05
 #define REFRACTION_MAX_DISTANCE 64.0
+// Caustics (caustic_light()): angular diameter (rad) of the sun's disk, which blurs them
+// by that times the light's path; the share of the direct sun in a clear sky's light on
+// a level surface; and the softening of the focus singularity (peak about 1 / it).
+#define SUN_ANGULAR_DIAMETER 0.0093
+#define CAUSTIC_CLEAR_SKY_DIRECT_SHARE 0.8
+#define CAUSTIC_SOFTENING 0.12
 // Mean cosine of the downwelling light's directions below the surface (about 0.8 under a
 // high sun): its diffuse attenuation is K_d = (a + bb) / mean cosine (Kirk 1984).
 #define WATER_DOWNWELLING_MEAN_COSINE 0.8
@@ -115,7 +121,7 @@ uniform float sun_specular_strength : hint_range(0.0, 4.0) = 1.0;
 // Stochastic glints (see glitter_scale()): facets per square meter of water, 0 = smooth highlight.
 uniform float sun_glitter_density : hint_range(0.0, 10000000.0) = 1000000.0;
 uniform float sun_glitter_rate : hint_range(0.0, 60.0) = 12.0; // glint patterns per second
-uniform int water_debug_view : hint_range(0, 14) = 0;
+uniform int water_debug_view : hint_range(0, 15) = 0;
 // The camera's exposure (CameraAttributes.exposure_multiplier, or the world's), set
 // every frame by OceanSystem. The reflections are summed pre-exposed, as the sky source's
 // clouds and atmosphere and the planar reflection are stored, and EMISSION (which Godot
@@ -134,6 +140,8 @@ uniform float planar_reflection_plane_y = 0.0;
 // The opaque scene behind the water (linear HDR, exposed like EMISSION after scene_exposure).
 uniform sampler2D scene_color : hint_screen_texture, filter_linear_mipmap, repeat_disable;
 uniform sampler2D scene_depth : hint_depth_texture, filter_nearest, repeat_disable;
+// The opaque scene's view-space normals (rgb * 2 - 1), for which way what lies below faces.
+uniform sampler2D scene_normal_roughness : hint_normal_roughness_texture, filter_nearest, repeat_disable;
 uniform bool use_bicubic_normals = true;
 uniform int fragment_cascade_limit : hint_range(1, 8) = 3;
 // CDLOD mesh (OceanSystem._update_lod_grid). Off for the editor's preview plane.
@@ -673,6 +681,105 @@ vec2 find_refracted_scene(vec3 origin, vec3 direction, vec3 up, float bottom_dep
 	return screen_project(origin + direction * t, projection);
 }
 
+/* Cascade i's wave slope (gradient of the height) at a rest position, from mip lod. */
+vec2 cascade_slope(uint i, vec2 rest_xz, float lod) {
+	vec4 scales = map_scales[i];
+	vec4 blend_state = spectrum_blend_states[i];
+	float b_weight = wave_frame_blends[i].x;
+	vec3 coords = vec3(rest_xz * scales.xy, blend_state.x);
+	vec2 slope = mix(textureLod(normals_a, coords, lod).xy, textureLod(normals_b, coords, lod).xy, b_weight) * blend_state.z;
+	// Uniform branch: the pending spectrum is only sampled during a crossfade.
+	if (blend_state.w > 0.0) {
+		coords.z = blend_state.y;
+		slope += mix(textureLod(normals_a, coords, lod).xy, textureLod(normals_b, coords, lod).xy, b_weight) * blend_state.w;
+	}
+	return slope * scales.w;
+}
+
+/*
+ * Variance of the wave slopes within a footprint of width meters around a rest position,
+ * summed over the cascades: what the mips average away there (E|g|^2 - |E g|^2).
+ */
+float slope_variance_within(vec2 rest_xz, float width) {
+	float map_size = float(textureSize(normals_a, 0).x);
+	float variance = 0.0;
+	uint cascade_count = min(uint(num_cascades), uint(fragment_cascade_limit));
+	for (uint i = 0U; i < cascade_count; ++i) {
+		vec4 scales = map_scales[i];
+		vec4 blend_state = spectrum_blend_states[i];
+		float texel = 1.0 / (map_size * max(scales.x, scales.y));
+		float lod = log2(max(width / texel, 1.0));
+		vec4 a = textureLod(normals_a, vec3(rest_xz * scales.xy, blend_state.x), lod);
+		vec4 b = textureLod(normals_b, vec3(rest_xz * scales.xy, blend_state.x), lod);
+		vec4 m = mix(a, b, wave_frame_blends[i].x);
+		variance += max(m.z - dot(m.xy, m.xy), 0.0) * blend_state.z * blend_state.z * scales.w * scales.w;
+	}
+	return variance * normal_strength * normal_strength;
+}
+
+/*
+ * Caustics: the waves focus and spread the sunlight that reaches what lies below.
+ * Refraction turns a slope s into a deviation k s of the refracted ray (k = 1 - cos i /
+ * (n cos t) in the plane of incidence; 1 - 1/n under a high sun), so after a path D the
+ * light that entered at rest position x lands at x + D (t0 - k s(x)), and the irradiance
+ * there is scaled by 1 / det(I - D k H), H the height's Hessian (the slopes' gradient).
+ * Light reaching one point below comes from a patch of the surface about r = D k sigma
+ * wide, sigma the deviation of the slopes of waves shorter than r: those focus far above
+ * the point and their light arrives evenly mixed. So H is differenced over r (found by
+ * iterating from the patch of all slopes), the blur the sun's disk gives over the path,
+ * or the pixel's footprint there, whichever is widest, from the mips that average the
+ * waves finer than it. Only the direct sun is redistributed, so the result is
+ * 1 + share (focus - 1), whose mean over the bottom stays 1: share is the direct sun's
+ * part of the light on that surface (sun visibility, the part of the beam not scattered
+ * on the way down, and how much the surface faces the light).
+ * hit: world position below the surface; hit_normal: its world normal; surface: the
+ * (flat) world position of a nearby surface point, rest_xz its rest position; other
+ * surface points' rest positions are taken at the same offset (the waves' horizontal
+ * displacement changes little over the distance).
+ */
+float caustic_light(vec3 hit, vec3 hit_normal, vec3 to_sun, vec3 surface, vec2 rest_xz, float pixel_size) {
+	float depth = surface.y - hit.y;
+	if (to_sun.y <= 0.0 || depth <= 0.0 || num_cascades == 0)
+		return 1.0;
+	vec3 down = refract(-to_sun, vec3(0.0, 1.0, 0.0), 1.0 / WATER_IOR);
+	float cos_t = -down.y;
+	float path = depth / cos_t;
+	float facing = dot(hit_normal, -down);
+	vec3 beam_scattering = water_scattering + WATER_MOLECULAR_SCATTERING;
+	float survival = exp(-dot(beam_scattering, vec3(1.0 / 3.0)) * path);
+	float direct = CAUSTIC_CLEAR_SKY_DIRECT_SHARE * sky_sun_visibility * survival;
+	// Light on a surface turned by facing / cos_t relative to a level one: the direct part
+	// scales with it, the diffuse rest does not.
+	float lit = direct * max(facing, 0.0) / cos_t;
+	float share = lit / (lit + 1.0 - direct);
+	if (share <= 0.001)
+		return 1.0;
+	// Where that light entered: back along the refracted ray, at the matching rest position.
+	vec2 entry_rest = rest_xz + (hit.xz - down.xz * path - surface.xz);
+	float k = 1.0 - to_sun.y / (WATER_IOR * cos_t);
+	float blur = max(SUN_ANGULAR_DIAMETER * path, pixel_size);
+	float mixing = path * k * sqrt(slope_variance_within(entry_rest, 1.0e6));
+	for (int iteration = 0; iteration < 2; ++iteration)
+		mixing = path * k * sqrt(slope_variance_within(entry_rest, max(mixing, blur)));
+	blur = max(blur, mixing);
+	float map_size = float(textureSize(normals_a, 0).x);
+	mat2 hessian = mat2(0.0);
+	uint cascade_count = min(uint(num_cascades), uint(fragment_cascade_limit));
+	for (uint i = 0U; i < cascade_count; ++i) {
+		vec4 scales = map_scales[i];
+		float texel = 1.0 / (map_size * max(scales.x, scales.y));
+		float e = max(blur, texel);
+		float lod = log2(e / texel);
+		vec2 dx = vec2(e, 0.0);
+		vec2 dz = vec2(0.0, e);
+		hessian[0] += (cascade_slope(i, entry_rest + dx, lod) - cascade_slope(i, entry_rest - dx, lod)) / (2.0 * e);
+		hessian[1] += (cascade_slope(i, entry_rest + dz, lod) - cascade_slope(i, entry_rest - dz, lod)) / (2.0 * e);
+	}
+	mat2 jacobian = mat2(1.0) - path * k * normal_strength * hessian;
+	float focus = inversesqrt(determinant(jacobian) * determinant(jacobian) + CAUSTIC_SOFTENING * CAUSTIC_SOFTENING);
+	return 1.0 + share * (focus - 1.0);
+}
+
 /*
  * Albedo of optically deep water (radiance = albedo * irradiance / PI), from its optical
  * properties: the remote-sensing reflectance just below the surface, rrs = 0.0949 u + 0.0794 u^2
@@ -1003,6 +1110,7 @@ void fragment() {
 	vec3 transmitted_radiance = vec3(0.0);
 	float underwater_path = 0.0;
 	vec2 refracted_uv = SCREEN_UV;
+	float caustics = 1.0;
 	vec3 up_view = (VIEW_MATRIX * vec4(0.0, 1.0, 0.0, 0.0)).xyz;
 	vec4 straight_point = scene_view_position(SCREEN_UV, INV_PROJECTION_MATRIX);
 	if (straight_point.w > 0.0) {
@@ -1035,8 +1143,11 @@ void fragment() {
 			float spread = 1.41421356 * slope_sigma * (1.0 - 1.0 / WATER_IOR) * underwater_path;
 			float meters_per_pixel = 2.0 * max(-hit.z, 0.001) / (PROJECTION_MATRIX[1][1] * VIEWPORT_SIZE.y);
 			float refraction_lod = log2(max(2.0 * spread / meters_per_pixel, 1.0));
+			vec3 hit_world = (INV_VIEW_MATRIX * vec4(hit.xyz, 1.0)).xyz;
+			vec3 hit_normal = (INV_VIEW_MATRIX * vec4(textureLod(scene_normal_roughness, refracted_uv, 0.0).xyz * 2.0 - 1.0, 0.0)).xyz;
+			caustics = caustic_light(hit_world, normalize(hit_normal), sun_dir, water_world_position, UV, meters_per_pixel);
 			// Explicit LOD: this follows the hull discard.
-			vec3 behind = textureLod(scene_color, refracted_uv, refraction_lod).rgb;
+			vec3 behind = textureLod(scene_color, refracted_uv, refraction_lod).rgb * caustics;
 			transmitted_radiance = behind * water_transmittance * (1.0 - sky_fresnel) * (1.0 - foam_factor);
 		}
 	}
@@ -1123,6 +1234,8 @@ void fragment() {
 			debug_color = water_transmittance; // to the scene behind the surface
 		} else if (water_debug_view == 13) {
 			debug_color = vec3(underwater_path / CREST_PATH_MAX); // refracted ray's path through the water
+		} else if (water_debug_view == 15) {
+			debug_color = vec3(caustics * 0.25); // caustic light factor on what lies below (1 = none)
 		} else if (water_debug_view == 14) {
 			debug_color = vec3(abs(refracted_uv - SCREEN_UV) * 20.0, 0.0); // refraction offset on screen
 		}

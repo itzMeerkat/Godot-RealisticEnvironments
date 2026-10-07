@@ -189,6 +189,8 @@ before touching its code; this file only records what is easy to get wrong.
   body albedo is scaled by `1 − transmittance`; keep both on the same
   transmittance. Keep `depth_draw_always`, the ocean's `cast_shadow` off and
   `mat_water.tres` `render_priority` below every other transparent material.
+  Caustics multiply that transmitted light (`caustic_light()`, mean 1): don't
+  add caustics to other materials (they would double).
 - The spectrum is normalized to the JONSWAP height variance
   (`spectrum_compute.glsl`): `displacement_scale` 1 is the physical wave
   height for the wind and fetch. The demo exaggerates swell with ~2.
