@@ -81,10 +81,6 @@ float sample_interaction_eta(vec2 p) {
 	return mix(mix(e00, e10, f.x), mix(e01, e11, f.x), f.y) * fade;
 }
 
-float sample_total_height(vec2 p, bool with_interaction) {
-	return ocean_sample_surface_height(p) + (with_interaction ? sample_interaction_eta(p) : 0.0);
-}
-
 void main() {
 	uint index = gl_GlobalInvocationID.x;
 	if (index >= point_count) {
@@ -101,12 +97,19 @@ void main() {
 		visual_displacement.y += sample_interaction_eta(p);
 	}
 
+	// The rendered surface's normal from its tangents at the surface point over p: the
+	// displaced positions of its rest neighbours (no inversion needed, unlike heights at
+	// world offsets). Then the simulation's slope from its own heights.
 	float e = max(normal_sample_distance, 0.001);
-	float h_l = sample_total_height(p + vec2(-e, 0.0), with_interaction);
-	float h_r = sample_total_height(p + vec2( e, 0.0), with_interaction);
-	float h_b = sample_total_height(p + vec2(0.0, -e), with_interaction);
-	float h_f = sample_total_height(p + vec2(0.0,  e), with_interaction);
-	vec3 normal = normalize(vec3(h_l - h_r, 2.0 * e, h_b - h_f));
+	vec3 tangent_x = vec3(2.0 * e, 0.0, 0.0) + ocean_sample_visual_displacement(source + vec2(e, 0.0)) - ocean_sample_visual_displacement(source - vec2(e, 0.0));
+	vec3 tangent_z = vec3(0.0, 0.0, 2.0 * e) + ocean_sample_visual_displacement(source + vec2(0.0, e)) - ocean_sample_visual_displacement(source - vec2(0.0, e));
+	vec3 normal = normalize(cross(tangent_z, tangent_x));
+	if (with_interaction) {
+		vec2 slope = -normal.xz / normal.y + vec2(
+				sample_interaction_eta(p + vec2(e, 0.0)) - sample_interaction_eta(p - vec2(e, 0.0)),
+				sample_interaction_eta(p + vec2(0.0, e)) - sample_interaction_eta(p - vec2(0.0, e))) / (2.0 * e);
+		normal = normalize(vec3(-slope.x, 1.0, -slope.y));
+	}
 
 	samples[index].displacement_height = vec4(visual_displacement, water_level + visual_displacement.y);
 	samples[index].normal_data = vec4(normal, 0.0);

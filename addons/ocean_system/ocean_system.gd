@@ -432,6 +432,10 @@ var _sky_source_polled := false
 ## True while the sky source gives the camera's atmosphere (get_atmosphere_view_volumes()),
 ## whose observer is read every frame.
 var _aerial_perspective_enabled := false
+## Instance ids of the bodies that carry a footprint pushing water (_makes_waves()),
+## built once per physics tick or frame (_wave_making_bodies_key).
+var _wave_making_bodies := {}
+var _wave_making_bodies_key := -1
 ## Last camera exposure sent to the water material (_update_scene_exposure()).
 var _scene_exposure := 1.0
 ## Set by the sky source's lighting_changed signal.
@@ -826,15 +830,21 @@ func _pack_interaction_hulls(camera_position : Vector3) -> PackedFloat32Array:
 func _pushes_water(footprint : HullWaterFootprint) -> bool:
 	return footprint.profile != null and footprint.wake_enabled and footprint.is_visible_in_tree()
 
-## Whether body carries a footprint that pushes water.
+## Whether body carries a footprint that pushes water. Every query owner asks every
+## tick, so the bodies are collected once per physics tick (or frame, outside physics).
 func _makes_waves(body : PhysicsBody3D) -> bool:
 	if body == null or _interaction == null:
 		return false
-	for node in get_tree().get_nodes_in_group(&"ocean_hull"):
-		var footprint := node as HullWaterFootprint
-		if _pushes_water(footprint) and _find_physics_body(footprint) == body:
-			return true
-	return false
+	var key := Engine.get_physics_frames() if Engine.is_in_physics_frame() else -1 - Engine.get_process_frames()
+	if key != _wave_making_bodies_key:
+		_wave_making_bodies_key = key
+		_wave_making_bodies.clear()
+		for node in get_tree().get_nodes_in_group(&"ocean_hull"):
+			var footprint := node as HullWaterFootprint
+			var footprint_body := _find_physics_body(footprint)
+			if _pushes_water(footprint) and footprint_body != null:
+				_wave_making_bodies[footprint_body.get_instance_id()] = true
+	return _wave_making_bodies.has(body.get_instance_id())
 
 static func _find_physics_body(node : Node) -> PhysicsBody3D:
 	while node != null and not node is PhysicsBody3D:
