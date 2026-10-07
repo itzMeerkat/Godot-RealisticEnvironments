@@ -531,9 +531,10 @@ Lighting:
   second with a crossfade, so glints twinkle.
 - `SPECULAR` is 0, which turns off the engine's sky reflection; the shader
   adds its own as `EMISSION`: procedural sky reflection (Fresnel, blurred by
-  the same roughness; the clear sky over three directions, clouds from the
-  cloud cubemap's mip whose blur matches the reflection lobe) and planar
-  reflection.
+  the same roughness: the clear sky averaged over the reflection lobe, angular
+  deviation `σ = √2 α` per axis, by the 4-point Gaussian cubature at `±√2 σ`
+  along the elevation and the azimuth; clouds from the cloud cubemap's mip
+  whose blur matches the lobe) and planar reflection.
 - Atmosphere (`atmosphere_sea_lookup()`): with a sky source that has
   `get_atmosphere_sky_volumes()` and `get_atmosphere_light()` (SkySystem), the
   reflected clear sky is the atmosphere's, seen from the sea surface: a lookup

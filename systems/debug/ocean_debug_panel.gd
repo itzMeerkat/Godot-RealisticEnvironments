@@ -256,13 +256,6 @@ func _add_sky_reflection_controls(parent : VBoxContainer) -> void:
 			water.sky_reflection_strength = value
 	)
 
-	var horizon_boost := _add_float_row(parent, "Horizon Boost", "Boosts the reflected horizon color at low reflection angles.", 0.0, 3.0, 0.01, false)
-	horizon_boost.name = "SkyHorizonBoost"
-	horizon_boost.value_changed.connect(func(value : float) -> void:
-		if not _is_syncing and water:
-			water.sky_horizon_boost = value
-	)
-
 	var sun_specular := _add_float_row(parent, "Sun Specular", "Multiplier on the sun's glints and sun path (1 = physical).", 0.0, 4.0, 0.01, false)
 	sun_specular.name = "SunSpecularStrength"
 	sun_specular.value_changed.connect(func(value : float) -> void:
@@ -523,7 +516,6 @@ func _populate_values() -> void:
 	_set_named_spin("FoamIntensity", water.foam_intensity)
 	_set_named_check("SkyReflectionEnabled", water.sky_reflection_enabled)
 	_set_named_spin("SkyReflectionStrength", water.sky_reflection_strength)
-	_set_named_spin("SkyHorizonBoost", water.sky_horizon_boost)
 	_set_named_spin("SunSpecularStrength", water.sun_specular_strength)
 	_set_named_spin("SunGlitterDensity", water.sun_glitter_density)
 	_set_named_spin("MeshBaseCellSize", water.mesh_base_cell_size)

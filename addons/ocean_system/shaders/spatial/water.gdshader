@@ -116,7 +116,6 @@ uniform float aerial_max_distance = 1.0;
 uniform bool sky_reflection_enabled = true;
 uniform float sky_reflection_strength : hint_range(0.0, 2.0) = 1.0;
 uniform float sky_reflection_f0 : hint_range(0.0, 0.12) = 0.02;
-uniform float sky_horizon_boost : hint_range(0.0, 3.0) = 0.85;
 uniform float sun_specular_strength : hint_range(0.0, 4.0) = 1.0;
 // Stochastic glints (see glitter_scale()): facets per square meter of water, 0 = smooth highlight.
 uniform float sun_glitter_density : hint_range(0.0, 10000000.0) = 1000000.0;
@@ -446,7 +445,7 @@ float rough_fresnel(float no_v, float sigma, float f0) {
 /* Sky gradient without clouds. */
 vec3 sample_sky_gradient(vec3 direction) {
 	float upper_blend = smoothstep(0.0, 0.55, direction.y);
-	vec3 upper_sky = mix(sky_horizon_color.rgb * sky_horizon_boost, sky_top_color.rgb, upper_blend);
+	vec3 upper_sky = mix(sky_horizon_color.rgb, sky_top_color.rgb, upper_blend);
 
 	float lower_blend = smoothstep(0.0, 0.55, -direction.y);
 	vec3 lower_sky = mix(sky_ground_horizon_color.rgb, sky_ground_bottom_color.rgb, lower_blend);
@@ -487,23 +486,33 @@ vec3 sample_clear_sky(vec3 direction) {
 	return sample_sky_gradient(direction) * scene_exposure;
 }
 
+/*
+ * The sky reflected over a rough surface: the clear sky averaged over the reflection
+ * lobe, whose directions spread with an angular deviation of about sigma = sqrt(2) alpha
+ * per axis (as for the clouds, sample_clouds()), by the 4-point Gaussian cubature
+ * (+-sqrt(2) sigma along the elevation and the azimuth, weights 1/4: exact for skies that
+ * vary up to cubically across the lobe). Directions below the horizon are mirrored up, as
+ * the reflection is. The clouds are prefiltered (cubemap mips) and read once.
+ */
 vec3 sample_rough_procedural_environment(vec3 direction, float roughness) {
 	float rough = saturate(roughness);
-	vec3 sky = sample_clear_sky(direction);
-	vec3 cloud_direction = direction;
-	float broad_weight = smoothstep(0.05, 0.55, rough);
-	if (broad_weight > 0.0) {
-		vec3 upper_dir = safe_normalize_vec3(vec3(direction.x, direction.y + rough * 0.65, direction.z), direction);
-		vec3 lower_dir = safe_normalize_vec3(vec3(direction.x, direction.y - rough * 0.45, direction.z), direction);
-		vec3 center_dir = safe_normalize_vec3(mix(direction, vec3(0.0, 1.0, 0.0), rough * 0.25), direction);
-		// The clear sky is blurred over three directions; clouds are prefiltered
-		// (cubemap mips), read once toward the broad lobe's center.
-		vec3 broad_sky = sample_clear_sky(center_dir) * 0.5
-			+ sample_clear_sky(upper_dir) * 0.3
-			+ sample_clear_sky(lower_dir) * 0.2;
-		sky = mix(sky, broad_sky, broad_weight);
-		cloud_direction = safe_normalize_vec3(mix(direction, center_dir, broad_weight), direction);
+	float sigma = 1.41421356 * rough * rough;
+	vec3 sky;
+	if (sigma < 0.005) {
+		sky = sample_clear_sky(direction);
+	} else {
+		vec3 elevation_axis = safe_normalize_vec3(vec3(0.0, 1.0, 0.0) - direction * direction.y, vec3(0.0, 0.0, 1.0));
+		vec3 azimuth_axis = cross(direction, elevation_axis);
+		float offset = tan(min(1.41421356 * sigma, 1.2));
+		sky = vec3(0.0);
+		for (int i = 0; i < 4; ++i) {
+			vec3 axis = i < 2 ? elevation_axis : azimuth_axis;
+			vec3 sample_direction = normalize(direction + axis * (i % 2 == 0 ? offset : -offset));
+			sample_direction.y = abs(sample_direction.y);
+			sky += sample_clear_sky(sample_direction) * 0.25;
+		}
 	}
+	vec3 cloud_direction = direction;
 	vec4 cloud = sample_clouds(cloud_direction, rough);
 	if (!sky_atmosphere_enabled) {
 		return sky * (1.0 - cloud.a) + cloud.rgb;

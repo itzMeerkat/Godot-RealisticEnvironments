@@ -161,12 +161,6 @@ const WATER_DEBUG_VIEW_NORMAL := 0
 	set(value):
 		sky_reflection_f0 = value
 		_set_water_shader_parameter(&'sky_reflection_f0', sky_reflection_f0)
-## Multiplier for reflected horizon color. Raising it emphasizes the bright band
-## near the horizon, especially in distant water.
-@export_range(0.0, 3.0, 0.01) var sky_horizon_boost := 0.85 :
-	set(value):
-		sky_horizon_boost = value
-		_set_water_shader_parameter(&'sky_horizon_boost', sky_horizon_boost)
 ## Multiplier on the sun's specular highlight (glints and the sun path). The
 ## highlight is lit by the scene's lights (color, energy), so 1 is physical.
 @export_range(0.0, 4.0, 0.01) var sun_specular_strength := 1.0 :
@@ -871,7 +865,6 @@ func _update_sky_shading_static_parameters() -> void:
 	_set_water_shader_parameter(&'sky_reflection_enabled', sky_reflection_enabled)
 	_set_water_shader_parameter(&'sky_reflection_strength', sky_reflection_strength)
 	_set_water_shader_parameter(&'sky_reflection_f0', sky_reflection_f0)
-	_set_water_shader_parameter(&'sky_horizon_boost', sky_horizon_boost)
 	_set_water_shader_parameter(&'sun_specular_strength', sun_specular_strength)
 	_set_water_shader_parameter(&'sun_glitter_density', sun_glitter_density)
 	_set_water_shader_parameter(&'sun_glitter_rate', sun_glitter_rate)
