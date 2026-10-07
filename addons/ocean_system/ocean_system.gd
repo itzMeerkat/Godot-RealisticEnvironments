@@ -425,7 +425,12 @@ var wave_generator : WaveGenerator :
 		if wave_generator:
 			add_child(wave_generator)
 var rng = RandomNumberGenerator.new()
+## Ocean clock (s), advanced every frame; the waves drawn this frame are at this time.
 var time := 0.0
+## Physics frame and interpolation fraction when time last advanced: a frame's time
+## lies that fraction of a tick past its last physics tick (get_query_age()).
+var _time_physics_frame := 0
+var _time_physics_fraction := 0.0
 var wind_source : Node
 var sky_source : Node
 ## True when sky_source has no lighting_changed signal and must be read every frame.
@@ -519,6 +524,8 @@ func _process(delta : float) -> void:
 		_set_water_shader_parameter(&'aerial_observer', sky_source.call(&'get_atmosphere_view_observer'))
 	_update_scene_exposure()
 	time += delta
+	_time_physics_frame = Engine.get_physics_frames()
+	_time_physics_fraction = Engine.get_physics_interpolation_fraction()
 	# No generator means no cascades: a flat ocean.
 	if wave_generator != null:
 		_update_waves(delta)
@@ -661,6 +668,17 @@ func submit_surface_query(owner: Object, points: PackedVector3Array, body: Physi
 ## the most recent submission; compare before using samples by index.
 func get_surface_query_result(owner: Object) -> WaterSurfaceQueryResult:
 	return _surface_queries.get_result(owner.get_instance_id())
+
+## Ocean seconds from result's dispatch to the caller's moment, for
+## WaterSurfaceSample.extrapolated_height(). In a physics tick that is the moment
+## of the bodies' state at the start of the tick: time advances once per frame,
+## and several ticks may fall between two frames, each at its own moment.
+func get_query_age(result: WaterSurfaceQueryResult) -> float:
+	if not Engine.is_in_physics_frame():
+		return time - result.dispatch_time
+	var ticks_since_frame := Engine.get_physics_frames() - _time_physics_frame
+	var tick_time := time + (float(ticks_since_frame - 1) - _time_physics_fraction) * get_physics_process_delta_time()
+	return tick_time - result.dispatch_time
 
 func release_surface_query(owner: Object) -> void:
 	_surface_queries.release(owner.get_instance_id())

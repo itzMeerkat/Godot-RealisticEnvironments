@@ -23,7 +23,10 @@ RigidBody3D                (e.g. FloatingBoat)
    `ocean_system`. Both are resolved once in `_ready`; a missing body or ocean
    fails an assert, and finding no probe volumes is an error.
 2. Add a `BuoyancyProbeVolume`, set `source_paths` to the hull mesh root(s) and
-   `design_waterline_y` (local) to where the hull should float.
+   `design_waterline_y` (local) to where the hull should float, and
+   `generated_probe_freeboard` to the hull's height above it (to the deck or
+   gunwale): the columns reach that high, so waves above the waterline lift
+   the hull (reserve buoyancy).
 3. In the editor toggle `editor_generate_physical_probes`,
    `editor_generate_fx_probes` or `editor_generate_all_probes`, then save the
    scene. Generation only runs in the editor; at runtime a volume with no probes
@@ -34,7 +37,8 @@ RigidBody3D                (e.g. FloatingBoat)
 ## Probes
 
 - **`BuoyancyProbeNode`** (physical) — its position is the *top* of a water
-  column `buoyancy_height` tall. Submersion = how much of that column is below
+  column `buoyancy_height` tall (generated at `design_waterline_y +
+  generated_probe_freeboard`). Submersion = how much of that column is below
   the sampled water height (0–1). Fully submerged it displaces
   `max_submerged_volume_cubic_meters`. Per-probe drag multipliers scale
   `BuoyantBody`'s longitudinal/lateral drag.
@@ -61,17 +65,21 @@ the latest completed result, and for every physical probe applies at the probe
 position:
 
 - buoyancy `ρ · g · buoyancy_strength · displaced_volume` upward;
-- longitudinal and lateral drag against the probe's horizontal velocity, scaled
-  by body mass, the probe's share of total volume, and submersion;
+- vertical, longitudinal and lateral drag (`vertical_water_drag`,
+  `longitudinal_water_drag`, `lateral_water_drag`, in 1/s) against the probe's
+  velocity relative to the water there (`sample.surface_velocity`: the waves'
+  orbital motion), scaled by body mass, the probe's share of total volume, and
+  submersion. Relative to the water, the vertical drag damps heave, pitch and
+  roll without holding the body still against the waves: damped against its
+  absolute velocity, the rowboat lagged the swell by 0.18 s (0.03 s now);
 - a per-probe force cap of `mass × volume_share × max_probe_acceleration`.
-
-It also applies central `heave_damping` against vertical velocity, weighted by
-overall submersion.
 
 Query results arrive a few frames after dispatch (see the ocean README):
 
 - Every water height used above is
-  `sample.extrapolated_height(ocean.time - result.dispatch_time)`.
+  `sample.extrapolated_height(ocean.get_query_age(result))`: the age is taken at
+  the start of the current physics tick, not the frame, so several ticks per
+  frame each see the water of their own moment.
 - Until the first result arrives, the body is held with `freeze = true` (only
   if it wasn't frozen already and `apply_forces` is on). Otherwise it would
   free-fall through the water during startup hitches; the first result

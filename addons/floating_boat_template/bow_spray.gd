@@ -102,7 +102,7 @@ func _physics_process(delta: float) -> void:
 	if result == null:
 		return
 	var sample := result.samples[0]
-	var water_height := sample.extrapolated_height(ocean.time - result.dispatch_time)
+	var water_height := sample.extrapolated_height(ocean.get_query_age(result))
 	var depth := water_height - stem.y
 	var relative_velocity := _velocity - sample.surface_velocity
 	var surface_point := Vector3(stem.x, minf(stem.y, water_height), stem.z)

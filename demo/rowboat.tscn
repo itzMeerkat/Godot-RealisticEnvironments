@@ -190,14 +190,14 @@ reverse_acceleration = 0.8
 turn_torque_per_kg = 1.8
 low_speed_turn_factor = 0.6
 extra_lateral_damping = 0.8
-local_angular_damping = Vector3(8, 1, 3)
+local_angular_damping = Vector3(4, 1, 1.5)
 roll_righting_torque_per_kg = 4.0
 
 [node name="CollisionShape3D" parent="." index="0" unique_id=302983775]
 shape = SubResource("ConvexPolygonShape3D_c6sjc")
 
 [node name="BuoyantBody" parent="." index="1" unique_id=1177248212]
-heave_damping = 10.0
+vertical_water_drag = 10.0
 longitudinal_water_drag = 0.3
 lateral_water_drag = 2.0
 
@@ -207,6 +207,7 @@ physical_probe_count = 6
 fx_probe_count = 8
 generated_probe_volume_cubic_meters = 0.277
 generated_probe_buoyancy_height = 0.85
+generated_probe_freeboard = 0.4
 
 [node name="Probe_000" type="MeshInstance3D" parent="BuoyancyProbeVolume/GeneratedProbes" parent_id_path=PackedInt32Array(846300433) index="0" unique_id=593001351]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.6474036, 0.4, -1.440659)

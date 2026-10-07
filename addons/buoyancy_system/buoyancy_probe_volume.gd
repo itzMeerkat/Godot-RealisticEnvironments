@@ -55,8 +55,13 @@ const DEBUG_SHOW_WATERLINE_CONVEX_HULL := true
 @export_range(0, 256, 1) var fx_probe_count := 24
 ## Default fully-submerged volume assigned to each generated physical probe.
 @export_range(0.001, 100000.0, 0.001, "or_greater") var generated_probe_volume_cubic_meters := 1.0
-## Default vertical water column height assigned to each generated physical probe.
+## Default vertical water column height assigned to each generated physical probe,
+## generated_probe_freeboard included.
 @export_range(0.01, 100.0, 0.01, "or_greater") var generated_probe_buoyancy_height := 1.2
+## Height of each generated physical probe's column top above design_waterline_y.
+## The hull above the waterline (up to the deck or gunwale) is reserve buoyancy: with
+## the column ending at the waterline, waves above it cannot lift the hull.
+@export_range(0.0, 100.0, 0.01, "or_greater") var generated_probe_freeboard := 0.0
 ## Fraction of hull length skipped near bow and stern when placing physical probes.
 @export_range(0.0, 0.45, 0.01) var longitudinal_margin_fraction := 0.08
 ## Editor-only display radius assigned to generated FX/contact probes.
@@ -234,7 +239,7 @@ func _generate_physical_probes(root: Node, context: Dictionary) -> int:
 	for spec in physical_specs:
 		var probe : Node3D = PHYSICAL_PROBE_SCRIPT.new()
 		probe.name = "Probe_%03d" % physical_count
-		probe.position = Vector3(float(spec["x"]), design_waterline_y, float(spec["z"]))
+		probe.position = Vector3(float(spec["x"]), design_waterline_y + generated_probe_freeboard, float(spec["z"]))
 		probe.set(&"max_submerged_volume_cubic_meters", generated_probe_volume_cubic_meters)
 		probe.set(&"buoyancy_height", generated_probe_buoyancy_height)
 		probe.set(&"longitudinal_water_drag_multiplier", generated_probe_longitudinal_drag_multiplier)

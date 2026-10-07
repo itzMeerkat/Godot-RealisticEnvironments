@@ -25,11 +25,15 @@ signal sinking_started(reason: StringName, data: Dictionary)
 @export_range(0.0, 10.0, 0.01, "or_greater") var buoyancy_strength := 1.0
 ## Fluid density in kg/m^3. Seawater is usually around 1025.
 @export_range(1.0, 2000.0, 1.0, "or_greater") var water_density := 1025.0
-## Central vertical damping that suppresses bobbing without adding probe torque.
-@export_range(0.0, 20.0, 0.01, "or_greater") var heave_damping := 2.0
-## Body-forward/back water drag applied at each physical probe.
+## Vertical water drag applied at each physical probe, in 1/s, against the probe's
+## vertical velocity relative to the water there. Damps heave, pitch and roll
+## relative to the surface, so the body still rides the waves.
+@export_range(0.0, 100.0, 0.01, "or_greater") var vertical_water_drag := 2.0
+## Body-forward/back water drag applied at each physical probe, against the
+## probe's velocity relative to the water (which moves with the waves).
 @export_range(0.0, 100.0, 0.01, "or_greater") var longitudinal_water_drag := 0.45
-## Body-sideways water drag applied at each physical probe.
+## Body-sideways water drag applied at each physical probe, against the probe's
+## velocity relative to the water.
 @export_range(0.0, 100.0, 0.01, "or_greater") var lateral_water_drag := 0.45
 ## Safety cap for acceleration contributed by any single probe.
 @export_range(0.0, 100.0, 0.1, "or_greater") var max_probe_acceleration := 35.0
@@ -125,7 +129,7 @@ func _physics_process(_delta : float) -> void:
 	if _awaiting_first_sample:
 		_awaiting_first_sample = false
 		rigid_body.freeze = false
-	var elapsed := ocean.time - result.dispatch_time
+	var elapsed := ocean.get_query_age(result)
 	var now := float(Time.get_ticks_msec()) * 0.001
 
 	var forward := -body_transform.basis.z
@@ -139,7 +143,6 @@ func _physics_process(_delta : float) -> void:
 	var angular_velocity := rigid_body.angular_velocity
 
 	var total_external_force := Vector3.ZERO
-	var heave_submersion := 0.0
 	for i in _force_states.size():
 		var sample := result.samples[i]
 		var water_height := sample.extrapolated_height(elapsed)
@@ -150,18 +153,18 @@ func _physics_process(_delta : float) -> void:
 		if submersion > 0.0:
 			var share := _volume_shares[i]
 			var offset := position - body_transform.origin
-			var point_velocity := linear_velocity + angular_velocity.cross(offset)
+			var relative_velocity := linear_velocity + angular_velocity.cross(offset) - sample.surface_velocity
 			var buoyancy_force := Vector3.UP * water_density * _gravity * buoyancy_strength * _max_volumes[i] * submersion
 			var drag_scale := mass * share * submersion
-			var longitudinal_drag_force := -forward * point_velocity.dot(forward) * longitudinal_water_drag * _longitudinal_drag[i] * drag_scale
-			var lateral_drag_force := -right * point_velocity.dot(right) * lateral_water_drag * _lateral_drag[i] * drag_scale
-			applied_force = buoyancy_force + longitudinal_drag_force + lateral_drag_force
+			var longitudinal_drag_force := -forward * relative_velocity.dot(forward) * longitudinal_water_drag * _longitudinal_drag[i] * drag_scale
+			var lateral_drag_force := -right * relative_velocity.dot(right) * lateral_water_drag * _lateral_drag[i] * drag_scale
+			var vertical_drag_force := Vector3.DOWN * relative_velocity.y * vertical_water_drag * drag_scale
+			applied_force = buoyancy_force + longitudinal_drag_force + lateral_drag_force + vertical_drag_force
 			var max_force := mass * share * max_probe_acceleration
 			if max_probe_acceleration > 0.0 and applied_force.length_squared() > max_force * max_force:
 				applied_force = applied_force.normalized() * max_force
 			rigid_body.apply_force(applied_force, offset)
 			total_external_force += applied_force
-			heave_submersion += share * submersion
 		_update_state(_force_states[i], position, sample, water_height, applied_force, submersion, now)
 
 	var force_count := _force_states.size()
@@ -169,7 +172,6 @@ func _physics_process(_delta : float) -> void:
 		var sample := result.samples[force_count + j]
 		_update_state(_contact_states[j], _points[force_count + j], sample, sample.extrapolated_height(elapsed), Vector3.ZERO, 0.0, now)
 
-	total_external_force += _apply_heave_damping(clampf(heave_submersion, 0.0, 1.0))
 	_update_volume_debug(total_external_force)
 	if sinking_enabled and not _is_sinking:
 		_check_sinking()
@@ -371,14 +373,6 @@ func _get_abs_roll_degrees() -> float:
 	if target_up.length_squared() <= 0.0001:
 		return 0.0
 	return absf(rad_to_deg(basis.y.signed_angle_to(target_up.normalized(), roll_axis)))
-
-
-func _apply_heave_damping(submersion: float) -> Vector3:
-	if submersion <= 0.0 or heave_damping <= 0.0:
-		return Vector3.ZERO
-	var heave_force := Vector3.UP * (-rigid_body.linear_velocity.y * heave_damping * rigid_body.mass * submersion)
-	rigid_body.apply_central_force(heave_force)
-	return heave_force
 
 
 func _update_volume_debug(total_external_force : Vector3) -> void:

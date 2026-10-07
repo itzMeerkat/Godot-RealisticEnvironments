@@ -30,7 +30,8 @@ an error and disables itself.
 | `release_surface_query(owner: Object)` | Forget an owner (call from `_exit_tree`). |
 | `get_skipped_surface_query_dispatch_count()` | Frames whose dispatch waited because all readback slots were busy. |
 | `add_water_impulse(position, radius, amplitude)` | Queue a splash in the interaction simulation (runtime, `interaction_enabled` only). |
-| `time` | Ocean clock in seconds; compare with `WaterSurfaceQueryResult.dispatch_time`. |
+| `time` | Ocean clock in seconds, advanced once per frame. |
+| `get_query_age(result: WaterSurfaceQueryResult) -> float` | Ocean seconds from the result's dispatch to the caller's moment (the start of the current physics tick, or the frame), for `extrapolated_height()`. |
 | `water_level` | Still-water height used by the shader, queries, reflections and buoyancy. |
 | `water_material` | Template material. The ocean renders with a private duplicate (`get_water_material()`), applied through the `RenderingServer` and never saved into the scene. |
 | `get_wind_source()`, `get_external_wind_speed()`, `get_external_wind_direction()`, `should_use_external_wind()` | Resolved external wind. |
@@ -44,9 +45,13 @@ dispatch), `samples: Array[WaterSurfaceSample]` (`samples[i]` answers
 `WaterSurfaceSample` (RefCounted): `position` (query point), `height` (world Y
 of the rendered surface over that point), `normal`, `displacement` (wave offset
 of the surface point over the query point), `surface_velocity` (displacement
-change per second), and `extrapolated_height(elapsed)` =
-`height + surface_velocity.y × min(elapsed, 0.1 s)`. The cap keeps frame
-hitches from extrapolating a wave's velocity across a whole period.
+change per second: the water's velocity at the surface over the point),
+`height_rate()` (the height's rate of change over the fixed point,
+`w − u · ∇h` with `∇h = −normal.xz / normal.y`: the water there rises at
+`surface_velocity.y` but also flows along the slope) and
+`extrapolated_height(elapsed)` = `height + height_rate() × min(elapsed, 0.1 s)`.
+The cap keeps frame hitches from extrapolating a wave's velocity across a
+whole period.
 
 ### Query semantics
 
@@ -58,7 +63,11 @@ Queries are asynchronous (`OceanSurfaceQueries`):
 - Three readback slots rotate; if all are still in flight, that frame's
   queries stay queued for the next frame.
 - A result arrives a few frames after its dispatch. Use
-  `extrapolated_height(ocean.time - result.dispatch_time)` to hide the latency.
+  `extrapolated_height(ocean.get_query_age(result))` to hide the latency. The
+  ocean's `time` advances once per frame; in a physics tick the age is taken
+  at the tick's start (`Engine.get_physics_frames()` and the interpolation
+  fraction recorded when `time` advanced), so each of several ticks between
+  two frames sees the water of its own moment.
 - A result belongs to the point set of its dispatch. If the caller's point count
   changed since then, `result.points.size()` differs; don't index into it.
 - Nothing is dispatched until the first FFT output exists, and never with zero
@@ -275,7 +284,7 @@ How it works:
   outside its waterline, and read up to 1.2 m of its own waves. So bodies that
   make waves now skip `η` entirely (see [Query semantics](#query-semantics));
   coverage still keeps the water under a hull from lifting anything else.
-  Their own radiation is approximated by `BuoyantBody.heave_damping`.
+  Their own radiation is approximated by `BuoyantBody.vertical_water_drag`.
 - **Step** (once per physics tick, from `OceanSystem._physics_process`, so each
   step sees exactly one new pose of every hull; stepping per frame made hull
   motion stutter into the forcing and ring at grid scale):

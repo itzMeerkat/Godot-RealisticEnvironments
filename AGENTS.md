@@ -38,6 +38,11 @@ before touching its code; this file only records what is easy to get wrong.
 - Buoyancy probes are generated **in the editor** and saved into the scene.
   Runtime generation is refused on purpose; a volume with no saved probes only
   warns. The template has no probes; each boat generates its own.
+- A body whose collision shape is scaled non-uniformly gets no usable inertia
+  from Godot (inverse inertia 0: it cannot pitch or roll). The caravel's is, so
+  `floating_box.tscn` sets `inertia` explicitly from the hull's size; do the
+  same for any such boat. Check with
+  `PhysicsServer3D.body_get_direct_state(rid).inverse_inertia`.
 - No `/** ... */` doc comments in `.gdshader` / `.gdshaderinc` files; use `/*`
   or `//`. The Godot 4.7 editor extracts shader docs on every
   `Shader.get_shader_uniform_list()`, which made the water shader take 3.4 s per
@@ -197,7 +202,9 @@ before touching its code; this file only records what is easy to get wrong.
 - Surface queries are asynchronous: `submit_surface_query(owner, points)` every
   tick, `get_surface_query_result(owner)` returns the latest completed result
   (`null` at first), `release_surface_query(owner)` in `_exit_tree`. Results lag
-  a few frames — extrapolate with `extrapolated_height()` — and belong to the
+  a few frames — extrapolate with
+  `extrapolated_height(ocean.get_query_age(result))`, never with
+  `ocean.time - dispatch_time` (wrong in physics ticks) — and belong to the
   point set of their dispatch.
 - Cascades update at their own rates (`max_wave_phase_step`), each into
   whichever of the fixed output maps A/B does not hold its newest frame.
@@ -351,6 +358,3 @@ before touching its code; this file only records what is easy to get wrong.
 - In the input map, F is both `toggle_fullscreen` and `camera_move_down`, and C
   is both `cycle_camera_mode` and `toggle_camera_follow`.
 - Unused but kept: `demo/player/camera.gd`, `systems/input/demo_input_actions.gd`.
-- The rowboat's physical probes were raised by hand after generation (column
-  top at y = 0.4, 0.85 m tall) to give reserve buoyancy up to the gunwale;
-  regenerating them puts them back at `design_waterline_y`.

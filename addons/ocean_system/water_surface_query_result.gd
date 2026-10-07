@@ -6,5 +6,5 @@ extends RefCounted
 var points := PackedVector3Array()
 var samples : Array[WaterSurfaceSample] = []
 ## OceanSystem.time when the query was dispatched. Results arrive a few frames
-## later; use (ocean.time - dispatch_time) with WaterSurfaceSample.extrapolated_height().
+## later; use OceanSystem.get_query_age() with WaterSurfaceSample.extrapolated_height().
 var dispatch_time := 0.0
