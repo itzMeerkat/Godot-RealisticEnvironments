@@ -187,6 +187,9 @@ new media (multiple scattering, the air's own glow) are added there only.
     keeps it);
   - transparent materials, each for its own distance (below);
   - the ocean's sky reflection, from `get_atmosphere_sky_volumes()`;
+  - the ocean's water surface (transparent), from
+    `get_atmosphere_view_volumes()`: it cannot read the global uniforms
+    without depending on the sky system;
   - the sun and moon lights, the sky's disks and the clouds' light, coloured
     by the transmittance from space (`_get_atmosphere_transmittance()`, the
     LUT's integral on the CPU; see **Sun and moon light** above).
@@ -271,8 +274,11 @@ the body), `get_sun_color()`, `get_sun_visibility()`, `get_moon_visibility()`,
 `get_scene_illuminance()`, `get_illuminance_unit_lux()`.
 Atmosphere: `get_atmosphere_sky_volumes()` (the sea-level view volumes,
 `[transmittance, inscatter, inscatter_lobe]` as `Texture3D`s, or empty without
-an atmosphere) and `get_atmosphere_light()` (`Vector4`: toward the light, w
-the lobe's g).
+an atmosphere), `get_atmosphere_view_volumes()` (the camera's view volumes,
+the same three `Texture3D`s the global uniforms publish, refilled every frame),
+`get_atmosphere_view_observer()` (`Vector4`: the camera position those were
+built for this frame, w its altitude as used), `get_atmosphere_view_max_distance()`
+and `get_atmosphere_light()` (`Vector4`: toward the light, w the lobe's g).
 
 Signals: `time_of_day_changed(time_of_day)`, `lighting_changed`.
 

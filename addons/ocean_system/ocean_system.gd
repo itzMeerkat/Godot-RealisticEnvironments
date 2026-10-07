@@ -430,6 +430,9 @@ var wind_source : Node
 var sky_source : Node
 ## True when sky_source has no lighting_changed signal and must be read every frame.
 var _sky_source_polled := false
+## True while the sky source gives the camera's atmosphere (get_atmosphere_view_volumes()),
+## whose observer is read every frame.
+var _aerial_perspective_enabled := false
 ## Last camera exposure sent to the water material (_update_scene_exposure()).
 var _scene_exposure := 1.0
 ## Set by the sky source's lighting_changed signal.
@@ -512,6 +515,8 @@ func _process(delta : float) -> void:
 	_update_hull_cutouts()
 	if _sky_source_polled or _sky_lighting_dirty:
 		_update_sky_lighting_shader_parameters()
+	if _aerial_perspective_enabled:
+		_set_water_shader_parameter(&'aerial_observer', sky_source.call(&'get_atmosphere_view_observer'))
 	_update_scene_exposure()
 	time += delta
 	# No generator means no cascades: a flat ocean.
@@ -878,6 +883,17 @@ func _update_sky_lighting_shader_parameters() -> void:
 	_set_water_shader_parameter(&'sky_atmosphere_inscatter_lobe', volumes[2] if not volumes.is_empty() else null)
 	if not volumes.is_empty():
 		_set_water_shader_parameter(&'sky_atmosphere_light', sky_source.call(&'get_atmosphere_light'))
+	# Optional atmosphere between the camera and the water. The water is transparent,
+	# drawn after the sky's aerial perspective, so it hazes itself (FOG).
+	var view_volumes : Array = sky_source.call(&'get_atmosphere_view_volumes') if sky_source != null and sky_source.has_method(&'get_atmosphere_view_volumes') else []
+	_aerial_perspective_enabled = not view_volumes.is_empty()
+	_set_water_shader_parameter(&'aerial_perspective_enabled', _aerial_perspective_enabled)
+	_set_water_shader_parameter(&'aerial_transmittance', view_volumes[0] if _aerial_perspective_enabled else null)
+	_set_water_shader_parameter(&'aerial_inscatter', view_volumes[1] if _aerial_perspective_enabled else null)
+	_set_water_shader_parameter(&'aerial_inscatter_lobe', view_volumes[2] if _aerial_perspective_enabled else null)
+	if _aerial_perspective_enabled:
+		_set_water_shader_parameter(&'aerial_max_distance', sky_source.call(&'get_atmosphere_view_max_distance'))
+		_set_water_shader_parameter(&'aerial_observer', sky_source.call(&'get_atmosphere_view_observer'))
 
 # The sky source is duck-typed and may provide only some values; missing ones
 # fall back to the manual_* exports.

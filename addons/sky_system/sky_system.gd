@@ -263,6 +263,9 @@ var _sky_light_read_pending := false
 ## The camera's exposure (its CameraAttributes.exposure_multiplier, or the world's), read
 ## every frame: the atmosphere's and the clouds' textures are stored pre-exposed by it.
 var _exposure := 1.0
+## World position of the camera the atmosphere's view volumes were last built for, and
+## (w) its altitude above the sea as they use it.
+var _atmosphere_observer := Vector4.ZERO
 ## The atmosphere's key light: the sun, or the moon once the sun is well down
 ## (MOON_KEY_SUN_HEIGHT). It has the haze's lobe.
 var _haze_light_direction := Vector3.UP
@@ -425,6 +428,31 @@ func get_atmosphere_sky_volumes() -> Array[Texture3D]:
 	if _atmosphere_renderer == null:
 		return []
 	return [_atmosphere_renderer.sea_transmittance, _atmosphere_renderer.sea_inscatter, _atmosphere_renderer.sea_inscatter_lobe]
+
+
+## The atmosphere between the active camera and the scene, for consumers drawn after
+## the aerial perspective that cannot read the global uniforms (the ocean's water,
+## which must not depend on the sky system): the camera's view volumes
+## ([transmittance, isotropic in-scatter, lobe in-scatter per unit phase]; layout as
+## atmosphere_view_uvw() in shaders/compute/atmosphere_common.glslinc, for the observer
+## of get_atmosphere_view_observer()), or an empty array without an atmosphere. The
+## textures stay the same objects while the atmosphere exists; lighting_changed fires
+## when they change. Their contents follow the camera every frame.
+func get_atmosphere_view_volumes() -> Array[Texture3D]:
+	if _atmosphere_renderer == null:
+		return []
+	return [_atmosphere_renderer.view_transmittance, _atmosphere_renderer.view_inscatter, _atmosphere_renderer.view_inscatter_lobe]
+
+
+## World position of the camera the view volumes were built for this frame, and (w)
+## its altitude above the sea as the volumes use it. Read it every frame.
+func get_atmosphere_view_observer() -> Vector4:
+	return _atmosphere_observer
+
+
+## Distance (m) of the view volumes' last regular slice.
+func get_atmosphere_view_max_distance() -> float:
+	return AtmosphereRenderer.MAX_DISTANCE
 
 
 ## xyz toward the light the atmosphere scatters (the sun, or the moon at night),
@@ -1021,8 +1049,9 @@ func _process_atmosphere() -> void:
 	var cloud_cubemap := _cloud_renderer.cubemap.texture_rd_rid if _cloud_renderer else RID()
 	_atmosphere_renderer.render(camera_position.y - sea_level, cloud_cubemap, _exposure)
 	_read_camera_sky_light()
+	_atmosphere_observer = Vector4(camera_position.x, camera_position.y, camera_position.z, observer_altitude)
 	if _global_atmosphere_owner == self:
-		RenderingServer.global_shader_parameter_set(GLOBAL_OBSERVER, Vector4(camera_position.x, camera_position.y, camera_position.z, observer_altitude))
+		RenderingServer.global_shader_parameter_set(GLOBAL_OBSERVER, _atmosphere_observer)
 	var effect := _get_aerial_perspective_effect()
 	if effect:
 		effect.observer_position = camera_position

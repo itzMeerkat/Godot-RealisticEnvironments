@@ -74,7 +74,14 @@ before touching its code; this file only records what is easy to get wrong.
     Henyey-Greenstein g) give the sky the water reflects: the clouds inside
     the atmosphere, `L_c + T_c * cloud + (1 - a) * (L_end - L_c)`, or
     `sky * (1 - a) + cloud` over the gradient without one. A source must emit
-    `lighting_changed` before freeing those textures. The clouds and the
+    `lighting_changed` before freeing those textures. Optional
+    `get_atmosphere_view_volumes()` (the same three volumes for the active
+    camera, refilled every frame; empty = no atmosphere),
+    `get_atmosphere_view_observer()` (`Vector4`: the camera position they were
+    built for this frame, w its altitude as used; the ocean reads it every
+    frame) and `get_atmosphere_view_max_distance()` give the air between the
+    camera and the water, which the water applies itself as `FOG` (it is
+    transparent, drawn after `AerialPerspectiveEffect`). The clouds and the
     in-scatter are stored pre-exposed (see Exposure below).
   - Exposure: a light source has `get_scene_illuminance()` (lux on a level
     surface at the active camera, negative while unknown) and
@@ -301,7 +308,8 @@ before touching its code; this file only records what is easy to get wrong.
 - The view-volume layout (`atmosphere_view_uvw()`, slice distances) and the
   lobe's phase are copied in `atmosphere_common.glslinc`,
   `atmosphere.gdshaderinc` and the ocean's `water.gdshader`
-  (`atmosphere_sea_lookup()`, observer at altitude 0). Change them together.
+  (`atmosphere_sea_lookup()`, observer at altitude 0; `aerial_perspective_fog()`,
+  the camera's volume). Change them together.
   Consumers composite `background * transmittance + inscatter + lobe * phase`.
 - Exposure: everything the atmosphere passes and the clouds output (in-scatter,
   sky light buffers, cloud radiance) is pre-exposed. The sky shader divides by
@@ -342,9 +350,6 @@ before touching its code; this file only records what is easy to get wrong.
   wave height.
 - In the input map, F is both `toggle_fullscreen` and `camera_move_down`, and C
   is both `cycle_camera_mode` and `toggle_camera_follow`.
-- The water surface has no aerial perspective: `AerialPerspectiveEffect` runs
-  before the transparent pass, where the water is now drawn. It needs the
-  camera's view volume through the sky source (planned, not done).
 - Unused but kept: `demo/player/camera.gd`, `systems/input/demo_input_actions.gd`.
 - The rowboat's physical probes were raised by hand after generation (column
   top at y = 0.4, 0.85 m tall) to give reserve buoyancy up to the gunwale;

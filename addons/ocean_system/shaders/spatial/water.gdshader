@@ -97,6 +97,16 @@ uniform sampler3D sky_atmosphere_transmittance : filter_linear, repeat_disable;
 uniform sampler3D sky_atmosphere_inscatter : filter_linear, repeat_disable;
 uniform sampler3D sky_atmosphere_inscatter_lobe : filter_linear, repeat_disable;
 uniform vec4 sky_atmosphere_light = vec4(0.0, 1.0, 0.0, 0.97);
+// The sky source's atmosphere between the camera and the scene (get_atmosphere_view_volumes(),
+// same three volumes for the observer aerial_observer: world position, w its altitude as the
+// volumes use it; slices out to aerial_max_distance). The water is drawn after the sky's
+// aerial perspective, so it hazes itself (FOG). Set at runtime by OceanSystem.
+uniform bool aerial_perspective_enabled = false;
+uniform sampler3D aerial_transmittance : filter_linear, repeat_disable;
+uniform sampler3D aerial_inscatter : filter_linear, repeat_disable;
+uniform sampler3D aerial_inscatter_lobe : filter_linear, repeat_disable;
+uniform vec4 aerial_observer;
+uniform float aerial_max_distance = 1.0;
 uniform bool sky_reflection_enabled = true;
 uniform float sky_reflection_strength : hint_range(0.0, 2.0) = 1.0;
 uniform float sky_reflection_f0 : hint_range(0.0, 0.12) = 0.02;
@@ -204,6 +214,22 @@ vec3 earth_curvature_tilt(vec3 direction, vec2 xz, vec3 camera_position) {
 	return vec3(horizontal.x, tilted_up, horizontal.y);
 }
 
+/* View-volume x: azimuth from the atmosphere's light (atmosphere_view_x()). */
+float atmosphere_light_azimuth_x(vec3 direction) {
+	vec2 light_xz = sky_atmosphere_light.xz;
+	float d = length(direction.xz);
+	float l = length(light_xz);
+	float cos_phi = d > 1e-5 && l > 1e-5 ? dot(direction.xz, light_xz) / (d * l) : 1.0;
+	return acos(clamp(cos_phi, -1.0, 1.0)) / PI;
+}
+
+/* The haze lobe's Henyey-Greenstein phase toward direction (1/sr). */
+float atmosphere_lobe_phase(vec3 direction) {
+	float g = sky_atmosphere_light.w;
+	float denominator = 1.0 + g * g - 2.0 * g * dot(direction, sky_atmosphere_light.xyz);
+	return (1.0 - g * g) / (4.0 * PI * denominator * sqrt(denominator));
+}
+
 /*
  * The sky source's sea-level view volume (two slices: 0 at the cloud base, 1 at the
  * ray's end) along an upward direction: transmittance and in-scatter from the sea to
@@ -214,21 +240,45 @@ vec3 earth_curvature_tilt(vec3 direction, vec2 xz, vec3 camera_position) {
  */
 void atmosphere_sea_lookup(vec3 direction, float slice, out vec3 transmittance, out vec3 inscatter) {
 	vec3 size = vec3(textureSize(sky_atmosphere_transmittance, 0));
-	vec2 light_xz = sky_atmosphere_light.xz;
-	float d = length(direction.xz);
-	float l = length(light_xz);
-	float cos_phi = d > 1e-5 && l > 1e-5 ? dot(direction.xz, light_xz) / (d * l) : 1.0;
-	float x = acos(clamp(cos_phi, -1.0, 1.0)) / PI;
+	float x = atmosphere_light_azimuth_x(direction);
 	// Zenith angle over the half-turn from the zenith to the level horizon, squeezed
 	// toward the horizon; directions below it (none here: reflections point up) mirror it.
 	float zenith = acos(clamp(direction.y, -1.0, 1.0)) / (0.5 * PI);
 	float y = zenith < 1.0 ? 0.5 * (1.0 - sqrt(1.0 - zenith)) : 0.5 + 0.5 * sqrt(min(zenith - 1.0, 1.0));
 	vec3 uvw = vec3(0.5 / size.x + x * (1.0 - 1.0 / size.x), clamp(y, 0.5 / size.y, 1.0 - 0.5 / size.y), (slice + 0.5) / size.z);
-	float g = sky_atmosphere_light.w;
-	float denominator = 1.0 + g * g - 2.0 * g * dot(direction, sky_atmosphere_light.xyz);
-	float phase = (1.0 - g * g) / (4.0 * PI * denominator * sqrt(denominator));
 	transmittance = textureLod(sky_atmosphere_transmittance, uvw, 0.0).rgb;
-	inscatter = textureLod(sky_atmosphere_inscatter, uvw, 0.0).rgb + textureLod(sky_atmosphere_inscatter_lobe, uvw, 0.0).rgb * phase;
+	inscatter = textureLod(sky_atmosphere_inscatter, uvw, 0.0).rgb + textureLod(sky_atmosphere_inscatter_lobe, uvw, 0.0).rgb * atmosphere_lobe_phase(direction);
+}
+
+/*
+ * The atmosphere between the camera and a drawn point of the water, as FOG: Godot blends
+ * the lit color toward FOG.rgb by FOG.a, which is the mean transmittance (exact for grey
+ * haze), as the sky system's atmosphere_fog() does for other transparent surfaces. The
+ * camera view volume's mapping is the sky system's atmosphere_view_uvw() (zenith angle
+ * squeezed toward the observer's horizon from both sides; slices by the square root of
+ * the distance); change them together.
+ */
+vec4 aerial_perspective_fog(vec3 position) {
+	vec3 offset = position - aerial_observer.xyz;
+	float distance = length(offset);
+	if (distance < 1e-3)
+		return vec4(0.0);
+	vec3 direction = offset / distance;
+	vec3 size = vec3(textureSize(aerial_transmittance, 0));
+	float h = max(aerial_observer.w, 0.0);
+	float horizon_mu = -sqrt(h * (2.0 * EARTH_RADIUS + h)) / (EARTH_RADIUS + h);
+	float beta = acos(clamp(-horizon_mu, -1.0, 1.0));
+	float zenith_horizon = PI - beta;
+	float zenith = acos(clamp(direction.y, -1.0, 1.0));
+	float y = zenith < zenith_horizon
+			? 0.5 * (1.0 - sqrt(max(1.0 - zenith / zenith_horizon, 0.0)))
+			: 0.5 + 0.5 * sqrt(clamp((zenith - zenith_horizon) / max(beta, 1e-6), 0.0, 1.0));
+	float slice = sqrt(clamp(distance / aerial_max_distance, 0.0, 1.0)) * (size.z - 2.0);
+	vec3 uvw = vec3(0.5 / size.x + atmosphere_light_azimuth_x(direction) * (1.0 - 1.0 / size.x), clamp(y, 0.5 / size.y, 1.0 - 0.5 / size.y), (slice + 0.5) / size.z);
+	vec3 transmittance = textureLod(aerial_transmittance, uvw, 0.0).rgb;
+	vec3 inscatter = textureLod(aerial_inscatter, uvw, 0.0).rgb + textureLod(aerial_inscatter_lobe, uvw, 0.0).rgb * atmosphere_lobe_phase(direction);
+	float opacity = 1.0 - dot(transmittance, vec3(1.0 / 3.0));
+	return opacity > 1e-5 ? vec4(inscatter / opacity, opacity) : vec4(0.0);
 }
 
 /* 1 inside the interaction window, fading to 0 before its absorbing border. */
@@ -1082,6 +1132,7 @@ void fragment() {
 		ROUGHNESS = 1.0;
 		SPECULAR = 0.0;
 		EMISSION = debug_color / scene_exposure;
+		FOG = vec4(0.0);
 		light_specular_scale = 0.0;
 		crest_transmission = 0.0;
 		glitter_cells = vec4(0.0);
@@ -1091,6 +1142,9 @@ void fragment() {
 		ROUGHNESS = mix(effective_reflection_roughness, foam_roughness, foam_factor);
 		SPECULAR = 0.0; // No engine sky reflection: it is in EMISSION (see the header).
 		EMISSION = (reflection_radiance + transmitted_radiance) / scene_exposure;
+		// The camera's own path through the air (the sky's aerial perspective ran before
+		// the transparent pass). In-scatter is stored pre-exposed; Godot does not expose FOG.
+		FOG = aerial_perspective_enabled ? aerial_perspective_fog(drawn_position) : vec4(0.0);
 		light_specular_scale = sun_specular_strength * clear_water_mask;
 		crest_transmission = (1.0 - sky_fresnel) * (1.0 - foam_factor);
 

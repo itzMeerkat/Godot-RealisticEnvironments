@@ -96,8 +96,9 @@ Heights match the rendered mesh:
 - **Sky Reflection** — procedural sky reflection, `sun_specular_strength`, sun
   glitter; `manual_*` values are used when no sky source is set or the source
   lacks a value. A sky source with `get_cloud_cubemap()` (SkySystem) also puts
-  its clouds into the reflection, and one with `get_atmosphere_sky_volumes()`
-  its atmosphere (see Lighting below).
+  its clouds into the reflection, one with `get_atmosphere_sky_volumes()`
+  its atmosphere, and one with `get_atmosphere_view_volumes()` the air between
+  the camera and the water (see Lighting below).
 - **Planar Reflections** — mirrored-camera reflection of scene geometry,
   resolution, strength, and clipping of submerged pixels.
 - **External Wind** — `use_external_wind`, `wind_source_path`.
@@ -531,11 +532,21 @@ Lighting:
   up to their base in front, the rest of the sky through their gaps. The
   texture layout is the sky system's `atmosphere_view_uvw()` for an observer
   at altitude 0; change both together. Without an atmosphere the sky is the
-  gradient of the `sky_*` colours. The atmosphere between the camera and the
-  water is not the water's: the sky system's aerial perspective puts it over
-  the opaque scene. The water itself is transparent (below), so that effect,
-  which runs before the transparent pass, no longer hazes it: the surface
-  currently has no aerial perspective of its own.
+  gradient of the `sky_*` colours.
+- Aerial perspective (`aerial_perspective_fog()`): the sky system hazes the
+  opaque scene before the transparent pass, so the water, drawn after it,
+  hazes itself as other transparent surfaces do. With a sky source that has
+  `get_atmosphere_view_volumes()`, `get_atmosphere_view_observer()` and
+  `get_atmosphere_view_max_distance()` (SkySystem), it writes `FOG` from the
+  camera's view volume at the drawn (curved) surface point: Godot blends the
+  lit colour toward the in-scatter by the mean transmittance (exact for grey
+  haze), stored pre-exposed like the colour buffer. The volumes are re-read on
+  `lighting_changed`, the observer every frame. Its layout is the sky
+  system's `atmosphere_view_uvw()` (zenith squeezed toward the observer's
+  horizon, slices by the square root of the distance); change both together.
+  The scene seen through the water is already hazed over its whole distance,
+  so the air between the camera and the surface is applied to it twice; that
+  air is metres thick where the water is clear enough to see through.
 - Transparency and refraction: the shader reads the opaque scene
   (`hint_screen_texture`, linear HDR and exposed, with mips; `hint_depth_texture`),
   which puts it in Godot's transparent pass. It writes no `ALPHA`: what lies
