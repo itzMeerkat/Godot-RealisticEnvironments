@@ -171,6 +171,12 @@ before touching its code; this file only records what is easy to get wrong.
   (`rough_fresnel`, from the same slope variance as the roughness); plain
   Schlick on the filtered normal turns distant water into a mirror. `normal_scale` 1 gives the spectrum's physical slopes; steeper
   normals make distant water look rough and dark.
+- The water is transparent: it reads the screen and depth textures, so Godot
+  draws it in the transparent pass. Light from behind the surface goes into
+  `EMISSION` (no `ALPHA`), attenuated by `underwater_transmittance()`, and the
+  body albedo is scaled by `1 − transmittance`; keep both on the same
+  transmittance. Keep `depth_draw_always`, the ocean's `cast_shadow` off and
+  `mat_water.tres` `render_priority` below every other transparent material.
 - The spectrum is normalized to the JONSWAP height variance
   (`spectrum_compute.glsl`): `displacement_scale` 1 is the physical wave
   height for the wind and fetch. The demo exaggerates swell with ~2.
@@ -336,6 +342,9 @@ before touching its code; this file only records what is easy to get wrong.
   wave height.
 - In the input map, F is both `toggle_fullscreen` and `camera_move_down`, and C
   is both `cycle_camera_mode` and `toggle_camera_follow`.
+- The water surface has no aerial perspective: `AerialPerspectiveEffect` runs
+  before the transparent pass, where the water is now drawn. It needs the
+  camera's view volume through the sky source (planned, not done).
 - Unused but kept: `demo/player/camera.gd`, `systems/input/demo_input_actions.gd`.
 - The rowboat's physical probes were raised by hand after generation (column
   top at y = 0.4, 0.85 m tall) to give reserve buoyancy up to the gunwale;

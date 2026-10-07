@@ -3,7 +3,7 @@
 [ext_resource type="Shader" uid="uid://cjhn8nkfr4mn0" path="res://addons/ocean_system/shaders/spatial/water.gdshader" id="1_uffek"]
 
 [resource]
-render_priority = 1
+render_priority = -20
 shader = ExtResource("1_uffek")
 shader_parameter/foam_color = Color(0, 0, 0, 1)
 shader_parameter/water_absorption = Vector3(0.45, 0.07, 0.03)

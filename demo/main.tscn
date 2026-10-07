@@ -13,6 +13,7 @@
 [ext_resource type="Script" uid="uid://b372vvbghwlxx" path="res://systems/hud/compass_hud.gd" id="14_compass"]
 [ext_resource type="Script" uid="uid://chrxdfdli1lpb" path="res://addons/exposure_system/exposure_controller.gd" id="16_exposure"]
 [ext_resource type="PackedScene" uid="uid://cu6jvrb4ikqbo" path="res://demo/rowboat.tscn" id="15_rowboat"]
+[ext_resource type="PackedScene" path="res://demo/underwater_showcase.tscn" id="17_underwater"]
 
 [sub_resource type="Curve" id="Curve_dls5p"]
 _limits = [0.0, 2.0, 0.0, 1.0]
@@ -124,6 +125,9 @@ debug_enabled = true
 
 [node name="Buoy" parent="." unique_id=2077650632 instance=ExtResource("13_fdg1k")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 146.46655, 2.0000153, -97.32648)
+
+[node name="UnderwaterShowcase" parent="." instance=ExtResource("17_underwater")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 8, 0, 6)
 
 [node name="Caravel" parent="." unique_id=1779372444 instance=ExtResource("13_floating_box")]
 transform = Transform3D(0.63730067, 0, -0.7706152, 0, 1, 0, 0.7706152, 0, 0.63730067, -13.774445, 0, -15.14146)

@@ -1,5 +1,5 @@
 shader_type spatial;
-render_mode world_vertex_coords, cull_disabled;
+render_mode world_vertex_coords, cull_disabled, depth_draw_always;
 /*
  * Lights (the sun) shade the water in light(): Lambert diffuse and a GGX
  * specular highlight whose roughness includes the wave slopes a pixel does not
@@ -10,6 +10,11 @@ render_mode world_vertex_coords, cull_disabled;
  * Light under the surface follows the water's optical properties (water_absorption,
  * water_scattering): the deep-water color (water_body_albedo()) and the light that
  * crosses thin wave crests and scatters toward the eye (crest_scatter(), in light()).
+ *
+ * The water is transparent: it reads the opaque scene (screen and depth textures), so
+ * Godot draws it in the transparent pass. The scene behind the surface is seen along the
+ * refracted view ray (find_refracted_scene()) and attenuated over the water it crosses
+ * (underwater_transmittance()); the water body's color fills in what is not transmitted.
  *
  * The water is drawn on the earth's curve (earth_curvature_drop()), so it ends at a real
  * horizon. Everything else about the surface (waves, queries, hulls, planar reflections)
@@ -40,6 +45,20 @@ render_mode world_vertex_coords, cull_disabled;
 #define FOAM_TRANSMISSION_POWER 4.0
 // Refinement steps of the planar reflection hit along a pixel's reflected ray.
 #define PLANAR_REFLECTION_STEPS 3
+// Refracted view ray's search for the opaque scene (find_refracted_scene()): march and
+// bisection steps, how far (m) behind a surface the ray may end up and still pass through
+// it, the nearest view depth (m) the ray is followed to, and the longest path (m) searched
+// (light from farther is gone).
+#define REFRACTION_MARCH_STEPS 32
+#define REFRACTION_REFINE_STEPS 6
+#define REFRACTION_THICKNESS 0.25
+// Pixels between an object's silhouette and the scene that stands in for what it hides.
+#define REFRACTION_SILHOUETTE_MARGIN 3.0
+#define REFRACTION_NEAR 0.05
+#define REFRACTION_MAX_DISTANCE 64.0
+// Mean cosine of the downwelling light's directions below the surface (about 0.8 under a
+// high sun): its diffuse attenuation is K_d = (a + bb) / mean cosine (Kirk 1984).
+#define WATER_DOWNWELLING_MEAN_COSINE 0.8
 
 uniform vec4 foam_color : source_color;
 // Optical properties of the water, per sRGB channel (1/m): absorption, and scattering by
@@ -86,7 +105,7 @@ uniform float sun_specular_strength : hint_range(0.0, 4.0) = 1.0;
 // Stochastic glints (see glitter_scale()): facets per square meter of water, 0 = smooth highlight.
 uniform float sun_glitter_density : hint_range(0.0, 10000000.0) = 1000000.0;
 uniform float sun_glitter_rate : hint_range(0.0, 60.0) = 12.0; // glint patterns per second
-uniform int water_debug_view : hint_range(0, 11) = 0;
+uniform int water_debug_view : hint_range(0, 14) = 0;
 // The camera's exposure (CameraAttributes.exposure_multiplier, or the world's), set
 // every frame by OceanSystem. The reflections are summed pre-exposed, as the sky source's
 // clouds and atmosphere and the planar reflection are stored, and EMISSION (which Godot
@@ -102,6 +121,9 @@ uniform vec3 planar_reflection_camera_position; // the mirrored camera
 uniform float planar_reflection_texel_angle = 0.001; // radians per mip-0 texel at the image center
 uniform float planar_reflection_strength : hint_range(0.0, 1.0) = 0.0; // how much reflected geometry covers the sky behind it
 uniform float planar_reflection_plane_y = 0.0;
+// The opaque scene behind the water (linear HDR, exposed like EMISSION after scene_exposure).
+uniform sampler2D scene_color : hint_screen_texture, filter_linear_mipmap, repeat_disable;
+uniform sampler2D scene_depth : hint_depth_texture, filter_nearest, repeat_disable;
 uniform bool use_bicubic_normals = true;
 uniform int fragment_cascade_limit : hint_range(1, 8) = 3;
 // CDLOD mesh (OceanSystem._update_lod_grid). Off for the editor's preview plane.
@@ -466,6 +488,141 @@ float water_specular_brdf(vec3 normal, vec3 view, vec3 light_direction, float ro
 	return distribution * visibility * fresnel;
 }
 
+/* Backscattering coefficient (1/m): half the molecular scattering, and the particles' share. */
+vec3 water_backscattering() {
+	return 0.5 * WATER_MOLECULAR_SCATTERING + WATER_PARTICLE_BACKSCATTER_RATIO * water_scattering;
+}
+
+/*
+ * Transmittance of the water to a point behind the surface: the view ray's path through
+ * the water (beam attenuation a + b: light scattered out of the ray no longer forms the
+ * image), and the point's depth below the surface, which dims the light reaching it
+ * (diffuse attenuation K_d; the scene's lights know nothing of the water).
+ */
+vec3 underwater_transmittance(float path_length, float depth) {
+	vec3 beam_attenuation = water_absorption + water_scattering + WATER_MOLECULAR_SCATTERING;
+	vec3 downwelling_attenuation = (water_absorption + water_backscattering()) / WATER_DOWNWELLING_MEAN_COSINE;
+	return exp(-beam_attenuation * path_length - downwelling_attenuation * depth);
+}
+
+/* View depth (m, positive) of the opaque scene at a screen point; 0 where there is none (sky). */
+float scene_view_depth(vec2 screen_uv, mat4 inv_projection) {
+	float depth = textureLod(scene_depth, screen_uv, 0.0).r;
+	if (depth <= 0.0)
+		return 0.0; // Reversed Z: nothing was drawn in front of the far plane.
+	vec4 view = inv_projection * vec4(screen_uv * 2.0 - 1.0, depth, 1.0);
+	return -view.z / view.w;
+}
+
+/* View-space position of the opaque scene at a screen point; w = 0 where there is none (sky). */
+vec4 scene_view_position(vec2 screen_uv, mat4 inv_projection) {
+	float depth = textureLod(scene_depth, screen_uv, 0.0).r;
+	if (depth <= 0.0)
+		return vec4(0.0);
+	vec4 view = inv_projection * vec4(screen_uv * 2.0 - 1.0, depth, 1.0);
+	return vec4(view.xyz / view.w, 1.0);
+}
+
+/* Screen coordinates of a view-space point. */
+vec2 screen_project(vec3 view_position, mat4 projection) {
+	vec4 clip = projection * vec4(view_position, 1.0);
+	return clip.xy / clip.w * 0.5 + 0.5;
+}
+
+/*
+ * How far the ray's point at screen fraction u lies behind the scene seen there (m of view
+ * depth; negative in front), and that scene point (view space). underwater is false where
+ * the scene is nothing the ray can meet: none (sky), or above the water (higher than
+ * origin, the surface point).
+ */
+float refraction_gap(float u, vec3 origin, vec3 end, float start_k, float end_k, vec2 start_uv, vec2 delta, vec3 up, mat4 inv_projection, out vec3 scene_point, out bool underwater) {
+	float k = mix(start_k, end_k, u);
+	vec3 position = mix(origin * start_k, end * end_k, u) / k;
+	float scene = scene_view_depth(start_uv + delta * u, inv_projection);
+	scene_point = position * (scene * k);
+	underwater = scene > 0.0 && dot(scene_point - origin, up) <= 0.0;
+	return 1.0 / k - scene;
+}
+
+/*
+ * Where the view ray, refracted into the water at origin (view space), meets the opaque
+ * scene. The march steps along the ray's image on the screen (depth interpolated
+ * perspective-correctly; steps growing quadratically from the surface). Where the ray
+ * goes from in front of the underwater scene to behind it, a bisection finds the
+ * transition: if the ray ends up just behind the surface there (a screen point and its
+ * depth are one point), it passes through it; if far behind, it went behind an object and
+ * continues hidden. Scene above the water is nothing the ray can meet. A hidden ray that
+ * finds nothing afterwards meets what is not on the screen, and the scene where it was
+ * last seen stands in (the bottom next to the object, screen_pixel-sized steps back). Where the ray leaves the screen,
+ * or finds nothing within max_distance, it is assumed to meet a level bottom at the depth
+ * of the last underwater scene it passed over (at first the straight-through scene's,
+ * bottom_depth m below the surface). Returns the screen point, which may be off the
+ * screen.
+ */
+vec2 find_refracted_scene(vec3 origin, vec3 direction, vec3 up, float bottom_depth, float max_distance, vec2 screen_pixel, mat4 projection, mat4 inv_projection) {
+	vec3 end = origin + direction * max_distance;
+	if (end.z > -REFRACTION_NEAR) // Keep the end in front of the camera.
+		end = origin + direction * ((-REFRACTION_NEAR - origin.z) / direction.z);
+	vec2 start_uv = screen_project(origin, projection);
+	vec2 delta = screen_project(end, projection) - start_uv;
+	// 1 / depth is linear along the ray's image; so is position / depth.
+	float start_k = 1.0 / -origin.z;
+	float end_k = 1.0 / -end.z;
+	// Only the part on the screen can be searched.
+	float u_max = 1.0;
+	for (int axis = 0; axis < 2; ++axis) {
+		float end_uv = start_uv[axis] + delta[axis];
+		if (end_uv < 0.0)
+			u_max = min(u_max, -start_uv[axis] / delta[axis]);
+		else if (end_uv > 1.0)
+			u_max = min(u_max, (1.0 - start_uv[axis]) / delta[axis]);
+	}
+	float previous_u = 0.0;
+	bool previous_behind = false;
+	bool hidden = false;
+	vec2 last_seen_uv = start_uv;
+	vec3 scene_point;
+	bool underwater;
+	for (int i = 1; i <= REFRACTION_MARCH_STEPS; ++i) {
+		float step_fraction = float(i) / float(REFRACTION_MARCH_STEPS);
+		float u = u_max * step_fraction * step_fraction;
+		float gap = refraction_gap(u, origin, end, start_k, end_k, start_uv, delta, up, inv_projection, scene_point, underwater);
+		bool behind = underwater && gap >= 0.0;
+		if (behind && !previous_behind) {
+			float near_u = previous_u;
+			float far_u = u;
+			float far_gap = gap;
+			vec3 mid_point;
+			bool mid_underwater;
+			for (int b = 0; b < REFRACTION_REFINE_STEPS; ++b) {
+				float mid_u = 0.5 * (near_u + far_u);
+				float mid_gap = refraction_gap(mid_u, origin, end, start_k, end_k, start_uv, delta, up, inv_projection, mid_point, mid_underwater);
+				if (mid_underwater && mid_gap >= 0.0) {
+					far_u = mid_u;
+					far_gap = mid_gap;
+				} else {
+					near_u = mid_u;
+				}
+			}
+			// The ray's own depth change over the final interval bounds the gap at a surface.
+			float interval_depth = (1.0 / mix(start_k, end_k, far_u)) - (1.0 / mix(start_k, end_k, near_u));
+			if (far_gap <= interval_depth + REFRACTION_THICKNESS)
+				return start_uv + delta * far_u;
+			if (!hidden) // A few pixels back from the object's silhouette, so filtering does not pick it up.
+				last_seen_uv = start_uv + delta * near_u - delta / max(length(delta), 1e-6) * REFRACTION_SILHOUETTE_MARGIN * screen_pixel;
+			hidden = true;
+		} else if (underwater && !behind) {
+			bottom_depth = max(dot(origin - scene_point, up), 0.0); // The bottom it passes over.
+		}
+		previous_u = u;
+		previous_behind = behind;
+	}
+	if (hidden)
+		return last_seen_uv;
+	float t = min(bottom_depth / max(-dot(direction, up), 0.05), max_distance);
+	return screen_project(origin + direction * t, projection);
+}
+
 /*
  * Albedo of optically deep water (radiance = albedo * irradiance / PI), from its optical
  * properties: the remote-sensing reflectance just below the surface, rrs = 0.0949 u + 0.0794 u^2
@@ -473,7 +630,7 @@ float water_specular_brdf(vec3 normal, vec3 view, vec3 light_direction, float ro
  * al. 1998, for a view from above, surface transmission included); the albedo is PI Rrs.
  */
 vec3 water_body_albedo() {
-	vec3 backscattering = 0.5 * WATER_MOLECULAR_SCATTERING + WATER_PARTICLE_BACKSCATTER_RATIO * water_scattering;
+	vec3 backscattering = water_backscattering();
 	vec3 u = backscattering / (water_absorption + backscattering);
 	vec3 subsurface = (0.0949 + 0.0794 * u) * u;
 	return PI * 0.52 * subsurface / (1.0 - 1.7 * subsurface);
@@ -788,6 +945,52 @@ void fragment() {
 	// (water_body_albedo() holds it for a view from above). Foam lies on top, so it
 	// is not dimmed.
 	vec3 body_albedo = water_body_albedo() * (1.0 - sky_fresnel) / (1.0 - sky_reflection_f0);
+
+	// The scene behind the surface, seen along the refracted view ray. The water
+	// between attenuates it and adds its own color: the body's deep-water albedo
+	// fills in what the transmittance takes away. Foam lies on top and hides it.
+	vec3 water_transmittance = vec3(0.0);
+	vec3 transmitted_radiance = vec3(0.0);
+	float underwater_path = 0.0;
+	vec2 refracted_uv = SCREEN_UV;
+	vec3 up_view = (VIEW_MATRIX * vec4(0.0, 1.0, 0.0, 0.0)).xyz;
+	vec4 straight_point = scene_view_position(SCREEN_UV, INV_PROJECTION_MATRIX);
+	if (straight_point.w > 0.0) {
+		float straight_below = max(dot(VERTEX - straight_point.xyz, up_view), 0.0);
+		// Skip the search where even the straight-through scene's depth alone leaves no light.
+		vec3 best_transmittance = underwater_transmittance(straight_below, straight_below);
+		if (max(best_transmittance.r, max(best_transmittance.g, best_transmittance.b)) > 0.001) {
+			vec3 refracted_direction = (VIEW_MATRIX * vec4(refract(-view_direction_world, world_normal, 1.0 / WATER_IOR), 0.0)).xyz;
+			// Search as far as any light comes back from (transmittance 0.001 in the clearest channel).
+			vec3 beam_attenuation = water_absorption + water_scattering + WATER_MOLECULAR_SCATTERING;
+			float clearest = min(beam_attenuation.r, min(beam_attenuation.g, beam_attenuation.b));
+			float max_distance = min(6.9 / clearest, REFRACTION_MAX_DISTANCE);
+			vec2 found_uv = find_refracted_scene(VERTEX, refracted_direction, up_view, straight_below, max_distance, 1.0 / VIEWPORT_SIZE, PROJECTION_MATRIX, INV_PROJECTION_MATRIX);
+			// Keep the read on the screen without folding: the offset may use at most half
+			// the room toward the edge, so pixels nearing the edge squeeze what lies beyond
+			// it rather than all reading the edge.
+			vec2 offset = found_uv - SCREEN_UV;
+			vec2 room = mix(SCREEN_UV, vec2(1.0) - SCREEN_UV, step(vec2(0.0), offset));
+			refracted_uv = SCREEN_UV + sign(offset) * min(abs(offset), 0.5 * room);
+			vec4 hit = scene_view_position(refracted_uv, INV_PROJECTION_MATRIX);
+			if (hit.w == 0.0 || dot(hit.xyz - VERTEX, up_view) > 0.0) {
+				// Sky, or scene above the water there: read straight through instead.
+				refracted_uv = SCREEN_UV;
+				hit = straight_point;
+			}
+			underwater_path = distance(hit.xyz, VERTEX);
+			water_transmittance = underwater_transmittance(underwater_path, max(dot(VERTEX - hit.xyz, up_view), 0.0));
+			// Blurred by the unresolved slopes: refraction turns a slope tilt t by about
+			// t (1 - 1/n), spreading the rays over sqrt(2) sigma (1 - 1/n) radians.
+			float spread = 1.41421356 * slope_sigma * (1.0 - 1.0 / WATER_IOR) * underwater_path;
+			float meters_per_pixel = 2.0 * max(-hit.z, 0.001) / (PROJECTION_MATRIX[1][1] * VIEWPORT_SIZE.y);
+			float refraction_lod = log2(max(2.0 * spread / meters_per_pixel, 1.0));
+			// Explicit LOD: this follows the hull discard.
+			vec3 behind = textureLod(scene_color, refracted_uv, refraction_lod).rgb;
+			transmitted_radiance = behind * water_transmittance * (1.0 - sky_fresnel) * (1.0 - foam_factor);
+		}
+	}
+	body_albedo *= vec3(1.0) - water_transmittance;
 	// Bubble cells (low pattern values) are a little darker than the lace between them.
 	vec3 base_albedo = mix(body_albedo, foam_color.rgb * mix(0.75, 1.0, detail), foam_factor);
 	sky_reflection_amount = saturate(sky_reflection_strength * sky_fresnel * clear_water_mask);
@@ -866,6 +1069,12 @@ void fragment() {
 			debug_color = vec3(sqrt(slope_variance));
 		} else if (water_debug_view == 11) {
 			debug_color = vec3(foam_factor);
+		} else if (water_debug_view == 12) {
+			debug_color = water_transmittance; // to the scene behind the surface
+		} else if (water_debug_view == 13) {
+			debug_color = vec3(underwater_path / CREST_PATH_MAX); // refracted ray's path through the water
+		} else if (water_debug_view == 14) {
+			debug_color = vec3(abs(refracted_uv - SCREEN_UV) * 20.0, 0.0); // refraction offset on screen
 		}
 		// Shown unlit, so the scene's lighting does not scale the values.
 		ALBEDO = vec3(0.0);
@@ -881,7 +1090,7 @@ void fragment() {
 		METALLIC = 0.0;
 		ROUGHNESS = mix(effective_reflection_roughness, foam_roughness, foam_factor);
 		SPECULAR = 0.0; // No engine sky reflection: it is in EMISSION (see the header).
-		EMISSION = reflection_radiance / scene_exposure;
+		EMISSION = (reflection_radiance + transmitted_radiance) / scene_exposure;
 		light_specular_scale = sun_specular_strength * clear_water_mask;
 		crest_transmission = (1.0 - sky_fresnel) * (1.0 - foam_factor);
 

@@ -152,10 +152,12 @@ tiles for swell and short tiles for chop. Per cascade:
 - **Wake foam** — comes from the interaction simulation (see
   [Interaction simulation](#interaction-simulation-wakes)); there is no
   scripted foam API.
-- **Shading debug** — the shader uniform `water_debug_view` (1–11) shows single
+- **Shading debug** — the shader uniform `water_debug_view` (1–14) shows single
   terms unlit: 1 reflectance, 2 reflected sky, 3 sun specular, 4 crest light
   path, 5 crest scattering phase, 6 crest scattering (sun), 7 deep-water albedo,
-  8 reflection direction, 9 roughness, 10 slope deviation, 11 foam. The ocean
+  8 reflection direction, 9 roughness, 10 slope deviation, 11 foam,
+  12 transmittance to the scene behind the surface, 13 refracted path through
+  the water (/ 32 m), 14 refraction offset on screen (× 20). The ocean
   resets it to 0 on ready, so set it on the material at runtime.
 
 ## Hull cutouts
@@ -531,7 +533,42 @@ Lighting:
   at altitude 0; change both together. Without an atmosphere the sky is the
   gradient of the `sky_*` colours. The atmosphere between the camera and the
   water is not the water's: the sky system's aerial perspective puts it over
-  the whole scene.
+  the opaque scene. The water itself is transparent (below), so that effect,
+  which runs before the transparent pass, no longer hazes it: the surface
+  currently has no aerial perspective of its own.
+- Transparency and refraction: the shader reads the opaque scene
+  (`hint_screen_texture`, linear HDR and exposed, with mips; `hint_depth_texture`),
+  which puts it in Godot's transparent pass. It writes no `ALPHA`: what lies
+  behind is added to `EMISSION` itself, so the order of overlapping water
+  fragments does not matter, and `depth_draw_always` keeps it in the depth
+  buffer for the transparent materials drawn after it (`mat_water.tres`
+  `render_priority` -20 draws it before the sky's transparent disks and stars
+  at -5 and -10 and everything at 0). The view ray refracts through the shaded
+  normal (`WATER_IOR`); `find_refracted_scene()` marches it in view space
+  along its image on the screen (32 steps growing quadratically from the
+  surface, depth interpolated perspective-correctly) up to the distance light
+  still comes back from. Where the ray goes from in front of the underwater
+  scene to behind it, a bisection finds the transition: just behind the
+  surface there means it passes through it (a screen point and its depth are
+  one point); far behind means it went behind an object and continues hidden.
+  Scene above the water (higher than the surface point) or sky is nothing the
+  ray can meet. A hidden ray that finds nothing afterwards meets what the
+  screen does not show, and the scene where it was last seen (3 px off the
+  object's silhouette) stands in. A ray that leaves the screen or finds
+  nothing meets a level bottom at the depth of the last scene it passed over;
+  its screen point is then kept on the screen by letting the offset use at
+  most half the room toward the edge (no folding onto the edge). Where the
+  straight-through scene is sky, the water is deep. The scene is read at a mip that matches the spread the
+  unresolved slopes give the refracted rays (`√2 σ (1 − 1/n)` per metre).
+  `underwater_transmittance()` attenuates it over the refracted path by the
+  beam attenuation `a + b` and over the point's depth below the surface by the
+  downwelling light's `K_d = (a + bb) / 0.8` (Kirk; the scene's lights know
+  nothing of the water), times `1 − Fresnel` and `1 − foam`. The water body's
+  albedo is scaled by `1 − transmittance`, so shallow water fades into the
+  deep-water colour with depth. The ocean casts no shadows (`cast_shadow` off
+  in `ocean_system.tscn`): the light under the surface is the `K_d` term. Only
+  opaque geometry shows through; other transparent objects under the surface
+  are hidden by the water's depth.
 - Exposure: Godot exposes `EMISSION` by the camera's exposure
   (`CameraAttributes.exposure_multiplier`, the camera's or else the world's),
   but the sky source's clouds and atmosphere and the planar reflection are
