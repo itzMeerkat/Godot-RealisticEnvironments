@@ -12,7 +12,7 @@ extends Node3D
 const MAX_PARTICLES := 2500
 ## Hazes itself through the sky system's atmosphere: transparent surfaces are drawn
 ## after its aerial perspective.
-const SPRAY_SHADER := preload("res://addons/floating_boat_template/bow_spray.gdshader")
+const SPRAY_SHADER := preload("res://addons/boat_template/bow_spray.gdshader")
 ## Gravity (m/s^2) of the slam's stagnation head.
 const SLAM_GRAVITY := 9.81
 ## Elevation range (radians) of slam jets, measured from the side direction.

@@ -64,9 +64,10 @@ addons/                  Reusable systems, each self-contained with its own READ
   wind_system/           Wind provider node with procedural gusts
   exposure_system/       Camera exposure from the scene's light meter, eye-like adaptation
   buoyancy_system/       Probe-based buoyancy, probe generation, sinking monitor
-  hitbox_damage_system/  Projectile hitboxes, grouped health, hit effects
-  projectile_launcher_system/  Launchers, projectiles, aim solver, recoil, FX
-  floating_boat_template/      Boat scene that wires all of the above together
+  hitbox_damage_system/  Hitboxes, grouped health, hit effects
+  boat_template/         Boat scene that wires the systems together (driving, buoyancy, health, wake, spray)
+  projectile_launcher_system/  (development only) Launchers, projectiles, aim solver, recoil, FX
+  floating_boat_template/      (development only) The boat template plus weapons, for the demo
 systems/                 Demo-level support code: camera rig, debug panel, compass HUD
 demo/                    Demo scenes, ship/buoy instances and third-party assets
 tools/                   Development scripts (gd_lint.py: GDScript warnings via the editor's language server)
@@ -98,7 +99,9 @@ in the `core` addon (the `WaterSurface` contract, RenderingDevice helpers);
 everything else goes through duck-typed methods, node groups and signals. Each
 addon can be dropped into another project with `core` alone (buoyancy also
 needs some water in the scene that registers a `WaterSurface`), except
-`floating_boat_template`, which composes everything.
+`boat_template`, which composes them. The projectile weapons and the
+`floating_boat_template` that adds them to the boat are the demo's gameplay and
+not part of the open-source addons.
 
 ## Credits
 

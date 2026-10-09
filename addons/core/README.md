@@ -37,7 +37,7 @@ water.release_query(self)
 `extrapolated_height(age)` to hide the readback latency.
 
 Implemented by `ocean_system` (`OceanSurfaceQueries`, registered by
-`OceanSystem`). Used by `buoyancy_system` and `floating_boat_template`.
+`OceanSystem`). Used by `buoyancy_system` and `boat_template`.
 
 ## Rendering helpers
 

@@ -41,7 +41,7 @@ before touching its code; this file only records what is easy to get wrong.
   files only set up the project. Through core's `ProjectSetup` they add what an
   addon needs to `project.godot` and never change or remove existing values:
   sky_system declares its global shader uniforms on every editor load and turns
-  on debanding when enabled; projectile_launcher_system and
+  on debanding when enabled; boat_template, projectile_launcher_system and
   floating_boat_template add their default input actions when enabled. A new
   project requirement goes into the plugin, plus a runtime check that reports
   it (`SkySystem._check_project_settings()`, the boat's and weapon
@@ -55,13 +55,17 @@ before touching its code; this file only records what is easy to get wrong.
 - Keep `res://` paths and `uid://` values intact when hand-editing `.tscn` /
   `.tres`. Every script has a committed `.gd.uid` sidecar; move/rename it with
   the script, and commit the new one when adding a script.
-- `demo/rowboat.tscn` (player boat) and `demo/floating_box.tscn` (caravel)
-  inherit `addons/floating_boat_template/floating_boat.tscn` and override its
-  nodes by path (`BuoyantBody`, `BuoyancyProbeVolume/GeneratedProbes`,
-  `Hitboxes`, `Weapons`, `HullWaterFootprint`, `CameraTargets/*`), with
-  `index` attributes matching the template's child order. Renaming or
-  reordering template nodes breaks those overrides, `BuoyantBody.sinking_probe_paths`
-  and `demo/main.gd` (`BuoyantBody`, `CameraTargets/*`).
+- `addons/boat_template/boat.tscn` is the open-source boat (no weapons).
+  `addons/floating_boat_template/floating_boat.tscn` (development only, not
+  part of the open-source addons) inherits it and adds `Weapons` at child
+  index 4, between `Hitboxes` and `HullWaterFootprint`.
+  `demo/rowboat.tscn` (player boat) and `demo/floating_box.tscn` (caravel)
+  inherit `floating_boat.tscn` and override its nodes by path (`BuoyantBody`,
+  `BuoyancyProbeVolume/GeneratedProbes`, `Hitboxes`, `Weapons`,
+  `HullWaterFootprint`, `CameraTargets/*`), with `index` attributes matching
+  that child order. Renaming or reordering template nodes (or moving
+  `Weapons`) breaks those overrides, `BuoyantBody.sinking_probe_paths` and
+  `demo/main.gd` (`BuoyantBody`, `CameraTargets/*`).
 - Buoyancy probes are generated **in the editor** and saved into the scene.
   Runtime generation is refused on purpose; a volume with no saved probes only
   warns. The template has no probes; each boat generates its own.
@@ -89,7 +93,11 @@ before touching its code; this file only records what is easy to get wrong.
   wired by connecting `HitboxHealthManager.group_destroyed` to
   `BuoyantBody._on_hitbox_group_destroyed` in the scene — do not add
   hitbox/projectile imports to buoyancy code.
-- `floating_boat_template` is the only place allowed to compose all systems.
+- `boat_template` is the only addon allowed to compose the systems
+  (`floating_boat_template` adds the projectile weapons on top of it).
+- Open-source scope: `projectile_launcher_system` and `floating_boat_template`
+  are development/demo gameplay, not part of the open-source addons; leave
+  them as they are and keep the other addons independent of them.
 - Cross-system contracts (change both sides together):
   - Wind source: `get_wind_speed()` + `get_wind_direction_degrees()`, or
     `wind_speed` / `wind_direction` properties.
@@ -150,7 +158,7 @@ before touching its code; this file only records what is easy to get wrong.
     `project.godot` `[shader_globals]`, published by `SkySystem`, read through
     `sky_system/shaders/atmosphere.gdshaderinc`). Transparent materials that
     should be hazed include it and write `FOG = atmosphere_fog(...)`; only
-    `sky_system` and `floating_boat_template` may include it.
+    `sky_system` and `boat_template` may include it.
   - Hull cutouts: `HullWaterFootprint` nodes (group `ocean_hull`) with a baked
     `HullProfile`. Profiles are editor-baked and saved as `.tres`; never
     hand-edit their image. At most 8 hulls near the camera are cut out.
