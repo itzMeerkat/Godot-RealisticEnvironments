@@ -148,7 +148,6 @@ func _update_water_material() -> void:
 	material.set_shader_parameter(&"planar_reflection_texture", get_reflection_texture())
 	material.set_shader_parameter(&"planar_reflection_distance", _capture_effect.distance_texture)
 	material.set_shader_parameter(&"planar_reflection_strength", reflection_strength if enabled else 0.0)
-	material.set_shader_parameter(&"planar_reflection_plane_y", water_level)
 	_update_view_projection()
 
 

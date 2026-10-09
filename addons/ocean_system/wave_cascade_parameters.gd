@@ -126,10 +126,10 @@ var _direction_initialized := false
 
 
 ## Seeds the cascade once. A resource shared by several oceans keeps its first seed.
-func initialize_runtime_state(seed : Vector2i, initial_time : float) -> void:
+func initialize_runtime_state(initial_seed : Vector2i, initial_time : float) -> void:
 	if has_runtime_seed:
 		return
-	spectrum_seed = seed
+	spectrum_seed = initial_seed
 	time = initial_time
 	has_runtime_seed = true
 	request_spectrum_reset()

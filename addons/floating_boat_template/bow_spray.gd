@@ -3,9 +3,9 @@ extends Node3D
 ## Spray at a boat's stem. Place it at the stem, at about the waterline. It
 ## throws a steady sheet of spray to both sides while the stem cuts through
 ## water, and a slam burst when the bow nose-dives into a wave, with a splash
-## ring in the ocean's interaction simulation.
+## ring in the water's interaction simulation.
 ##
-## The water at the stem comes from OceanSystem's asynchronous surface query and
+## The water at the stem comes from the world's WaterSurface (asynchronous) and
 ## the stem's velocity from this node's own transform history, so it works on
 ## any moving hull.
 
@@ -19,8 +19,6 @@ const SLAM_JET_ELEVATION_MAX := 1.4
 
 ## Enables spray and slam effects.
 @export var enabled := true
-## Optional OceanSystem. Empty uses the first node in group ocean_system.
-@export var ocean_path: NodePath
 ## Spray starts up to this far (m) to either side of the stem: about half the
 ## bow's width a little aft of the stem.
 @export_range(0.0, 10.0, 0.01, "or_greater") var emission_half_width := 0.3
@@ -64,7 +62,7 @@ const SLAM_JET_ELEVATION_MAX := 1.4
 ## Emitted with the impact speed (m/s) and world position of every slam.
 signal slammed(impact_speed: float, position: Vector3)
 
-var ocean: OceanSystem
+var water: WaterSurface
 var _particles: GPUParticles3D
 var _previous_position := Vector3.ZERO
 var _velocity := Vector3.ZERO
@@ -76,14 +74,17 @@ var _query_point := PackedVector3Array([Vector3.ZERO])
 
 
 func _ready() -> void:
-	ocean = get_node(ocean_path) as OceanSystem if not ocean_path.is_empty() else get_tree().get_first_node_in_group(&"ocean_system") as OceanSystem
-	assert(ocean != null, "BowSpray %s: no OceanSystem (set ocean_path or add one to group ocean_system)." % get_path())
+	water = WaterSurface.find(self)
+	if water == null:
+		push_error("BowSpray %s: no WaterSurface in this world (add an OceanSystem). Spray is disabled." % get_path())
+		set_physics_process(false)
+		return
 	_build_particles()
 
 
 func _exit_tree() -> void:
-	if is_instance_valid(ocean):
-		ocean.release_surface_query(self)
+	if water != null:
+		water.release_query(self)
 
 
 func _physics_process(delta: float) -> void:
@@ -96,13 +97,13 @@ func _physics_process(delta: float) -> void:
 		return
 
 	_query_point[0] = stem
-	ocean.submit_surface_query(self, _query_point)
-	var result := ocean.get_surface_query_result(self)
+	water.submit_query(self, _query_point)
+	var result := water.get_query_result(self)
 	# The first readback arrives a few frames after the first submit.
 	if result == null:
 		return
 	var sample := result.samples[0]
-	var water_height := sample.extrapolated_height(ocean.get_query_age(result))
+	var water_height := sample.extrapolated_height(water.get_query_age(result))
 	var depth := water_height - stem.y
 	var relative_velocity := _velocity - sample.surface_velocity
 	var surface_point := Vector3(stem.x, minf(stem.y, water_height), stem.z)
@@ -142,8 +143,8 @@ func _slam(point: Vector3, impact_speed: float) -> void:
 		var elevation := randf_range(SLAM_JET_ELEVATION_MIN, SLAM_JET_ELEVATION_MAX)
 		var direction := (side * cos(elevation) + Vector3.UP * sin(elevation) + forward * randf_range(-0.1, 0.5)).normalized()
 		_emit(point + side * randf_range(0.0, emission_half_width), inherited + direction * jet_speed * randf_range(0.35, 1.0))
-	if slam_ring_amplitude > 0.0 and ocean.interaction_enabled:
-		ocean.add_water_impulse(point, slam_ring_radius, slam_ring_amplitude * impact_speed)
+	if slam_ring_amplitude > 0.0 and water.can_add_impulses():
+		water.add_impulse(point, slam_ring_radius, slam_ring_amplitude * impact_speed)
 	slammed.emit(impact_speed, point)
 
 

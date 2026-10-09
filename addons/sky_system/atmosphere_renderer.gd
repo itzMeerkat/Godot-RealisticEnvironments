@@ -78,8 +78,8 @@ var cloud_top_altitude := 4500.0
 var cloud_ambient_altitude := 3000.0
 
 var _device : RenderingDevice
-## Freed in reverse order by release().
-var _owned_rids : Array[RID] = []
+## Owns every GPU resource; freed by release().
+var _context : RenderingContext
 var _transmittance_pipeline : RID
 var _transmittance_set : RID
 var _multiple_scattering_pipeline : RID
@@ -99,46 +99,43 @@ var _no_cloud_cubemap : RID
 
 func _init(device : RenderingDevice) -> void:
 	_device = device
-	_linear_clamp = _own(_device.sampler_create(_make_sampler_state()))
+	_context = RenderingContext.new(device)
+	_linear_clamp = _context.create_sampler(RenderingContext.linear_sampler_state(RenderingDevice.SAMPLER_REPEAT_MODE_CLAMP_TO_EDGE, true))
 	var storage_usage := RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT | RenderingDevice.TEXTURE_USAGE_STORAGE_BIT
-	_transmittance_rid = _own(_create_texture(RenderingDevice.TEXTURE_TYPE_2D, Vector3i(TRANSMITTANCE_SIZE.x, TRANSMITTANCE_SIZE.y, 1), storage_usage))
-	_multiple_scattering_rid = _own(_create_texture(RenderingDevice.TEXTURE_TYPE_2D, Vector3i(MULTIPLE_SCATTERING_SIZE.x, MULTIPLE_SCATTERING_SIZE.y, 1), storage_usage))
+	_transmittance_rid = _create_texture(RenderingDevice.TEXTURE_TYPE_2D, Vector3i(TRANSMITTANCE_SIZE.x, TRANSMITTANCE_SIZE.y, 1), storage_usage)
+	_multiple_scattering_rid = _create_texture(RenderingDevice.TEXTURE_TYPE_2D, Vector3i(MULTIPLE_SCATTERING_SIZE.x, MULTIPLE_SCATTERING_SIZE.y, 1), storage_usage)
 	for i in 3:
-		_view_rids.push_back(_own(_create_texture(RenderingDevice.TEXTURE_TYPE_3D, VIEW_SIZE, storage_usage)))
-		_sea_rids.push_back(_own(_create_texture(RenderingDevice.TEXTURE_TYPE_3D, Vector3i(VIEW_SIZE.x, VIEW_SIZE.y, 2), storage_usage)))
-		_cloud_layer_rids.push_back(_own(_create_texture(RenderingDevice.TEXTURE_TYPE_3D, Vector3i(VIEW_SIZE.x, VIEW_SIZE.y, 1), storage_usage)))
+		_view_rids.push_back(_create_texture(RenderingDevice.TEXTURE_TYPE_3D, VIEW_SIZE, storage_usage))
+		_sea_rids.push_back(_create_texture(RenderingDevice.TEXTURE_TYPE_3D, Vector3i(VIEW_SIZE.x, VIEW_SIZE.y, 2), storage_usage))
+		_cloud_layer_rids.push_back(_create_texture(RenderingDevice.TEXTURE_TYPE_3D, Vector3i(VIEW_SIZE.x, VIEW_SIZE.y, 1), storage_usage))
 	view_transmittance.texture_rd_rid = _view_rids[0]
 	view_inscatter.texture_rd_rid = _view_rids[1]
 	view_inscatter_lobe.texture_rd_rid = _view_rids[2]
 	sea_transmittance.texture_rd_rid = _sea_rids[0]
 	sea_inscatter.texture_rd_rid = _sea_rids[1]
 	sea_inscatter_lobe.texture_rd_rid = _sea_rids[2]
-	sky_ambient_buffer = _own(_device.storage_buffer_create(SKY_LIGHT_SIZE, PackedByteArray()))
-	camera_sky_light_buffer = _own(_device.storage_buffer_create(SKY_LIGHT_SIZE, PackedByteArray()))
+	sky_ambient_buffer = _context.create_storage_buffer(SKY_LIGHT_SIZE).rid
+	camera_sky_light_buffer = _context.create_storage_buffer(SKY_LIGHT_SIZE).rid
 
-	var no_cloud_format := RDTextureFormat.new()
-	no_cloud_format.texture_type = RenderingDevice.TEXTURE_TYPE_CUBE
-	no_cloud_format.format = RenderingDevice.DATA_FORMAT_R8G8B8A8_UNORM
-	no_cloud_format.width = 1
-	no_cloud_format.height = 1
-	no_cloud_format.array_layers = 6
-	no_cloud_format.usage_bits = RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT
 	var transparent_face := PackedByteArray([0, 0, 0, 0])
-	_no_cloud_cubemap = _own(_device.texture_create(no_cloud_format, RDTextureView.new(), [transparent_face, transparent_face, transparent_face, transparent_face, transparent_face, transparent_face]))
+	var faces : Array[PackedByteArray] = []
+	for face in 6:
+		faces.push_back(transparent_face)
+	_no_cloud_cubemap = _context.create_texture_rid(RenderingDevice.TEXTURE_TYPE_CUBE, RenderingDevice.DATA_FORMAT_R8G8B8A8_UNORM, Vector3i.ONE, RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT, 6, 1, faces)
 
-	var transmittance_shader := _load_shader(TRANSMITTANCE_SHADER)
-	_transmittance_pipeline = _own(_device.compute_pipeline_create(transmittance_shader))
-	_transmittance_set = _own(_device.uniform_set_create([_image_uniform(0, _transmittance_rid)], transmittance_shader, 0))
-	var multiple_scattering_shader := _load_shader(MULTIPLE_SCATTERING_SHADER)
-	_multiple_scattering_pipeline = _own(_device.compute_pipeline_create(multiple_scattering_shader))
-	_multiple_scattering_set = _own(_device.uniform_set_create([
+	var transmittance_shader := _context.load_shader_file(TRANSMITTANCE_SHADER)
+	_transmittance_pipeline = _context.create_compute_pipeline(transmittance_shader)
+	_transmittance_set = _context.create_uniform_set([RenderingContext.image_uniform(0, _transmittance_rid)], transmittance_shader)
+	var multiple_scattering_shader := _context.load_shader_file(MULTIPLE_SCATTERING_SHADER)
+	_multiple_scattering_pipeline = _context.create_compute_pipeline(multiple_scattering_shader)
+	_multiple_scattering_set = _context.create_uniform_set([
 		_sampled_uniform(0, _transmittance_rid),
-		_image_uniform(1, _multiple_scattering_rid),
-	], multiple_scattering_shader, 0))
-	_view_shader = _load_shader(VIEW_SHADER)
-	_view_pipeline = _own(_device.compute_pipeline_create(_view_shader))
-	_ambient_shader = _load_shader(AMBIENT_SHADER)
-	_ambient_pipeline = _own(_device.compute_pipeline_create(_ambient_shader))
+		RenderingContext.image_uniform(1, _multiple_scattering_rid),
+	], multiple_scattering_shader)
+	_view_shader = _context.load_shader_file(VIEW_SHADER)
+	_view_pipeline = _context.create_compute_pipeline(_view_shader)
+	_ambient_shader = _context.load_shader_file(AMBIENT_SHADER)
+	_ambient_pipeline = _context.create_compute_pipeline(_ambient_shader)
 
 
 ## Frees every GPU resource; the owner must call it before dropping the renderer,
@@ -146,9 +143,14 @@ func _init(device : RenderingDevice) -> void:
 func release() -> void:
 	for texture in [view_transmittance, view_inscatter, view_inscatter_lobe, sea_transmittance, sea_inscatter, sea_inscatter_lobe]:
 		texture.texture_rd_rid = RID()
-	for i in range(_owned_rids.size() - 1, -1, -1):
-		_device.free_rid(_owned_rids[i])
-	_owned_rids.clear()
+	_context.free()
+	_context = null
+
+
+## True when a GPU resource failed to be created; the owner must release() it
+## instead of rendering.
+func has_failed() -> bool:
+	return _context.failed
 
 
 ## Altitude (m) where the atmosphere ends.
@@ -168,7 +170,7 @@ func get_observer_altitude(camera_altitude : float) -> float:
 ## (pre-exposed: the light is scaled by it).
 func render(camera_altitude : float, cloud_cubemap : RID, exposure : float) -> void:
 	var top := get_top_altitude()
-	var media_push := _pack([haze_density, haze_scale_height, top, haze_anisotropy])
+	var media_push := RenderingContext.create_float_push_constant([haze_density, haze_scale_height, top, haze_anisotropy])
 	var compute_list := _device.compute_list_begin()
 	_device.compute_list_bind_compute_pipeline(compute_list, _transmittance_pipeline)
 	_device.compute_list_bind_uniform_set(compute_list, _transmittance_set, 0)
@@ -191,13 +193,13 @@ func render(camera_altitude : float, cloud_cubemap : RID, exposure : float) -> v
 		var view_set := UniformSetCacheRD.get_cache(_view_shader, 0, [
 			_sampled_uniform(0, _transmittance_rid),
 			_sampled_uniform(1, clouds),
-			_image_uniform(2, targets[0]),
-			_image_uniform(3, targets[1]),
-			_image_uniform(4, targets[2]),
+			RenderingContext.image_uniform(2, targets[0]),
+			RenderingContext.image_uniform(3, targets[1]),
+			RenderingContext.image_uniform(4, targets[2]),
 			_sampled_uniform(5, _multiple_scattering_rid),
 		])
 		_device.compute_list_bind_uniform_set(compute_list, view_set, 0)
-		var view_push := _pack([
+		var view_push := RenderingContext.create_float_push_constant([
 			volume[0], haze_density, haze_scale_height, top,
 			light_direction.x, light_direction.y, light_direction.z, MAX_DISTANCE,
 			light_color.r * exposure, light_color.g * exposure, light_color.b * exposure, cloud_shadow_strength,
@@ -212,74 +214,23 @@ func render(camera_altitude : float, cloud_cubemap : RID, exposure : float) -> v
 	for light in [[ambient_altitude, _cloud_layer_rids, sky_ambient_buffer, 0.0], [get_observer_altitude(camera_altitude), _view_rids, camera_sky_light_buffer, 1.0]]:
 		_device.compute_list_bind_compute_pipeline(compute_list, _ambient_pipeline)
 		var volumes : Array[RID] = light[1]
-		var buffer_uniform := RDUniform.new()
-		buffer_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER
-		buffer_uniform.binding = 2
-		buffer_uniform.add_id(light[2])
 		var ambient_set := UniformSetCacheRD.get_cache(_ambient_shader, 0, [
 			_sampled_uniform(0, volumes[1]),
 			_sampled_uniform(1, volumes[2]),
-			buffer_uniform,
+			RenderingContext.buffer_uniform(2, light[2]),
 			_sampled_uniform(3, clouds),
 		])
 		_device.compute_list_bind_uniform_set(compute_list, ambient_set, 0)
-		var ambient_push := _pack([light[0], light[3], 0.0, 0.0, light_direction.x, light_direction.y, light_direction.z, 0.0])
+		var ambient_push := RenderingContext.create_float_push_constant([light[0], light[3], 0.0, 0.0, light_direction.x, light_direction.y, light_direction.z, 0.0])
 		_device.compute_list_set_push_constant(compute_list, ambient_push, ambient_push.size())
 		_device.compute_list_dispatch(compute_list, 1, 1, 1)
 	_device.compute_list_end()
 
 
-func _own(rid : RID) -> RID:
-	assert(rid.is_valid(), "AtmosphereRenderer failed to create a GPU resource.")
-	_owned_rids.push_back(rid)
-	return rid
-
-
-func _load_shader(shader_file : RDShaderFile) -> RID:
-	var spirv := shader_file.get_spirv()
-	assert(spirv.compile_error_compute.is_empty(), "Atmosphere compute shader failed to compile: %s" % spirv.compile_error_compute)
-	return _own(_device.shader_create_from_spirv(spirv))
-
 
 func _create_texture(type : RenderingDevice.TextureType, size : Vector3i, usage : int) -> RID:
-	var texture_format := RDTextureFormat.new()
-	texture_format.texture_type = type
-	texture_format.format = RenderingDevice.DATA_FORMAT_R16G16B16A16_SFLOAT
-	texture_format.width = size.x
-	texture_format.height = size.y
-	texture_format.depth = size.z
-	texture_format.usage_bits = usage
-	return _device.texture_create(texture_format, RDTextureView.new())
-
-
-static func _make_sampler_state() -> RDSamplerState:
-	var state := RDSamplerState.new()
-	state.min_filter = RenderingDevice.SAMPLER_FILTER_LINEAR
-	state.mag_filter = RenderingDevice.SAMPLER_FILTER_LINEAR
-	state.mip_filter = RenderingDevice.SAMPLER_FILTER_LINEAR
-	state.repeat_u = RenderingDevice.SAMPLER_REPEAT_MODE_CLAMP_TO_EDGE
-	state.repeat_v = RenderingDevice.SAMPLER_REPEAT_MODE_CLAMP_TO_EDGE
-	state.repeat_w = RenderingDevice.SAMPLER_REPEAT_MODE_CLAMP_TO_EDGE
-	return state
-
-
-static func _image_uniform(binding : int, texture : RID) -> RDUniform:
-	var uniform := RDUniform.new()
-	uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
-	uniform.binding = binding
-	uniform.add_id(texture)
-	return uniform
+	return _context.create_texture_rid(type, RenderingDevice.DATA_FORMAT_R16G16B16A16_SFLOAT, size, usage)
 
 
 func _sampled_uniform(binding : int, texture : RID) -> RDUniform:
-	var uniform := RDUniform.new()
-	uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_SAMPLER_WITH_TEXTURE
-	uniform.binding = binding
-	uniform.add_id(_linear_clamp)
-	uniform.add_id(texture)
-	return uniform
-
-
-## Push-constant bytes at the exact size the shader declares (4 bytes per value).
-static func _pack(values : Array) -> PackedByteArray:
-	return PackedFloat32Array(values).to_byte_array()
+	return RenderingContext.sampled_uniform(binding, _linear_clamp, texture)

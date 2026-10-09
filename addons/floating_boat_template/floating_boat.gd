@@ -116,21 +116,21 @@ func _apply_drive() -> void:
 func _apply_local_angular_damping() -> void:
 	if local_angular_damping == Vector3.ZERO or angular_velocity.length_squared() <= 0.0:
 		return
-	var basis := global_transform.basis.orthonormalized()
-	var local_angular_velocity := basis.inverse() * angular_velocity
-	apply_torque(basis * (-local_angular_velocity * local_angular_damping * mass))
+	var body_basis := global_transform.basis.orthonormalized()
+	var local_angular_velocity := body_basis.inverse() * angular_velocity
+	apply_torque(body_basis * (-local_angular_velocity * local_angular_damping * mass))
 
 
 func _apply_roll_righting_torque() -> void:
 	if roll_righting_torque_per_kg <= 0.0:
 		return
-	var basis := global_transform.basis.orthonormalized()
-	var roll_axis := basis.z
+	var body_basis := global_transform.basis.orthonormalized()
+	var roll_axis := body_basis.z
 	var target_up := Vector3.UP - roll_axis * Vector3.UP.dot(roll_axis)
 	# Bow pointing straight up or down: roll is undefined.
 	if target_up.length_squared() <= 0.0001:
 		return
-	var roll_error := basis.y.signed_angle_to(target_up.normalized(), roll_axis)
+	var roll_error := body_basis.y.signed_angle_to(target_up.normalized(), roll_axis)
 	var dead_zone := deg_to_rad(roll_righting_dead_zone_degrees)
 	if absf(roll_error) <= dead_zone:
 		return
@@ -142,10 +142,14 @@ func _apply_roll_righting_torque() -> void:
 
 
 func _play_model_animation() -> void:
-	var animation_player := get_node(animation_player_path) as AnimationPlayer
-	assert(animation_player != null, "FloatingBoat %s: animation_player_path does not point to an AnimationPlayer." % get_path())
+	var animation_player := get_node_or_null(animation_player_path) as AnimationPlayer
+	if animation_player == null:
+		push_error("FloatingBoat %s: animation_player_path does not point to an AnimationPlayer." % get_path())
+		return
 	var animation := animation_player.get_animation(autoplay_animation)
-	assert(animation != null, "FloatingBoat %s: the model has no animation '%s'." % [get_path(), autoplay_animation])
+	if animation == null:
+		push_error("FloatingBoat %s: the model has no animation '%s'." % [get_path(), autoplay_animation])
+		return
 	animation.loop_mode = Animation.LOOP_LINEAR
 	animation_player.play(autoplay_animation)
 

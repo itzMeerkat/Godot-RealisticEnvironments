@@ -1,9 +1,10 @@
 class_name BuoyantBody
 extends Node
-## Applies probe-based buoyancy forces to a parent RigidBody3D using OceanSystem's
-## batched GPU water-surface query. FX probes are queried in the same batch but
-## never apply forces. With sinking enabled it also sinks the body when it rolls
-## over, floods (all sinking probes deep under water) or loses a hitbox group.
+## Applies probe-based buoyancy forces to a parent RigidBody3D using the water
+## surface of its world (WaterSurface.find(), e.g. an OceanSystem). FX probes
+## are queried in the same batch but never apply forces. With sinking enabled it
+## also sinks the body when it rolls over, floods (all sinking probes deep under
+## water) or loses a hitbox group.
 ##
 ## Probe data is cached when volumes are collected and whenever a volume reports
 ## probes_changed. Probes must stay rigid relative to the body: each tick only
@@ -15,8 +16,6 @@ signal sinking_started(reason: StringName, data: Dictionary)
 
 ## Optional rigid body target. Leave empty to use the parent or nearest ancestor RigidBody3D.
 @export var rigid_body_path : NodePath
-## Optional OceanSystem target. Leave empty to use the first node in the ocean_system group.
-@export var ocean_path : NodePath
 ## Automatically includes child BuoyancyProbeVolume nodes in addition to explicit paths.
 @export var auto_collect_child_volumes := true
 ## Explicit probe volumes used by this buoyant body.
@@ -61,7 +60,7 @@ signal sinking_started(reason: StringName, data: Dictionary)
 @export var delete_root_path : NodePath
 
 var rigid_body : RigidBody3D
-var ocean : OceanSystem
+var water : WaterSurface
 var probe_volumes : Array[BuoyancyProbeVolume] = []
 ## True while the body is held frozen waiting for its first water sample.
 var _awaiting_first_sample := false
@@ -80,7 +79,7 @@ var _volume_shares := PackedFloat32Array()
 var _column_heights := PackedFloat32Array()
 var _longitudinal_drag := PackedFloat32Array()
 var _lateral_drag := PackedFloat32Array()
-## OceanSystem.time when the probe set last changed. Results dispatched before
+## Water clock (WaterSurface.get_clock()) when the probe set last changed. Results dispatched before
 ## then answer the old point set.
 var _probe_set_time := -INF
 var _sinking_probes : Array[Node] = []
@@ -89,13 +88,22 @@ var _is_sinking := false
 
 func _ready() -> void:
 	rigid_body = _resolve_rigid_body()
-	ocean = _resolve_ocean()
+	water = WaterSurface.find(self)
+	if rigid_body == null or water == null:
+		if water == null:
+			push_error("BuoyantBody %s: no WaterSurface in this world (add an OceanSystem). Buoyancy is disabled." % get_path())
+		set_physics_process(false)
+		return
 	_gravity = float(ProjectSettings.get_setting("physics/3d/default_gravity"))
 	_collect_volumes()
 	if probe_volumes.is_empty():
 		push_error("BuoyantBody found no probe volumes: %s" % get_path())
 	for path in sinking_probe_paths:
-		_sinking_probes.push_back(get_node(path))
+		var probe := get_node_or_null(path)
+		if probe == null:
+			push_error("BuoyantBody %s: sinking probe %s not found; ignored." % [get_path(), path])
+			continue
+		_sinking_probes.push_back(probe)
 	# The first surface query result arrives several frames after the first submit,
 	# and much later in physics time when startup frames hitch. Hold the body still
 	# until then instead of letting it free-fall through the water.
@@ -105,9 +113,8 @@ func _ready() -> void:
 
 
 func _exit_tree() -> void:
-	# On scene teardown the ocean may already be freed; its queries go with it.
-	if is_instance_valid(ocean):
-		ocean.release_surface_query(self)
+	if water != null:
+		water.release_query(self)
 
 
 func _physics_process(_delta : float) -> void:
@@ -121,15 +128,17 @@ func _physics_process(_delta : float) -> void:
 
 	var body_transform := rigid_body.global_transform
 	_submit_points(body_transform)
-	var result := ocean.get_surface_query_result(self)
+	var result := water.get_query_result(self)
 	# The first readback arrives a few frames after the first submit.
 	if result == null or result.dispatch_time <= _probe_set_time:
 		return
-	assert(result.samples.size() == _points.size(), "BuoyantBody %s: query result has %d samples for %d probes." % [get_path(), result.samples.size(), _points.size()])
+	if result.samples.size() != _points.size():
+		push_error("BuoyantBody %s: query result has %d samples for %d probes; tick skipped." % [get_path(), result.samples.size(), _points.size()])
+		return
 	if _awaiting_first_sample:
 		_awaiting_first_sample = false
 		rigid_body.freeze = false
-	var elapsed := ocean.get_query_age(result)
+	var elapsed := water.get_query_age(result)
 	var now := float(Time.get_ticks_msec()) * 0.001
 
 	var forward := -body_transform.basis.z
@@ -141,8 +150,12 @@ func _physics_process(_delta : float) -> void:
 	var mass := rigid_body.mass
 	var linear_velocity := rigid_body.linear_velocity
 	var angular_velocity := rigid_body.angular_velocity
+	# Probe forces are summed into one force and one torque about the center of mass
+	# (what apply_force() at each probe adds up to), sent with two calls per tick.
+	var center_of_mass := PhysicsServer3D.body_get_direct_state(rigid_body.get_rid()).center_of_mass
 
 	var total_external_force := Vector3.ZERO
+	var total_torque := Vector3.ZERO
 	for i in _force_states.size():
 		var sample := result.samples[i]
 		var water_height := sample.extrapolated_height(elapsed)
@@ -163,9 +176,13 @@ func _physics_process(_delta : float) -> void:
 			var max_force := mass * share * max_probe_acceleration
 			if max_probe_acceleration > 0.0 and applied_force.length_squared() > max_force * max_force:
 				applied_force = applied_force.normalized() * max_force
-			rigid_body.apply_force(applied_force, offset)
 			total_external_force += applied_force
+			total_torque += (offset - center_of_mass).cross(applied_force)
 		_update_state(_force_states[i], position, sample, water_height, applied_force, submersion, now)
+
+	if total_external_force != Vector3.ZERO:
+		rigid_body.apply_central_force(total_external_force)
+		rigid_body.apply_torque(total_torque)
 
 	var force_count := _force_states.size()
 	for j in _contact_states.size():
@@ -185,7 +202,12 @@ func start_sinking(reason : StringName = &"manual", data : Dictionary = {}) -> v
 	_is_sinking = true
 	buoyancy_strength *= sink_buoyancy_multiplier
 	sinking_started.emit(reason, data)
-	var delete_root := get_node(delete_root_path) if not delete_root_path.is_empty() else rigid_body
+	var delete_root : Node = rigid_body
+	if not delete_root_path.is_empty():
+		delete_root = get_node_or_null(delete_root_path)
+		if delete_root == null:
+			push_error("BuoyantBody %s: delete_root_path %s not found; freeing the rigid body instead." % [get_path(), delete_root_path])
+			delete_root = rigid_body
 	if delete_delay <= 0.0:
 		delete_root.queue_free()
 	else:
@@ -233,24 +255,18 @@ func get_probe_state(probe : Node) -> BuoyancyProbeState:
 	return _states_by_probe.get(probe.get_instance_id())
 
 
+## Null (reported) when the configured body is missing or not a RigidBody3D.
 func _resolve_rigid_body() -> RigidBody3D:
 	if not rigid_body_path.is_empty():
-		var target := get_node(rigid_body_path)
-		assert(target is RigidBody3D, "BuoyantBody %s: rigid_body_path points to %s (%s), not a RigidBody3D." % [get_path(), target.get_path(), target.get_class()])
+		var target := get_node_or_null(rigid_body_path)
+		if not target is RigidBody3D:
+			push_error("BuoyantBody %s: rigid_body_path %s is not a RigidBody3D. Buoyancy is disabled." % [get_path(), rigid_body_path])
+			return null
 		return target as RigidBody3D
 	var ancestor := _find_parent_rigid_body()
-	assert(ancestor != null, "BuoyantBody %s: rigid_body_path is empty and no ancestor is a RigidBody3D." % get_path())
+	if ancestor == null:
+		push_error("BuoyantBody %s: rigid_body_path is empty and no ancestor is a RigidBody3D. Buoyancy is disabled." % get_path())
 	return ancestor
-
-
-func _resolve_ocean() -> OceanSystem:
-	if not ocean_path.is_empty():
-		var target := get_node(ocean_path)
-		assert(target is OceanSystem, "BuoyantBody %s: ocean_path points to %s (%s), not an OceanSystem." % [get_path(), target.get_path(), target.get_class()])
-		return target as OceanSystem
-	var found := get_tree().get_first_node_in_group(&"ocean_system") as OceanSystem
-	assert(found != null, "BuoyantBody %s: ocean_path is empty and no OceanSystem is in group 'ocean_system'." % get_path())
-	return found
 
 
 func _find_parent_rigid_body() -> RigidBody3D:
@@ -268,8 +284,10 @@ func _collect_volumes() -> void:
 			volume.probes_changed.disconnect(_on_probes_changed)
 	probe_volumes.clear()
 	for path in probe_volume_paths:
-		var node := get_node(path)
-		assert(node is BuoyancyProbeVolume, "BuoyantBody %s: probe_volume_paths entry %s is not a BuoyancyProbeVolume." % [get_path(), node.get_path()])
+		var node := get_node_or_null(path)
+		if not node is BuoyancyProbeVolume:
+			push_error("BuoyantBody %s: probe_volume_paths entry %s is not a BuoyancyProbeVolume; ignored." % [get_path(), path])
+			continue
 		if not probe_volumes.has(node):
 			probe_volumes.push_back(node)
 	if auto_collect_child_volumes:
@@ -327,9 +345,9 @@ func _rebuild_probe_cache() -> void:
 		_states_by_probe[probe.get_instance_id()] = _contact_states[j]
 	# Replace any queued submission of the old probe set, so every dispatch after
 	# this moment answers the new one.
-	_probe_set_time = ocean.time
+	_probe_set_time = water.get_clock()
 	if point_count == 0:
-		ocean.release_surface_query(self)
+		water.release_query(self)
 	else:
 		_submit_points(rigid_body.global_transform)
 
@@ -337,7 +355,7 @@ func _rebuild_probe_cache() -> void:
 func _submit_points(body_transform : Transform3D) -> void:
 	for i in _points.size():
 		_points[i] = body_transform * _body_offsets[i]
-	ocean.submit_surface_query(self, _points, rigid_body)
+	water.submit_query(self, _points, rigid_body)
 
 
 func _update_state(state : BuoyancyProbeState, position : Vector3, sample : WaterSurfaceSample, water_height : float, applied_force : Vector3, submersion : float, now : float) -> void:
@@ -358,7 +376,9 @@ func _check_sinking() -> void:
 	var deepest_depth := -INF
 	for probe in _sinking_probes:
 		var state := get_probe_state(probe)
-		assert(state != null, "BuoyantBody %s: sinking probe %s is not an enabled probe of this body." % [get_path(), probe.get_path()])
+		# A disabled probe has no state and cannot be flooded.
+		if state == null:
+			return
 		if state.depth < sink_probe_depth_threshold:
 			return
 		deepest_depth = maxf(deepest_depth, state.depth)

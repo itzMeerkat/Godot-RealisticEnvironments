@@ -1,11 +1,13 @@
 # Buoyancy System
 
-Probe-based buoyancy for `RigidBody3D`s floating on an `OceanSystem`. Probes are
+Probe-based buoyancy for `RigidBody3D`s floating on water. Probes are
 generated from a hull mesh in the editor, saved into the scene, and sampled
-every physics tick through the ocean's batched GPU query. Also includes water
-contact events and sinking (roll, flooding or a destroyed hitbox group).
+every physics tick through the world's `WaterSurface` (an `OceanSystem`'s
+batched GPU query). Also includes water contact events and sinking (roll,
+flooding or a destroyed hitbox group).
 
-Requires `ocean_system`.
+Requires the `core` addon, and a water simulation that registers a
+`WaterSurface` (e.g. `ocean_system`) in the scene.
 
 ## Setup
 
@@ -13,23 +15,23 @@ Requires `ocean_system`.
 RigidBody3D                (e.g. FloatingBoat)
 ├─ CollisionShape3D
 ├─ <hull model>
-├─ BuoyantBody             finds the parent body and the ocean; optional sinking
+├─ BuoyantBody             finds the parent body and the water; optional sinking
 └─ BuoyancyProbeVolume     source_paths → hull model
    └─ GeneratedProbes      BuoyancyProbeNode / BuoyancyFxProbeNode children
 ```
 
 1. Add `BuoyantBody` under the rigid body. It uses `rigid_body_path` or the
-   nearest `RigidBody3D` ancestor, and `ocean_path` or the first node in group
-   `ocean_system`. Both are resolved once in `_ready`; a missing body or ocean
-   fails an assert, and finding no probe volumes is an error.
+   nearest `RigidBody3D` ancestor, and the `WaterSurface` of its world
+   (`WaterSurface.find()`). Both are resolved once in `_ready`; a missing body
+   or water surface is reported and disables the node, and finding no probe
+   volumes is an error.
 2. Add a `BuoyancyProbeVolume`, set `source_paths` to the hull mesh root(s) and
    `design_waterline_y` (local) to where the hull should float, and
    `generated_probe_freeboard` to the hull's height above it (to the deck or
    gunwale): the columns reach that high, so waves above the waterline lift
    the hull (reserve buoyancy).
-3. In the editor toggle `editor_generate_physical_probes`,
-   `editor_generate_fx_probes` or `editor_generate_all_probes`, then save the
-   scene. Generation only runs in the editor; at runtime a volume with no probes
+3. In the editor press **Generate Physical Probes**, **Generate FX Probes**
+   or **Generate All Probes**, then save the scene. Generation only runs in the editor; at runtime a volume with no probes
    just warns once.
 4. Tune probe volumes, `buoyancy_strength` and drag. Probes are ordinary nodes:
    move, delete or duplicate them by hand as needed.
@@ -58,7 +60,7 @@ cache is rebuilt when volumes are collected and whenever a volume emits
 edited). Probes must therefore stay rigid relative to the body.
 
 Each `_physics_process` it transforms the cached positions by the body
-transform, submits them with `ocean.submit_surface_query(self, points, rigid_body)`
+transform, submits them with `water.submit_query(self, points, rigid_body)`
 (so a body that pushes water through a `HullWaterFootprint` does not read its
 own simulated waves back), reads
 the latest completed result, and for every physical probe applies at the probe
@@ -77,7 +79,7 @@ position:
 Query results arrive a few frames after dispatch (see the ocean README):
 
 - Every water height used above is
-  `sample.extrapolated_height(ocean.get_query_age(result))`: the age is taken at
+  `sample.extrapolated_height(water.get_query_age(result))`: the age is taken at
   the start of the current physics tick, not the frame, so several ticks per
   frame each see the water of their own moment.
 - Until the first result arrives, the body is held with `freeze = true` (only

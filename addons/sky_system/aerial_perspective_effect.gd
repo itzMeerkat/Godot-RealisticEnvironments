@@ -75,9 +75,13 @@ func _init() -> void:
 		return
 	for version in [&"single", &"msaa"]:
 		var spirv := SHADER.get_spirv(version)
-		assert(spirv.compile_error_vertex.is_empty() and spirv.compile_error_fragment.is_empty(), "Aerial perspective shader failed to compile: %s%s" % [spirv.compile_error_vertex, spirv.compile_error_fragment])
-		_shaders[version] = _rd.shader_create_from_spirv(spirv)
-		assert(_shaders[version].is_valid(), "Aerial perspective shader could not be created.")
+		if not (spirv.compile_error_vertex.is_empty() and spirv.compile_error_fragment.is_empty()):
+			# That version is skipped: no aerial perspective on opaque geometry.
+			push_error("Aerial perspective shader (%s) failed to compile: %s%s" % [version, spirv.compile_error_vertex, spirv.compile_error_fragment])
+			continue
+		var shader := _rd.shader_create_from_spirv(spirv)
+		if shader.is_valid():
+			_shaders[version] = shader
 	var depth_state := RDSamplerState.new()
 	depth_state.min_filter = RenderingDevice.SAMPLER_FILTER_NEAREST
 	depth_state.mag_filter = RenderingDevice.SAMPLER_FILTER_NEAREST
@@ -114,6 +118,9 @@ func _render_callback(_callback_type: int, render_data: RenderData) -> void:
 	var render_scene_data := render_data.get_render_scene_data()
 	var msaa := render_scene_buffers.get_msaa_3d() != RenderingServer.VIEWPORT_MSAA_DISABLED
 	var version := &"msaa" if msaa else &"single"
+	# Reported in _init().
+	if not _shaders.has(version):
+		return
 	var shader : RID = _shaders[version]
 	var size := render_scene_buffers.get_internal_size()
 	var camera_transform := render_scene_data.get_cam_transform()
@@ -149,8 +156,11 @@ func _render_callback(_callback_type: int, render_data: RenderData) -> void:
 		push.append_array([float(size.x), float(size.y), params[5], 0.0])
 
 		var push_bytes := push.to_byte_array()
+		var pipeline := _get_pipeline(version, framebuffer_format, render_scene_buffers.get_texture_samples())
+		if not pipeline.is_valid():
+			return
 		var draw_list := _rd.draw_list_begin(framebuffer)
-		_rd.draw_list_bind_render_pipeline(draw_list, _get_pipeline(version, framebuffer_format, render_scene_buffers.get_texture_samples()))
+		_rd.draw_list_bind_render_pipeline(draw_list, pipeline)
 		_rd.draw_list_bind_uniform_set(draw_list, uniform_set, 0)
 		_rd.draw_list_set_push_constant(draw_list, push_bytes, push_bytes.size())
 		_rd.draw_list_draw(draw_list, false, 1, 3)
@@ -179,6 +189,9 @@ func _get_pipeline(version : StringName, framebuffer_format : int, samples : Ren
 	var blend := RDPipelineColorBlendState.new()
 	blend.attachments = [attachment]
 	var pipeline := _rd.render_pipeline_create(_shaders[version], framebuffer_format, RenderingDevice.INVALID_FORMAT_ID, RenderingDevice.RENDER_PRIMITIVE_TRIANGLES, rasterization, multisample, RDPipelineDepthStencilState.new(), blend)
-	assert(pipeline.is_valid(), "Aerial perspective pipeline could not be created.")
+	if not pipeline.is_valid():
+		# Not cached: retried next frame, reported each time.
+		push_error("Aerial perspective pipeline could not be created for framebuffer format %d." % framebuffer_format)
+		return pipeline
 	_pipelines[key] = pipeline
 	return pipeline

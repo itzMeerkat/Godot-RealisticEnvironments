@@ -1,6 +1,6 @@
 class_name WaterSurfaceSample
 extends RefCounted
-## Rendered ocean surface at one queried point.
+## The rendered water surface at one queried point.
 
 ## The queried world position.
 var position := Vector3.ZERO
@@ -19,7 +19,7 @@ var surface_velocity := Vector3.ZERO
 const MAX_EXTRAPOLATION_SECONDS := 0.1
 
 ## Height predicted elapsed seconds after the query was dispatched (see
-## OceanSystem.get_query_age()), to hide the readback latency. The prediction is
+## WaterSurface.get_query_age()), to hide the readback latency. The prediction is
 ## capped at MAX_EXTRAPOLATION_SECONDS.
 func extrapolated_height(elapsed : float) -> float:
 	return height + height_rate() * minf(elapsed, MAX_EXTRAPOLATION_SECONDS)

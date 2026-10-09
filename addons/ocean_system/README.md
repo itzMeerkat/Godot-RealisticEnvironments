@@ -5,6 +5,8 @@ displacement/normal/foam maps with compute shaders, renders them on a CDLOD
 quadtree mesh around the camera, and answers gameplay water-height queries on
 the GPU.
 
+Requires the `core` addon (`addons/core`).
+
 ## Quick start
 
 1. Instance `ocean_system.tscn` (an `OceanSystem`, which is a `MeshInstance3D`).
@@ -25,18 +27,29 @@ an error and disables itself.
 
 | Member | Purpose |
 | --- | --- |
-| `submit_surface_query(owner: Object, points: PackedVector3Array, body: PhysicsBody3D = null)` | Queue points for this frame's GPU surface query. The latest submission per owner wins. Heights leave the interaction simulation out when `body` (default: the owner's nearest `PhysicsBody3D`) makes waves itself. |
-| `get_surface_query_result(owner: Object) -> WaterSurfaceQueryResult` | Latest completed result for `owner`, or `null` before the first one arrives. |
-| `release_surface_query(owner: Object)` | Forget an owner (call from `_exit_tree`). |
+| `get_water_surface() -> WaterSurface` | The ocean's surface (queries and splashes), also registered for the node's `World3D`; `null` without a `RenderingDevice`. |
 | `get_skipped_surface_query_dispatch_count()` | Frames whose dispatch waited because all readback slots were busy. |
-| `add_water_impulse(position, radius, amplitude)` | Queue a splash in the interaction simulation (runtime, `interaction_enabled` only). |
-| `time` | Ocean clock in seconds, advanced once per frame. |
-| `get_query_age(result: WaterSurfaceQueryResult) -> float` | Ocean seconds from the result's dispatch to the caller's moment (the start of the current physics tick, or the frame), for `extrapolated_height()`. |
+| `time` | Ocean clock in seconds, advanced once per frame (the surface's `get_clock()`). |
 | `water_level` | Still-water height used by the shader, queries, reflections and buoyancy. |
 | `water_material` | Template material. The ocean renders with a private duplicate (`get_water_material()`), applied through the `RenderingServer` and never saved into the scene. |
 | `get_wind_source()`, `get_external_wind_speed()`, `get_external_wind_direction()`, `should_use_external_wind()` | Resolved external wind. |
 | `get_sky_source()` | Resolved sky node. |
-| group `ocean_system` | Every instance joins it on entering the tree; `BuoyantBody` uses it for auto-discovery. |
+
+### Water surface (`WaterSurface`, core addon)
+
+Everything that floats on or disturbs the water uses the `WaterSurface`
+contract from `addons/core`, never `OceanSystem` itself. The ocean registers
+its surface (`OceanSurfaceQueries`) for its `World3D` on entering the tree, so
+consumers find it in their own `_ready` with `WaterSurface.find(node)`.
+
+| Member | Purpose |
+| --- | --- |
+| `submit_query(owner: Object, points: PackedVector3Array, body: PhysicsBody3D = null)` | Queue points for this frame's GPU surface query. The latest submission per owner wins. Heights leave the interaction simulation out when `body` (default: the owner's nearest `PhysicsBody3D`) makes waves itself. |
+| `get_query_result(owner: Object) -> WaterSurfaceQueryResult` | Latest completed result for `owner`, or `null` before the first one arrives. |
+| `get_query_age(result: WaterSurfaceQueryResult) -> float` | Ocean seconds from the result's dispatch to the caller's moment (the start of the current physics tick, or the frame), for `extrapolated_height()`. |
+| `release_query(owner: Object)` | Forget an owner (call from `_exit_tree`). |
+| `get_clock() -> float` | The ocean's `time`, the clock of `dispatch_time`. |
+| `can_add_impulses()`, `add_impulse(position, radius, amplitude)` | Queue a splash in the interaction simulation (runtime, while it runs). |
 
 `WaterSurfaceQueryResult` (RefCounted): `points` (as submitted for that
 dispatch), `samples: Array[WaterSurfaceSample]` (`samples[i]` answers
@@ -63,7 +76,7 @@ Queries are asynchronous (`OceanSurfaceQueries`):
 - Three readback slots rotate; if all are still in flight, that frame's
   queries stay queued for the next frame.
 - A result arrives a few frames after its dispatch. Use
-  `extrapolated_height(ocean.get_query_age(result))` to hide the latency. The
+  `extrapolated_height(water.get_query_age(result))` to hide the latency. The
   ocean's `time` advances once per frame; in a physics tick the age is taken
   at the tick's start (`Engine.get_physics_frames()` and the interpolation
   fraction recorded when `time` advanced), so each of several ticks between
@@ -73,7 +86,7 @@ Queries are asynchronous (`OceanSurfaceQueries`):
 - Nothing is dispatched until the first FFT output exists, and never with zero
   cascades.
 - `owner` must be stable (its instance id keys the cache) and must call
-  `release_surface_query()` when it stops querying.
+  `release_query()` when it stops querying.
 
 Heights match the rendered mesh:
 
@@ -85,7 +98,7 @@ Heights match the rendered mesh:
   step).
 - The interaction simulation's `η` is added outside hulls (see
   [Interaction simulation](#interaction-simulation-wakes)), except for owners
-  on a body that makes waves itself: `submit_surface_query(owner, points, body)`
+  on a body that makes waves itself: `submit_query(owner, points, body)`
   leaves `η` out when `body` (default: the owner's nearest `PhysicsBody3D`)
   carries a `HullWaterFootprint` that pushes water. `η` is one summed field, so
   such a body cannot tell its own waves from others'; read back a few frames
@@ -179,7 +192,7 @@ Setup:
    the body. The boat template already has one.
 2. Set `bake_source_paths` to the hull mesh roots only; masts, sails and
    rigging would widen the cutout.
-3. Save the scene, then toggle **Editor Bake Profile**. It writes
+3. Save the scene, then press **Bake Profile**. It writes
    `<scene>_hull_profile.tres` next to the scene (or overwrites the current
    profile file) and assigns it. Save the scene again.
 
@@ -242,7 +255,7 @@ textures; the bow-wave height is the same.
 What it produces:
 - Hulls with a `HullWaterFootprint` push water, and moving, heaving or rolling
   hulls radiate Kelvin wakes and bow waves.
-- `add_water_impulse(position, radius, amplitude)` queues a splash.
+- `WaterSurface.add_impulse(position, radius, amplitude)` queues a splash.
 - The water shader adds the simulated height, slope and foam.
 - Surface queries include it outside hulls for bodies that make no waves
   themselves, so floating debris rides wakes and splashes.
@@ -407,10 +420,10 @@ and the vertex shader, fragment shader and query shader all skip the pending
 layer's texture reads in that case. Foam crossfades linearly (it is a
 non-negative mask); displacement and normals use the equal-power weights.
 
-`rendering/render_context.gd` (`RenderingContext`) wraps the `RenderingDevice`:
-shader loading and caching, buffers/textures, descriptor sets (bindings follow
-array order), pipelines returned as callables, a deletion queue that frees
-everything on teardown, and exact-size push-constant packing.
+`RenderingContext` (core addon) wraps the `RenderingDevice`: shader loading and
+caching, buffers/textures, descriptor sets (bindings follow array order),
+pipelines returned as callables, ownership of every resource (freed newest
+first with the context), and exact-size push-constant packing.
 
 ### Mesh
 
@@ -668,8 +681,11 @@ plus cached uniform sets), and the shader and pipeline, directly on the main
   simply cleared.
 
 The shader runs one thread per point and writes height, displacement, normal
-and velocity (48 bytes per sample). Points are `vec4`s: xyz the position, w 1
-to add the interaction simulation (set per owner by `submit_surface_query`). Displacement sampling lives in
+and velocity (48 bytes per sample). Points are uploaded as the bytes of a
+`PackedVector3Array` (tightly packed xyz floats, no per-point packing on the
+CPU). Owners whose heights add the interaction simulation (decided per owner in
+`submit_query`) are placed first, and the push constant's
+`interaction_point_count` marks where they end. Displacement sampling lives in
 `shaders/compute/ocean_sampling.glslinc`, shared through `#include`. It covers:
 
 - the cascade buffer and displacement texture declarations (sampled through a
@@ -697,12 +713,10 @@ Godot doesn't track include dependencies: reimport `surface_query.glsl` and
 | `ocean_system.gd` / `.tscn` | `OceanSystem` node and default setup |
 | `wave_generator.gd` | `WaveGenerator` compute pipeline |
 | `wave_cascade_parameters.gd` | `WaveCascadeParameters` resource |
-| `ocean_surface_queries.gd` | `OceanSurfaceQueries` async query batching and readback |
-| `water_surface_query_result.gd`, `water_surface_sample.gd` | Query result types |
-| `rendering/render_context.gd` | `RenderingContext` RenderingDevice helper |
+| `ocean_surface_queries.gd` | `OceanSurfaceQueries`: the ocean's `WaterSurface`, async query batching and readback |
 | `ocean_reflection_renderer.gd`, `planar_reflection_capture_effect.gd` | Planar reflections |
 | `textures/foam_detail.png`, `textures/generate_foam_detail.py` | Foam pattern and its generator |
-| `hull_water_footprint.gd`, `hull_profile.gd`, `hull_slicer.gd` | Hull footprints, baked profiles, and the triangle slicer (also used by `BuoyancyProbeVolume`) |
+| `hull_water_footprint.gd`, `hull_profile.gd` | Hull footprints and baked profiles (sliced with core's `HullSlicer`) |
 | `water_interaction_sim.gd` | `WaterInteractionSim` iWave simulation around the camera |
 | `shaders/compute/iwave_*.glsl`, `iwave_common.glslinc` | Interaction passes: scroll, impulse, pressure, FFT, operator, step |
 | `shaders/compute/*.glsl` | Spectrum, FFT, unpack, normal mip chain, transpose, surface query |

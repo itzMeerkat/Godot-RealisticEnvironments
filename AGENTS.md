@@ -3,20 +3,38 @@
 Working rules for changing this project. Read the relevant addon `README.md`
 before touching its code; this file only records what is easy to get wrong.
 
-## Active plan
-- `docs/water-interaction-plan.md` is the agreed plan for hull cutouts, the iWave
-  interaction simulation and the performance work. Follow its ground rules (no
-  compatibility shims, no guard code that hides errors).
-  Sections below describe the code as it is *today* and change as phases land.
+## Ground rules
+- No compatibility shims: APIs, scenes, groups and uniforms may be renamed or
+  deleted; update every caller and scene in the same change.
+- Errors are production-grade. Anything a shipped game can hit (a missing or
+  wrong node, bad configuration or data, a GPU resource or shader that fails,
+  too many requests) is reported with `push_error` and the feature degrades or
+  turns itself off; it never crashes or writes out of bounds. `assert()` is
+  stripped from release builds: use it only for internal invariants the code
+  itself guarantees. Resolve dependencies once (usually in `_ready`), not
+  every frame, and model expected states ("no result yet", "disabled")
+  explicitly. Compute features check `RenderingContext.failed` after building
+  their resources.
+- `docs/water-interaction-plan.md` and `docs/bow-wave-plan.md` are completed
+  design records (their *Deferred verification* list is still open). The
+  sections below describe the code as it is *today*.
+- `README.md` → *Road to a commercial release* is the product roadmap.
 
 ## Project basics
-- Godot 4.7, Forward+ (`project.godot` → `config/features`). Main scene:
-  `res://demo/main.tscn`. There is no package manager, CI, linter, formatter or
-  test suite.
+- Godot 4.8, Forward+ (`project.godot` → `config/features`). Main scene:
+  `res://demo/main.tscn`. There is no package manager, CI, formatter or test
+  suite.
 - Verify changes by running `demo/main.tscn` (or `demo/ocean_optics_debug.tscn`
-  for shading work) in Godot 4.7 Forward+. Headless runs and the Compatibility
-  renderer have no `RenderingDevice`; `OceanSystem` then silently skips wave
-  generation, so they can catch GDScript errors but not ocean regressions.
+  for shading work) in Godot 4.8 Forward+. Headless runs and the Compatibility
+  renderer have no `RenderingDevice`; `OceanSystem` then reports an error and
+  disables itself, so they can catch GDScript errors but not ocean regressions.
+- GDScript warnings are on, addons included (`project.godot`
+  `debug/gdscript/warnings/directory_rules`). Keep every script warning-free:
+  rename locals that shadow members or base-class properties (`basis`,
+  `position`, `scale`, `owner`, ...) and mark intended integer division with
+  `@warning_ignore("integer_division")`. `tools/gd_lint.py` lists the
+  warnings and errors of every script through a headless editor's language
+  server.
 - Reusable code lives in `addons/*`; demo glue in `systems/` and `demo/`.
   `*_plugin.gd` files are empty `EditorPlugin` stubs — all runtime types are
   registered through `class_name`.
@@ -44,20 +62,22 @@ before touching its code; this file only records what is easy to get wrong.
   same for any such boat. Check with
   `PhysicsServer3D.body_get_direct_state(rid).inverse_inertia`.
 - No `/** ... */` doc comments in `.gdshader` / `.gdshaderinc` files; use `/*`
-  or `//`. The Godot 4.7 editor extracts shader docs on every
+  or `//`. The Godot editor (measured on 4.7) extracts shader docs on every
   `Shader.get_shader_uniform_list()`, which made the water shader take 3.4 s per
   call and stalled the editor for ~13 s whenever the ocean node was selected.
 - Debug helpers (probe debug draw, position trail, aim marker, health panel)
   are internal child nodes created at runtime. Never save them into a scene.
 
 ## Addon boundaries
-- `ocean_system`, `sky_system`, `wind_system`, `exposure_system`,
-  `hitbox_damage_system` and `projectile_launcher_system` have no
-  dependencies on other addons. Keep it
-  that way: connect them with signals, groups and duck-typed methods.
-- `buoyancy_system` depends only on `ocean_system` (`OceanSystem`,
-  `WaterSurfaceSample`). Damage-driven sinking is wired by connecting
-  `HitboxHealthManager.group_destroyed` to
+- `*_system` addons never depend on each other directly. Code that more than
+  one of them needs (RenderingDevice helpers, shared data types, contracts)
+  goes into the shared core addon (`addons/core`, which depends on nothing);
+  systems may depend on core only. Otherwise connect systems with signals,
+  groups and duck-typed methods. `core` holds `WaterSurface` (+ its query
+  types), `RenderingContext` and `HullSlicer` (see `addons/core/README.md`).
+- Water consumers (`buoyancy_system`, the template's `BowSpray`) use only
+  `WaterSurface.find(node)`, never `OceanSystem`. Damage-driven sinking is
+  wired by connecting `HitboxHealthManager.group_destroyed` to
   `BuoyantBody._on_hitbox_group_destroyed` in the scene — do not add
   hitbox/projectile imports to buoyancy code.
 - `floating_boat_template` is the only place allowed to compose all systems.
@@ -114,8 +134,11 @@ before touching its code; this file only records what is easy to get wrong.
     (physics ticks) for the bow wave; its SimHull record is 36 floats
     (`WaterInteractionSim.FLOATS_PER_HULL`, `iwave_pressure.glsl`), change both
     together.
-  - Splashes: `OceanSystem.add_water_impulse(position, radius, amplitude)`
-    (runtime only, at most 64 per simulation step).
+  - Water surface: `WaterSurface` (core). A simulation registers one per
+    `World3D` in `_enter_tree` (before any consumer's `_ready`) and
+    unregisters in `_exit_tree`; `OceanSystem` registers its
+    `OceanSurfaceQueries`. Splashes: `add_impulse(position, radius,
+    amplitude)` while `can_add_impulses()` (at most 64 per simulation step).
   - Recoil receivers: `apply_recoil(fire_direction, shot_data)`, called by a
     launcher for each of its `recoil_receiver_paths` (e.g. `CannonSlideRecoil`).
     Body recoil is applied by `ProjectileWeaponController` from the launchers'
@@ -201,12 +224,12 @@ before touching its code; this file only records what is easy to get wrong.
   water shader reveals it through `foam_detail.png`, whose values must stay
   uniformly distributed (regenerate it with `generate_foam_detail.py`, which
   histogram-equalizes). Don't add distance fades to foam: the mips handle it.
-- Surface queries are asynchronous: `submit_surface_query(owner, points)` every
-  tick, `get_surface_query_result(owner)` returns the latest completed result
-  (`null` at first), `release_surface_query(owner)` in `_exit_tree`. Results lag
+- Surface queries are asynchronous: `submit_query(owner, points)` every
+  tick, `get_query_result(owner)` returns the latest completed result
+  (`null` at first), `release_query(owner)` in `_exit_tree`. Results lag
   a few frames — extrapolate with
-  `extrapolated_height(ocean.get_query_age(result))`, never with
-  `ocean.time - dispatch_time` (wrong in physics ticks) — and belong to the
+  `extrapolated_height(water.get_query_age(result))`, never with
+  `get_clock() - dispatch_time` (wrong in physics ticks) — and belong to the
   point set of their dispatch.
 - Cascades update at their own rates (`max_wave_phase_step`), each into
   whichever of the fixed output maps A/B does not hold its newest frame.
@@ -232,7 +255,7 @@ before touching its code; this file only records what is easy to get wrong.
   height `h`. Its render texture is `(h, η, foam, hull coverage)`: the water
   shader adds `h` and foam; surface queries add `η · (1 − coverage)`, except
   for owners on a body that makes waves (a `PhysicsBody3D` carrying a
-  footprint that pushes water; `OceanSystem.submit_surface_query`'s `body`).
+  footprint that pushes water; `WaterSurface.submit_query`'s `body`).
   Those read the FFT waves only: `η` is one summed field, so a body cannot
   separate its own waves, and with the readback delay they make it oscillate
   by itself. Don't reintroduce a geometric own-wave mask for buoyancy (probes
@@ -255,6 +278,8 @@ before touching its code; this file only records what is easy to get wrong.
   it, and the material then samples a freed texture as white. Either swap
   without clearing (`PlanarReflectionCaptureEffect.set_size()`) or set the
   material parameter again afterwards (`OceanSystem._set_texture_rid()` users).
+  `OceanSystem._set_water_shader_parameter()` skips values equal to the last
+  one sent, so re-binding such a texture needs its `force` argument.
   The planar reflection got this wrong once: after every window resize the sea
   reflected solid white "geometry" instead of the sky.
 
@@ -359,4 +384,3 @@ before touching its code; this file only records what is easy to get wrong.
   wave height.
 - In the input map, F is both `toggle_fullscreen` and `camera_move_down`, and C
   is both `cycle_camera_mode` and `toggle_camera_follow`.
-- Unused but kept: `demo/player/camera.gd`, `systems/input/demo_input_actions.gd`.

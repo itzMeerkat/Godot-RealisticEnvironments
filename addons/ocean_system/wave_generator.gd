@@ -37,7 +37,7 @@ func init_gpu(num_cascades : int) -> void:
 	cascade_newest_output.fill(1) # the first update writes A
 
 	# --- DEVICE/SHADER CREATION ---
-	context = RenderingContext.create(RenderingServer.get_rendering_device())
+	context = RenderingContext.new(RenderingServer.get_rendering_device())
 	var spectrum_compute_shader := context.load_shader('res://addons/ocean_system/shaders/compute/spectrum_compute.glsl')
 	var fft_butterfly_shader := context.load_shader('res://addons/ocean_system/shaders/compute/fft_butterfly.glsl')
 	var spectrum_modulate_shader := context.load_shader('res://addons/ocean_system/shaders/compute/spectrum_modulate.glsl')
@@ -65,8 +65,8 @@ func init_gpu(num_cascades : int) -> void:
 	mip_sets.clear()
 	var output_usage := RenderingDevice.TEXTURE_USAGE_STORAGE_BIT | RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT | RenderingDevice.TEXTURE_USAGE_CAN_UPDATE_BIT | RenderingDevice.TEXTURE_USAGE_CAN_COPY_FROM_BIT | RenderingDevice.TEXTURE_USAGE_CAN_COPY_TO_BIT
 	for i in range(2):
-		var displacement_map := context.create_texture(dims, RenderingDevice.DATA_FORMAT_R16G16B16A16_SFLOAT, output_usage, spectrum_layer_capacity, RDTextureView.new(), [], mip_count)
-		var normal_map := context.create_texture(dims, RenderingDevice.DATA_FORMAT_R16G16B16A16_SFLOAT, output_usage, spectrum_layer_capacity, RDTextureView.new(), [], mip_count)
+		var displacement_map := context.create_texture(dims, RenderingDevice.DATA_FORMAT_R16G16B16A16_SFLOAT, output_usage, spectrum_layer_capacity, [], mip_count)
+		var normal_map := context.create_texture(dims, RenderingDevice.DATA_FORMAT_R16G16B16A16_SFLOAT, output_usage, spectrum_layer_capacity, [], mip_count)
 		# Start from zero: a cascade's first update reads the other output's foam,
 		# and until its second update the other output (sampled, with weight 0, by
 		# the interaction simulation and surface queries) was never written.
@@ -112,16 +112,21 @@ func init_gpu(num_cascades : int) -> void:
 	descriptors[&'normal_map_b'] = output_descriptors[1][&'normal_map']
 
 	# --- COMPUTE PIPELINE CREATION ---
-	var groups_16 := int(map_size / 16)
-	var butterfly_groups := maxi(1, int(map_size / 128))
+	@warning_ignore("integer_division")
+	var groups_16 := map_size / 16
+	@warning_ignore("integer_division")
+	var butterfly_groups := maxi(1, map_size / 128)
+	@warning_ignore("integer_division")
+	var groups_32 := map_size / 32
 	pipelines[&'spectrum_compute'] = context.create_pipeline([groups_16, groups_16, 1], [spectrum_compute_set], spectrum_compute_shader)
 	pipelines[&'spectrum_modulate'] = context.create_pipeline([groups_16, groups_16, 1], [spectrum_modulate_set, fft_buffer_set], spectrum_modulate_shader)
 	pipelines[&'fft_butterfly'] = context.create_pipeline([butterfly_groups, num_fft_stages, 1], [fft_butterfly_set], fft_butterfly_shader)
 	pipelines[&'fft_compute'] = context.create_pipeline([1, map_size, 4], [fft_compute_set], fft_compute_shader)
-	pipelines[&'transpose'] = context.create_pipeline([int(map_size / 32), int(map_size / 32), 4], [transpose_set], transpose_shader)
+	pipelines[&'transpose'] = context.create_pipeline([groups_32, groups_32, 4], [transpose_set], transpose_shader)
 	pipelines[&'fft_unpack'] = context.create_pipeline([groups_16, groups_16, 1], [unpack_sets[0][0], fft_buffer_set], fft_unpack_shader)
 	var mip_pipelines : Array[Callable] = []
 	for mip in range(1, mip_count):
+		@warning_ignore("integer_division")
 		var groups := maxi(1, (map_size >> mip) / 8)
 		mip_pipelines.push_back(context.create_pipeline([groups, groups, 1], [mip_sets[0][0][mip - 1][0]], mip_downsample_shader))
 	pipelines[&'mip_downsample'] = mip_pipelines

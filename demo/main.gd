@@ -35,10 +35,6 @@ func _process(_delta : float) -> void:
 		camera_rig.enable_camera_movement = not debug_panel.is_interacting()
 
 
-func _physics_process(_delta: float) -> void:
-	pass
-	
-
 func _input(event: InputEvent) -> void:
 	if event.is_action_pressed(&'toggle_debug_ui'):
 		debug_panel.toggle_panel_visible()

@@ -30,12 +30,17 @@ const PROFILE_SAMPLES := 32
 
 ## Bakes a profile from hull triangles given in the footprint's local space.
 ## inset shrinks every half-width so the cutout stays inside the hull shell.
+## Returns null (reported) when the triangles cannot make a profile.
 static func build(triangles : PackedVector3Array, inset : float) -> HullProfile:
-	assert(triangles.size() >= 3, "HullProfile.build() needs at least one triangle.")
+	if triangles.size() < 3:
+		push_error("HullProfile.build() needs at least one triangle.")
+		return null
 	var bounds := AABB(triangles[0], Vector3.ZERO)
 	for vertex in triangles:
 		bounds = bounds.expand(vertex)
-	assert(bounds.size.y > HullSlicer.EPSILON and bounds.size.z > HullSlicer.EPSILON, "Hull triangles are flat; cannot bake a profile.")
+	if bounds.size.y <= HullSlicer.EPSILON or bounds.size.z <= HullSlicer.EPSILON:
+		push_error("Hull triangles are flat; cannot bake a profile.")
+		return null
 
 	var profile := HullProfile.new()
 	profile.min_z = bounds.position.z
@@ -55,7 +60,9 @@ static func build(triangles : PackedVector3Array, inset : float) -> HullProfile:
 
 	for width in half_widths:
 		profile.max_half_width = maxf(profile.max_half_width, width)
-	assert(profile.max_half_width > 0.0, "Hull profile is empty after the inset; reduce bake_inset.")
+	if profile.max_half_width <= 0.0:
+		push_error("Hull profile is empty after the inset; reduce bake_inset.")
+		return null
 
 	profile.image = Image.create_empty(LENGTH_SAMPLES, PROFILE_SAMPLES, false, Image.FORMAT_RGBH)
 	for column in LENGTH_SAMPLES:

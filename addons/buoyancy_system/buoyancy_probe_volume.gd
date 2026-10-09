@@ -68,30 +68,12 @@ const DEBUG_SHOW_WATERLINE_CONVEX_HULL := true
 @export_range(0.01, 5.0, 0.01, "or_greater") var generated_fx_probe_display_radius := 0.12
 ## Automatically generates probes in the editor when this volume has no saved probes.
 @export var editor_auto_generate_if_empty := true
-## Editor action: toggle on to regenerate physical probes from source_paths.
-@export var editor_generate_physical_probes := false :
-	set(value):
-		if not value:
-			editor_generate_physical_probes = false
-			return
-		editor_generate_physical_probes = false
-		generate_physical_probes_from_source()
-## Editor action: toggle on to regenerate FX/contact probes from source_paths.
-@export var editor_generate_fx_probes := false :
-	set(value):
-		if not value:
-			editor_generate_fx_probes = false
-			return
-		editor_generate_fx_probes = false
-		generate_fx_probes_from_source()
-## Editor action: toggle on to regenerate both physical and FX/contact probes.
-@export var editor_generate_all_probes := false :
-	set(value):
-		if not value:
-			editor_generate_all_probes = false
-			return
-		editor_generate_all_probes = false
-		generate_all_probes_from_source()
+## Regenerates physical probes from source_paths.
+@export_tool_button("Generate Physical Probes", "Reload") var generate_physical_probes_action := generate_physical_probes_from_source
+## Regenerates FX/contact probes from source_paths.
+@export_tool_button("Generate FX Probes", "Reload") var generate_fx_probes_action := generate_fx_probes_from_source
+## Regenerates both physical and FX/contact probes.
+@export_tool_button("Generate All Probes", "Reload") var generate_all_probes_action := generate_all_probes_from_source
 
 @export_group("Probe Defaults")
 ## Default forward/back water drag multiplier assigned to generated physical probes.
@@ -359,12 +341,12 @@ func _deduplicate_vector2_points(points: Array) -> Array:
 	var result : Array = []
 	for point in points:
 		var p : Vector2 = point
-		var duplicate := false
+		var is_duplicate := false
 		for existing in result:
 			if p.distance_squared_to(existing) <= EPSILON * EPSILON:
-				duplicate = true
+				is_duplicate = true
 				break
-		if not duplicate:
+		if not is_duplicate:
 			result.push_back(p)
 	return result
 
@@ -406,7 +388,8 @@ func _build_physical_probe_specs(hull_points: Array, bounds: AABB) -> Array[Dict
 	var specs : Array[Dictionary] = []
 	var target_count := maxi(physical_probe_count, 1)
 	if mirror_across_yz_plane:
-		var pair_count := int(target_count / 2)
+		@warning_ignore("integer_division")
+		var pair_count := target_count / 2
 		var station_count := maxi(pair_count, 1)
 		for station_index in station_count:
 			var z := _get_station_z(station_index, station_count, bounds)
@@ -419,7 +402,8 @@ func _build_physical_probe_specs(hull_points: Array, bounds: AABB) -> Array[Dict
 				specs.push_back({"x": symmetry_plane_x - x_offset, "z": z})
 				specs.push_back({"x": symmetry_plane_x + x_offset, "z": z})
 		if target_count % 2 != 0:
-			var z := _get_station_z(int(station_count / 2), station_count, bounds)
+			@warning_ignore("integer_division")
+			var z := _get_station_z(station_count / 2, station_count, bounds)
 			specs.push_back({"x": symmetry_plane_x, "z": z})
 	else:
 		for station_index in target_count:
@@ -439,7 +423,8 @@ func _build_fx_probe_specs(hull_points: Array, bounds: AABB) -> Array[Dictionary
 	var specs : Array[Dictionary] = []
 	if fx_probe_count <= 0:
 		return specs
-	var pair_count := maxi(int(fx_probe_count / 2), 1)
+	@warning_ignore("integer_division")
+	var pair_count := maxi(fx_probe_count / 2, 1)
 	for station_index in pair_count:
 		var z := _get_station_z(station_index, pair_count, bounds)
 		var interval := _get_hull_interval_at_z(hull_points, bounds, z)
@@ -928,11 +913,11 @@ func _add_debug_body_net_force() -> void:
 	_add_debug_arrow(center_world, external_force, DEBUG_BODY_FORCE_SCALE)
 
 
-func _add_debug_arrow(start_world: Vector3, force: Vector3, scale: float) -> void:
+func _add_debug_arrow(start_world: Vector3, force: Vector3, force_scale: float) -> void:
 	if force.length_squared() <= 0.0001:
 		return
 	var start_local := to_local(start_world)
-	var end_local := to_local(start_world + force * scale)
+	var end_local := to_local(start_world + force * force_scale)
 	_add_debug_vertex(start_local)
 	_add_debug_vertex(end_local)
 	_add_arrowhead(end_local, start_local)

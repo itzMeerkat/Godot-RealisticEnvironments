@@ -38,9 +38,3 @@ by the demo scripts.
 A `Control` that draws a compass dial with the heading of a `Node3D` and the
 wind direction (arrow) from a wind source. Bind with `setup(target, wind)` or
 the `heading_target_path` / `wind_source_path` exports.
-
-## `input/` — `DemoInputActions`
-
-Constants for the demo input action names. Currently unused; the action names
-are also referenced as string literals in scripts and exports. The actions
-themselves are defined in `project.godot`.

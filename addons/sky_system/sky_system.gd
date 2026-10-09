@@ -583,10 +583,10 @@ static func _luminance(color : Color) -> float:
 ## atmosphere's transmittance (taken at the horizon while the body sets) times the
 ## share of its disk above the horizon.
 func _get_body_transmittance(direction : Vector3, angular_radius : float, with_haze : bool) -> Color:
-	var visible := _disk_above_horizon(direction.y, angular_radius)
-	if visible <= 0.0:
+	var visible_share := _disk_above_horizon(direction.y, angular_radius)
+	if visible_share <= 0.0:
 		return Color.BLACK
-	return _get_atmosphere_transmittance(0.0, _above_horizon(direction), with_haze) * visible
+	return _get_atmosphere_transmittance(0.0, _above_horizon(direction), with_haze) * visible_share
 
 
 ## Share of a disk of angular_radius whose centre's elevation has sine height that is
@@ -897,11 +897,16 @@ func _setup_clouds() -> void:
 			push_error("SkySystem.clouds_enabled needs a cloud_preset; clouds are off: %s" % get_path())
 		elif device == null:
 			push_error("SkySystem clouds need a RenderingDevice (Forward+ or Mobile renderer); clouds are off.")
+		elif _atmosphere_renderer == null:
+			push_error("SkySystem clouds need the atmosphere (their sky light); clouds are off: %s" % get_path())
 		else:
 			if _cloud_state == null:
 				_cloud_state = cloud_preset.duplicate()
-			assert(_atmosphere_renderer != null, "SkySystem clouds need the atmosphere (their sky light).")
 			_cloud_renderer = CloudRenderer.new(device, cloud_cubemap_size, _atmosphere_renderer.sky_ambient_buffer)
+			if _cloud_renderer.has_failed():
+				push_error("SkySystem: the clouds' GPU resources failed; clouds are off: %s" % get_path())
+				_cloud_renderer.release()
+				_cloud_renderer = null
 	_push_cloud_material_parameters()
 	_update_sky()
 
@@ -981,7 +986,7 @@ func _process_clouds(delta : float) -> void:
 ## stored in (and saved with) the sky or starfield material resources.
 func _push_cloud_material_parameters() -> void:
 	var enabled := _cloud_renderer != null
-	var texture_rid = _cloud_renderer.cubemap.get_rid() if enabled else null
+	var texture_rid := _cloud_renderer.cubemap.get_rid() if enabled else RID()
 	for material : Material in [_world_environment.environment.sky.sky_material, _starfield.material_override]:
 		RenderingServer.material_set_param(material.get_rid(), &"clouds_enabled", enabled)
 		RenderingServer.material_set_param(material.get_rid(), &"cloud_cubemap", texture_rid)
@@ -997,6 +1002,11 @@ func _setup_atmosphere() -> void:
 		push_error("SkySystem's atmosphere needs a RenderingDevice (Forward+ or Mobile renderer); the sky is empty.")
 		return
 	_atmosphere_renderer = AtmosphereRenderer.new(device)
+	if _atmosphere_renderer.has_failed():
+		push_error("SkySystem: the atmosphere's GPU resources failed; the sky is empty: %s" % get_path())
+		_atmosphere_renderer.release()
+		_atmosphere_renderer = null
+		return
 	_global_atmosphere_owner = self
 	_update_exposure()
 	RenderingServer.global_shader_parameter_set(GLOBAL_MAX_DISTANCE, AtmosphereRenderer.MAX_DISTANCE)
@@ -1072,7 +1082,9 @@ func _read_camera_sky_light() -> void:
 	var on_read := func(data : PackedByteArray) -> void:
 		_on_camera_sky_light_read.call_deferred(renderer, exposure, data)
 	var error := RenderingServer.get_rendering_device().buffer_get_data_async(renderer.camera_sky_light_buffer, on_read, 0, AtmosphereRenderer.SKY_LIGHT_SIZE)
-	assert(error == OK, "buffer_get_data_async failed: %s" % error_string(error))
+	if error != OK:
+		_sky_light_read_pending = false
+		push_error("SkySystem: reading the sky light back failed: %s" % error_string(error))
 
 
 func _on_camera_sky_light_read(renderer : AtmosphereRenderer, exposure : float, data : PackedByteArray) -> void:
@@ -1113,8 +1125,18 @@ func _get_cloud_sun_light_scale() -> float:
 	return _cloud_state.sun_light_scale if _cloud_renderer else 1.0
 
 
+## The clouds use cloud_wind_speed / cloud_wind_direction while there is no valid source.
 func _resolve_cloud_wind_source() -> void:
-	_cloud_wind_source = null if cloud_wind_source_path.is_empty() else get_node(cloud_wind_source_path)
+	_cloud_wind_source = null if cloud_wind_source_path.is_empty() else get_node_or_null(cloud_wind_source_path)
+	if _cloud_wind_source == null:
+		if not cloud_wind_source_path.is_empty():
+			push_error("SkySystem %s: cloud_wind_source_path %s not found; using cloud_wind_speed." % [get_path(), cloud_wind_source_path])
+		return
+	for value in [[&"get_wind_speed", &"wind_speed"], [&"get_wind_direction_degrees", &"wind_direction"]]:
+		if not _cloud_wind_source.has_method(value[0]) and _cloud_wind_source.get(value[1]) == null:
+			push_error("SkySystem %s: cloud wind source has neither %s() nor a %s property; using cloud_wind_speed." % [get_path(), value[0], value[1]])
+			_cloud_wind_source = null
+			return
 
 
 func _get_cloud_wind_velocity() -> Vector2:

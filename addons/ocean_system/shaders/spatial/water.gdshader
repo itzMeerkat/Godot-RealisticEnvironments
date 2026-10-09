@@ -135,7 +135,6 @@ uniform mat4 planar_reflection_view_projection;
 uniform vec3 planar_reflection_camera_position; // the mirrored camera
 uniform float planar_reflection_texel_angle = 0.001; // radians per mip-0 texel at the image center
 uniform float planar_reflection_strength : hint_range(0.0, 1.0) = 0.0; // how much reflected geometry covers the sky behind it
-uniform float planar_reflection_plane_y = 0.0;
 // The opaque scene behind the water (linear HDR, exposed like EMISSION after scene_exposure).
 uniform sampler2D scene_color : hint_screen_texture, filter_linear_mipmap, repeat_disable;
 uniform sampler2D scene_depth : hint_depth_texture, filter_nearest, repeat_disable;

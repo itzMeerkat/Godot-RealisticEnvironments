@@ -65,15 +65,15 @@ func _input(event : InputEvent) -> void:
 
 func _move_camera(delta : float) -> void:
 	var direction := Vector3.ZERO
-	var basis := camera.global_transform.basis
+	var camera_basis := camera.global_transform.basis
 	if Input.is_action_pressed(&"camera_move_forward"):
-		direction -= basis.z
+		direction -= camera_basis.z
 	if Input.is_action_pressed(&"camera_move_back"):
-		direction += basis.z
+		direction += camera_basis.z
 	if Input.is_action_pressed(&"camera_move_left"):
-		direction -= basis.x
+		direction -= camera_basis.x
 	if Input.is_action_pressed(&"camera_move_right"):
-		direction += basis.x
+		direction += camera_basis.x
 	if Input.is_action_pressed(&"camera_move_up"):
 		direction += Vector3.UP
 	if Input.is_action_pressed(&"camera_move_down"):

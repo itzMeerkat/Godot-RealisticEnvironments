@@ -6,6 +6,8 @@ that draws the whole sky, a rotating starfield, volumetric clouds with weather
 presets, a light meter for exposure, and getters that other systems (the ocean)
 read for lighting.
 
+Requires the `core` addon (`addons/core`).
+
 ## Quick start
 
 Instance `sky_system.tscn`. It contains a `WorldEnvironment` with the sky

@@ -39,9 +39,12 @@ const WATER_DEBUG_VIEW_NORMAL := 0
 ## parameters set by this node never leak into the template or other oceans.
 @export var water_material : ShaderMaterial = WATER_MAT :
 	set(value):
-		assert(value != null, "OceanSystem.water_material must be set.")
+		if value == null:
+			push_error("OceanSystem.water_material cannot be empty; keeping the current material.")
+			return
 		water_material = value
 		_material = null
+		_parameter_cache.clear()
 		if is_node_ready():
 			_apply_water_material()
 			_push_all_shader_parameters()
@@ -421,10 +424,6 @@ var wave_generator : WaveGenerator :
 var rng = RandomNumberGenerator.new()
 ## Ocean clock (s), advanced every frame; the waves drawn this frame are at this time.
 var time := 0.0
-## Physics frame and interpolation fraction when time last advanced: a frame's time
-## lies that fraction of a tick past its last physics tick (get_query_age()).
-var _time_physics_frame := 0
-var _time_physics_fraction := 0.0
 var wind_source : Node
 var sky_source : Node
 ## True when sky_source has no lighting_changed signal and must be read every frame.
@@ -447,9 +446,14 @@ var displacement_maps_b := Texture2DArrayRD.new()
 var normal_maps_a := Texture2DArrayRD.new()
 var normal_maps_b := Texture2DArrayRD.new()
 var _material : ShaderMaterial
+## Last value sent per shader parameter (_set_water_shader_parameter()).
+var _parameter_cache := {}
 var _surface_queries : OceanSurfaceQueries
 ## True once every cascade has a frame.
 var _has_wave_output := false
+## This frame's cascade records for the compute shaders (_pack_surface_query_cascades()),
+## shared by the surface queries and the interaction simulation's ticks.
+var _cascade_data := PackedByteArray()
 ## Per cascade: ocean time of its newest and of its previous frame, and how many
 ## frames it has computed (see _update_waves()).
 var _cascade_frame_times := PackedFloat64Array()
@@ -477,6 +481,10 @@ var _lod_ranges_key := 0.0
 ## Radius of the water drawn this frame (see _update_lod_grid()).
 var _lod_radius := 0.0
 var _lod_camera_position := Vector3.ZERO
+## The inputs of the last selection (_update_lod_grid()).
+var _lod_selection_key := []
+## Set once the node budget was exceeded, so it is reported once.
+var _lod_budget_reported := false
 ## This frame's selection inputs as plain floats (_select_lod_node() reads them
 ## a few thousand times a frame).
 var _lod_camera_x := 0.0
@@ -492,18 +500,24 @@ var _lod_planes := PackedFloat32Array()
 func _init() -> void:
 	rng.set_seed(1234) # This seed gives big waves!
 
-# Joined on enter (before any _ready) so consumers can find the ocean in their own _ready.
+# Registered on enter (before any _ready) so consumers find the surface in their own _ready.
 func _enter_tree() -> void:
-	add_to_group(&"ocean_system")
+	if _surface_queries == null and RenderingServer.get_rendering_device() != null:
+		_surface_queries = OceanSurfaceQueries.new(RenderingServer.get_rendering_device(), _makes_waves)
+	if _surface_queries != null:
+		WaterSurface.register(get_world_3d(), _surface_queries)
+
+func _exit_tree() -> void:
+	if _surface_queries != null:
+		WaterSurface.unregister(get_world_3d(), _surface_queries)
 
 func _ready() -> void:
 	process_priority = 100
-	var device := RenderingServer.get_rendering_device()
-	if device == null:
+	if _surface_queries == null:
 		push_error("OceanSystem needs a RenderingDevice (Forward+ or Mobile renderer). The ocean is disabled.")
 		set_process(false)
+		set_physics_process(false)
 		return
-	_surface_queries = OceanSurfaceQueries.new(device)
 	_apply_water_material()
 	_resolve_wind_source()
 	_resolve_sky_source()
@@ -522,12 +536,12 @@ func _process(delta : float) -> void:
 		_set_water_shader_parameter(&'aerial_observer', sky_source.call(&'get_atmosphere_view_observer'))
 	_update_scene_exposure()
 	time += delta
-	_time_physics_frame = Engine.get_physics_frames()
-	_time_physics_fraction = Engine.get_physics_interpolation_fraction()
+	_surface_queries.advance_clock(time, get_physics_process_delta_time())
 	# No generator means no cascades: a flat ocean.
 	if wave_generator != null:
 		_update_waves(delta)
 		_update_frame_blend_uniform()
+		_cascade_data = _pack_surface_query_cascades()
 	_dispatch_surface_queries()
 
 ## The interaction simulation steps with physics: one step per tick sees exactly
@@ -569,12 +583,7 @@ func _setup_wave_generator() -> void:
 	_cascade_frame_counts.resize(parameters.size())
 	_cascade_frame_counts.fill(0)
 	if parameters.is_empty():
-		wave_generator = null
-		_set_texture_rid(displacement_maps_a, RID())
-		_set_texture_rid(displacement_maps_b, RID())
-		_set_texture_rid(normal_maps_a, RID())
-		_set_texture_rid(normal_maps_b, RID())
-		_bind_wave_textures()
+		_clear_wave_generator()
 		return
 	for param in parameters:
 		param.request_spectrum_reset()
@@ -582,6 +591,10 @@ func _setup_wave_generator() -> void:
 	wave_generator = WaveGenerator.new()
 	wave_generator.map_size = simulation_map_size
 	wave_generator.init_gpu(parameters.size())
+	if wave_generator.context.failed:
+		push_error("OceanSystem: the wave generator's GPU resources failed; the ocean is flat.")
+		_clear_wave_generator()
+		return
 
 	_set_texture_rid(displacement_maps_a, wave_generator.descriptors[&'displacement_map_a'].rid)
 	_set_texture_rid(displacement_maps_b, wave_generator.descriptors[&'displacement_map_b'].rid)
@@ -591,12 +604,22 @@ func _setup_wave_generator() -> void:
 	_update_frame_blend_uniform()
 	_update_spectrum_blend_uniform()
 
+## No cascades (or a failed generator): a flat ocean.
+func _clear_wave_generator() -> void:
+	wave_generator = null
+	_set_texture_rid(displacement_maps_a, RID())
+	_set_texture_rid(displacement_maps_b, RID())
+	_set_texture_rid(normal_maps_a, RID())
+	_set_texture_rid(normal_maps_b, RID())
+	_bind_wave_textures()
+
 func _bind_wave_textures() -> void:
 	_set_water_shader_parameter(&'num_cascades', parameters.size() if wave_generator != null else 0)
-	_set_water_shader_parameter(&'displacements_a', displacement_maps_a)
-	_set_water_shader_parameter(&'displacements_b', displacement_maps_b)
-	_set_water_shader_parameter(&'normals_a', normal_maps_a)
-	_set_water_shader_parameter(&'normals_b', normal_maps_b)
+	# Forced: the textures may hold new RenderingServer RIDs (_set_texture_rid()).
+	_set_water_shader_parameter(&'displacements_a', displacement_maps_a, true)
+	_set_water_shader_parameter(&'displacements_b', displacement_maps_b, true)
+	_set_water_shader_parameter(&'normals_a', normal_maps_a, true)
+	_set_water_shader_parameter(&'normals_b', normal_maps_b, true)
 
 func _update_scales_uniform() -> void:
 	var map_scales : PackedVector4Array; map_scales.resize(parameters.size())
@@ -617,8 +640,9 @@ func _update_spectrum_blend_uniform() -> void:
 ## computes its next frame one update interval ahead of now, so blending from
 ## its newest frame to that one shows the waves at the current time.
 func _update_waves(frame_delta : float) -> void:
-	var external_speed := get_external_wind_speed() if use_external_wind else 0.0
-	var external_direction := get_external_wind_direction() if use_external_wind else 0.0
+	var external := should_use_external_wind()
+	var external_speed := get_external_wind_speed() if external else 0.0
+	var external_direction := get_external_wind_direction() if external else 0.0
 	var all_have_frames := true
 	for i in parameters.size():
 		var count := _cascade_frame_counts[i]
@@ -628,7 +652,7 @@ func _update_waves(frame_delta : float) -> void:
 		if interval <= frame_delta:
 			interval = 0.0 # Every frame: shown as computed, no blend.
 		var frame_time := time + interval
-		parameters[i].advance(frame_time - _cascade_frame_times[i] if count > 0 else 0.0, external_speed, external_direction, use_external_wind)
+		parameters[i].advance(frame_time - _cascade_frame_times[i] if count > 0 else 0.0, external_speed, external_direction, external)
 		wave_generator.update_cascade(i, parameters[i])
 		_cascade_previous_frame_times[i] = _cascade_frame_times[i]
 		_cascade_frame_times[i] = frame_time
@@ -645,65 +669,35 @@ func get_cascade_update_interval(params : WaveCascadeParameters) -> float:
 	var shortest_wavelength := 2.0 * minf(params.tile_length.x, params.tile_length.y) / simulation_map_size
 	return max_wave_phase_step * sqrt(TAU * shortest_wavelength / WaveGenerator.G)
 
-## Queues points for this frame's surface query. Call it every tick with the
-## current points; the latest submission per owner wins. Owners must call
-## release_surface_query() when they stop querying (e.g. in _exit_tree).
-##
-## Heights include the interaction simulation's waves, except for owners on a
-## body that makes waves itself (a HullWaterFootprint that pushes water sits on
-## it). The simulation is one summed field, so such a body cannot tell its own
-## waves from others'; read back after the query delay, its own waves act as a
-## lagging spring and drive it. body defaults to the owner's nearest
-## PhysicsBody3D (itself or an ancestor).
-func submit_surface_query(owner: Object, points: PackedVector3Array, body: PhysicsBody3D = null) -> void:
-	assert(owner != null, "Surface queries need a stable owner object.")
-	if body == null and owner is Node:
-		body = _find_physics_body(owner)
-	_surface_queries.submit(owner.get_instance_id(), points, not _makes_waves(body))
-
-## Latest completed query for owner, or null until the first readback arrives
-## (a few frames after the first submit). The result's points may differ from
-## the most recent submission; compare before using samples by index.
-func get_surface_query_result(owner: Object) -> WaterSurfaceQueryResult:
-	return _surface_queries.get_result(owner.get_instance_id())
-
-## Ocean seconds from result's dispatch to the caller's moment, for
-## WaterSurfaceSample.extrapolated_height(). In a physics tick that is the moment
-## of the bodies' state at the start of the tick: time advances once per frame,
-## and several ticks may fall between two frames, each at its own moment.
-func get_query_age(result: WaterSurfaceQueryResult) -> float:
-	if not Engine.is_in_physics_frame():
-		return time - result.dispatch_time
-	var ticks_since_frame := Engine.get_physics_frames() - _time_physics_frame
-	var tick_time := time + (float(ticks_since_frame - 1) - _time_physics_fraction) * get_physics_process_delta_time()
-	return tick_time - result.dispatch_time
-
-func release_surface_query(owner: Object) -> void:
-	_surface_queries.release(owner.get_instance_id())
+## The ocean's water surface (queries and impulses), also registered for this
+## node's World3D (WaterSurface.find()). Null when the ocean has no RenderingDevice.
+func get_water_surface() -> WaterSurface:
+	return _surface_queries
 
 ## Frames whose queries were delayed because all readback slots were busy.
 func get_skipped_surface_query_dispatch_count() -> int:
 	return _surface_queries.skipped_dispatch_count
 
+## use_external_wind with a valid wind source (an invalid one is reported when resolved).
 func should_use_external_wind() -> bool:
-	return use_external_wind
+	return use_external_wind and wind_source != null
 
 func get_wind_source() -> Node:
 	return wind_source
 
+## 0 without a valid wind source.
 func get_external_wind_speed() -> float:
-	return _read_wind_value(&'get_wind_speed', &'wind_speed')
+	return _read_wind_value(&'get_wind_speed', &'wind_speed') if wind_source != null else 0.0
 
+## 0 without a valid wind source.
 func get_external_wind_direction() -> float:
-	return _read_wind_value(&'get_wind_direction_degrees', &'wind_direction')
+	return _read_wind_value(&'get_wind_direction_degrees', &'wind_direction') if wind_source != null else 0.0
 
+## The wind source has method() or property (checked by _resolve_wind_source()).
 func _read_wind_value(method: StringName, property: StringName) -> float:
-	assert(wind_source != null, "OceanSystem has no wind source; set wind_source_path.")
 	if wind_source.has_method(method):
 		return float(wind_source.call(method))
-	var value = wind_source.get(property)
-	assert(value != null, "Wind source %s has neither %s() nor a %s property." % [wind_source.get_path(), method, property])
-	return float(value)
+	return float(wind_source.get(property))
 
 func get_sky_source() -> Node:
 	return sky_source
@@ -716,24 +710,28 @@ func get_water_material() -> ShaderMaterial:
 func _apply_water_material() -> void:
 	RenderingServer.instance_geometry_set_material_override(get_instance(), get_water_material().get_rid())
 
-## Queues a splash in the interaction simulation: a Gaussian bump of radius
-## meters and amplitude meters at position, applied on the next step.
-func add_water_impulse(position: Vector3, radius: float, amplitude: float) -> void:
-	assert(_interaction != null, "add_water_impulse() needs interaction_enabled and only works at runtime.")
-	_interaction.add_impulse(position, radius, amplitude)
-
 func _setup_interaction() -> void:
 	if _interaction != null:
 		_interaction_texture.texture_rd_rid = RID()
 		_interaction.release()
 		_interaction = null
+		_surface_queries.interaction = null
 		# Query uniform sets that referenced the old render texture are freed with it.
 		_surface_queries.clear_uniform_set_cache()
 	# The simulation follows the game camera and does not run in the editor.
 	if interaction_enabled and not Engine.is_editor_hint():
-		_interaction = WaterInteractionSim.new(RenderingServer.get_rendering_device(), interaction_grid_size, interaction_cell_size)
+		if interaction_grid_size not in [256, 512, 1024] or interaction_cell_size <= 0.0:
+			push_error("OceanSystem %s: interaction_grid_size must be 256, 512 or 1024 and interaction_cell_size positive; the interaction simulation is off." % get_path())
+		else:
+			_interaction = WaterInteractionSim.new(RenderingServer.get_rendering_device(), interaction_grid_size, interaction_cell_size)
+			if _interaction.has_failed():
+				push_error("OceanSystem %s: the interaction simulation's GPU resources failed; it is off." % get_path())
+				_interaction.release()
+				_interaction = null
+	if _interaction != null:
 		_apply_interaction_settings()
 		_interaction_texture.texture_rd_rid = _interaction.render_texture
+		_surface_queries.interaction = _interaction
 	_push_interaction_shader_parameters()
 
 func _apply_interaction_settings() -> void:
@@ -753,7 +751,8 @@ func _apply_interaction_settings() -> void:
 
 func _push_interaction_shader_parameters() -> void:
 	_set_water_shader_parameter(&'interaction_enabled', _interaction != null)
-	_set_water_shader_parameter(&'interaction_render', _interaction_texture)
+	# Forced: the texture's RID changes when the simulation is rebuilt.
+	_set_water_shader_parameter(&'interaction_render', _interaction_texture, true)
 	_set_water_shader_parameter(&'interaction_cell_size', interaction_cell_size)
 	_set_water_shader_parameter(&'interaction_inv_extent', 1.0 / (float(interaction_grid_size) * interaction_cell_size))
 	_set_water_shader_parameter(&'interaction_window', _get_interaction_window())
@@ -779,12 +778,13 @@ func _step_interaction(delta : float) -> void:
 		return
 	var hull_data := _pack_interaction_hulls(camera.global_position)
 	var hull_profiles_rd := RenderingServer.texture_get_rd_texture(_hull_profiles.get_rid()) if _hull_profiles != null else RID()
+	@warning_ignore("integer_division")
 	_interaction.step(
 		delta,
 		camera.global_position,
 		hull_data,
 		hull_data.size() / WaterInteractionSim.FLOATS_PER_HULL,
-		_pack_surface_query_cascades(),
+		_cascade_data,
 		parameters.size(),
 		water_level,
 		wave_generator.descriptors[&'displacement_map_a'].rid,
@@ -841,25 +841,20 @@ func _makes_waves(body : PhysicsBody3D) -> bool:
 		_wave_making_bodies.clear()
 		for node in get_tree().get_nodes_in_group(&"ocean_hull"):
 			var footprint := node as HullWaterFootprint
-			var footprint_body := _find_physics_body(footprint)
+			var footprint_body := OceanSurfaceQueries.find_physics_body(footprint)
 			if _pushes_water(footprint) and footprint_body != null:
 				_wave_making_bodies[footprint_body.get_instance_id()] = true
 	return _wave_making_bodies.has(body.get_instance_id())
 
-static func _find_physics_body(node : Node) -> PhysicsBody3D:
-	while node != null and not node is PhysicsBody3D:
-		node = node.get_parent()
-	return node as PhysicsBody3D
-
 ## Rows of the footprint's world-to-local affine transform: xyz = basis row, w = origin.
 func _get_world_to_local_rows(footprint : HullWaterFootprint) -> Array[Vector4]:
 	var world_to_local := footprint.global_transform.affine_inverse()
-	var basis := world_to_local.basis
+	var inverse_basis := world_to_local.basis
 	var origin := world_to_local.origin
 	return [
-		Vector4(basis.x.x, basis.y.x, basis.z.x, origin.x),
-		Vector4(basis.x.y, basis.y.y, basis.z.y, origin.y),
-		Vector4(basis.x.z, basis.y.z, basis.z.z, origin.z),
+		Vector4(inverse_basis.x.x, inverse_basis.y.x, inverse_basis.z.x, origin.x),
+		Vector4(inverse_basis.x.y, inverse_basis.y.y, inverse_basis.z.y, origin.y),
+		Vector4(inverse_basis.x.z, inverse_basis.y.z, inverse_basis.z.z, origin.z),
 	]
 
 func _append_vector4(data : PackedFloat32Array, value : Vector4) -> void:
@@ -883,7 +878,9 @@ func _update_sky_shading_static_parameters() -> void:
 func _update_sky_lighting_shader_parameters() -> void:
 	_sky_lighting_dirty = false
 	var sun_direction := _get_sky_vector(&'get_sun_direction', &'sun_direction', manual_sun_direction)
-	assert(sun_direction.length_squared() > 0.0001, "Sun direction must be non-zero.")
+	if sun_direction.length_squared() <= 0.0001:
+		push_error("OceanSystem %s: the sun direction is zero; using straight up." % get_path())
+		sun_direction = Vector3.UP
 	sun_direction = sun_direction.normalized()
 	_set_water_shader_parameter(&'sky_sun_direction', sun_direction)
 	_set_water_shader_parameter(&'sky_top_color', _get_sky_color(&'get_sky_top_color', &'sky_top_color', manual_sky_top_color))
@@ -942,16 +939,25 @@ func _get_sky_float(method: StringName, property: StringName, fallback: float) -
 	var property_value = sky_source.get(property)
 	return float(property_value) if property_value != null else fallback
 
+## Cascades use their own wind while there is no valid source.
 func _resolve_wind_source() -> void:
-	wind_source = null if wind_source_path.is_empty() else get_node(wind_source_path)
+	wind_source = null if wind_source_path.is_empty() else get_node_or_null(wind_source_path)
+	if wind_source != null:
+		for value in [[&'get_wind_speed', &'wind_speed'], [&'get_wind_direction_degrees', &'wind_direction']]:
+			if not wind_source.has_method(value[0]) and wind_source.get(value[1]) == null:
+				push_error("OceanSystem %s: wind source %s has neither %s() nor a %s property; ignored." % [get_path(), wind_source_path, value[0], value[1]])
+				wind_source = null
+				break
 	if use_external_wind and wind_source == null:
-		push_error("OceanSystem.use_external_wind is enabled but wind_source_path is empty: %s" % get_path())
+		push_error("OceanSystem %s: use_external_wind is enabled but there is no valid wind source (wind_source_path); the cascades use their own wind." % get_path())
 
 func _resolve_sky_source() -> void:
 	# A freed source was disconnected by the engine.
 	if is_instance_valid(sky_source) and sky_source.has_signal(&'lighting_changed') and sky_source.is_connected(&'lighting_changed', _on_sky_lighting_changed):
 		sky_source.disconnect(&'lighting_changed', _on_sky_lighting_changed)
-	sky_source = null if sky_source_path.is_empty() else get_node(sky_source_path)
+	sky_source = null if sky_source_path.is_empty() else get_node_or_null(sky_source_path)
+	if sky_source == null and not sky_source_path.is_empty():
+		push_error("OceanSystem %s: sky_source_path %s not found; using the manual sky values." % [get_path(), sky_source_path])
 	var signals_changes := sky_source != null and sky_source.has_signal(&'lighting_changed')
 	_sky_source_polled = sky_source != null and not signals_changes
 	if signals_changes:
@@ -1016,15 +1022,22 @@ func _update_lod_grid() -> void:
 	# No active camera yet (e.g. while a scene is loading): draw nothing.
 	if camera == null:
 		RenderingServer.multimesh_set_visible_instances(_lod_multimesh, 0)
+		_lod_selection_key = []
 		return
 	_update_lod_ranges()
+	# Camera.get_frustum() order: near, far, left, top, right, bottom.
+	var frustum := camera.get_frustum()
+	# Same view and water as last frame: the selection would be the same.
+	var selection_key := [frustum, camera.global_position, global_position.y, mesh_base_cell_size]
+	if selection_key == _lod_selection_key:
+		return
+	_lod_selection_key = selection_key
 	_lod_camera_position = camera.global_position
 	_lod_camera_x = _lod_camera_position.x
 	_lod_camera_z = _lod_camera_position.z
 	_lod_water_y = global_position.y
 	_lod_height_squared = (_lod_camera_position.y - _lod_water_y) * (_lod_camera_position.y - _lod_water_y)
-	# Camera.get_frustum() order: near, far, left, top, right, bottom.
-	var frustum := camera.get_frustum()
+	frustum = frustum.duplicate()
 	frustum.remove_at(1)
 	_lod_planes.resize(LOD_FRUSTUM_PLANES * 4)
 	for i in LOD_FRUSTUM_PLANES:
@@ -1040,9 +1053,9 @@ func _update_lod_grid() -> void:
 	var height := maxf(_lod_camera_position.y - _lod_water_y, 0.0)
 	_lod_radius = minf(sqrt(2.0 * EARTH_RADIUS * height) + sqrt(2.0 * EARTH_RADIUS * LOD_WAVE_MARGIN), camera.far)
 	_lod_radius_squared = _lod_radius * _lod_radius
-	var top_level := _get_lod_top_level(_lod_radius)
-	if top_level != _lod_top_level:
-		_lod_top_level = top_level
+	var new_top_level := _get_lod_top_level(_lod_radius)
+	if new_top_level != _lod_top_level:
+		_lod_top_level = new_top_level
 		_set_water_shader_parameter(&'lod_top_level', _lod_top_level)
 	var top_size := mesh_base_cell_size * LOD_GRID * float(1 << _lod_top_level)
 	var first := ((Vector2(_lod_camera_position.x, _lod_camera_position.z) - Vector2.ONE * _lod_radius) / top_size).floor()
@@ -1111,7 +1124,12 @@ func _select_lod_node(origin_x : float, origin_z : float, size : float, level : 
 			_select_lod_node(origin_x, origin_z + half, half, level - 1, plane_mask)
 			_select_lod_node(origin_x + half, origin_z + half, half, level - 1, plane_mask)
 			return
-	assert(_lod_node_count < MAX_LOD_NODES, "Ocean LOD node budget exceeded; raise mesh_base_cell_size or lower the camera's far plane.")
+	if _lod_node_count >= MAX_LOD_NODES:
+		# The rest of the frame's nodes are dropped (holes in the far water).
+		if not _lod_budget_reported:
+			_lod_budget_reported = true
+			push_error("OceanSystem %s: more than %d LOD nodes needed; raise mesh_base_cell_size or lower the camera's far plane." % [get_path(), MAX_LOD_NODES])
+		return
 	var offset := _lod_node_count * LOD_INSTANCE_FLOATS + 12
 	_lod_buffer[offset] = origin_x
 	_lod_buffer[offset + 1] = origin_z
@@ -1128,9 +1146,8 @@ func _get_curvature_drop(distance : float) -> float:
 func _get_lod_top_level(radius : float) -> int:
 	var base_range := LOD_RANGE_FACTOR * mesh_base_cell_size * LOD_GRID
 	var level := 0
-	while base_range * float(1 << level) < radius:
+	while base_range * float(1 << level) < radius and level < MAX_LOD_LEVELS - 1:
 		level += 1
-	assert(level < MAX_LOD_LEVELS, "Too many ocean LOD levels for the camera's far plane / mesh_base_cell_size.")
 	return level
 
 ## Rebuilds the level ranges when mesh_base_cell_size changed.
@@ -1159,7 +1176,6 @@ func _update_planar_reflection_settings() -> void:
 	if Engine.is_editor_hint() or (_reflection_renderer == null and not enable_planar_reflections):
 		_set_water_shader_parameter(&'planar_reflection_enabled', false)
 		_set_water_shader_parameter(&'planar_reflection_strength', 0.0)
-		_set_water_shader_parameter(&'planar_reflection_plane_y', water_level)
 		return
 	if _reflection_renderer == null:
 		_reflection_renderer = OCEAN_REFLECTION_RENDERER.new()
@@ -1199,6 +1215,10 @@ func _update_hull_cutouts() -> void:
 		near.sort_custom(func(a : Dictionary, b : Dictionary) -> bool: return a["distance"] < b["distance"])
 
 	var count := mini(near.size(), MAX_NEAR_HULLS)
+	_set_water_shader_parameter(&'near_hull_count', count)
+	# The shader reads no hull data while the count is 0: keep the last arrays.
+	if count == 0:
+		return
 	# Rows of each hull's world-to-local affine transform (xyz = basis row, w = origin).
 	var rows_x := PackedVector4Array()
 	var rows_y := PackedVector4Array()
@@ -1228,7 +1248,6 @@ func _update_hull_cutouts() -> void:
 		rects[i] = Vector4(profile.min_z, profile.min_y, 1.0 / (profile.max_z - profile.min_z), 1.0 / (profile.max_y - profile.min_y))
 		params[i] = Vector4(float(_hull_profile_ids.find(profile.get_instance_id())), profile.center_x, feather, footprint.cutout_edge_foam)
 		top_offsets[i] = footprint.cutout_height_offset / (profile.max_y - profile.min_y)
-	_set_water_shader_parameter(&'near_hull_count', count)
 	_set_water_shader_parameter(&'near_hull_world_to_local_x', rows_x)
 	_set_water_shader_parameter(&'near_hull_world_to_local_y', rows_y)
 	_set_water_shader_parameter(&'near_hull_world_to_local_z', rows_z)
@@ -1258,7 +1277,10 @@ func _update_hull_profile_array(footprints : Array[HullWaterFootprint]) -> void:
 			images.push_back(profile.image)
 		_hull_profiles = Texture2DArray.new()
 		var error := _hull_profiles.create_from_images(images)
-		assert(error == OK, "Building the hull profile texture array failed: %s" % error_string(error))
+		if error != OK:
+			# Cutouts and wakes read layer 0 of an empty array: nothing is cut out.
+			push_error("OceanSystem: building the hull profile texture array failed (%s); re-bake the profiles." % error_string(error))
+			_hull_profiles = null
 	_set_water_shader_parameter(&'hull_profiles', _hull_profiles)
 
 
@@ -1273,7 +1295,16 @@ func _update_scene_exposure() -> void:
 		_set_water_shader_parameter(&'scene_exposure', exposure)
 
 
-func _set_water_shader_parameter(parameter: StringName, value: Variant) -> void:
+## Sends value unless it equals the last value sent (many parameters are pushed
+## every frame but rarely change). force re-sends it, e.g. a texture whose
+## RenderingServer RID changed.
+func _set_water_shader_parameter(parameter: StringName, value: Variant, force := false) -> void:
+	if not force and _parameter_cache.has(parameter):
+		var previous : Variant = _parameter_cache[parameter]
+		if typeof(previous) == typeof(value) and previous == value:
+			return
+	# Arrays are copied: a caller may edit its array in place and send it again.
+	_parameter_cache[parameter] = value.duplicate() if value is Array or typeof(value) >= TYPE_PACKED_BYTE_ARRAY else value
 	get_water_material().set_shader_parameter(parameter, value)
 
 
@@ -1284,11 +1315,9 @@ func _dispatch_surface_queries() -> void:
 	_surface_queries.dispatch(
 		wave_generator.descriptors[&'displacement_map_a'].rid,
 		wave_generator.descriptors[&'displacement_map_b'].rid,
-		_pack_surface_query_cascades(),
+		_cascade_data,
 		parameters.size(),
 		water_level,
-		time,
-		_interaction.render_texture if _interaction != null else RID(),
 		_get_interaction_window(),
 		interaction_cell_size
 	)

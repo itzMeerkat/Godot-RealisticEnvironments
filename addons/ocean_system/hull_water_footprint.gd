@@ -58,12 +58,9 @@ const PROFILE_SUFFIX := "_hull_profile.tres"
 @export var bake_source_paths : Array[NodePath] = []
 ## Shrinks the baked half-widths so the cutout stays inside the hull shell.
 @export_range(0.0, 2.0, 0.01, "or_greater") var bake_inset := 0.08
-## Editor action: bakes the profile from bake_source_paths and saves it as
+## Bakes the profile from bake_source_paths and saves it as
 ## <scene>_hull_profile.tres next to the edited scene (or over the current profile file).
-@export var editor_bake_profile := false :
-	set(value):
-		if value:
-			bake_profile()
+@export_tool_button("Bake Profile", "Bake") var bake_profile_action := bake_profile
 
 ## Seconds over which the measured velocities are smoothed. The bow wave grows
 ## with velocity squared, so collision jolts would otherwise flash it.
@@ -95,11 +92,11 @@ func _physics_process(delta : float) -> void:
 	var current := global_transform
 	if _has_previous_transform:
 		var raw_linear := (current.origin - _previous_transform.origin) / delta
-		var rotation := Quaternion(current.basis.orthonormalized() * _previous_transform.basis.orthonormalized().inverse())
+		var frame_rotation := Quaternion(current.basis.orthonormalized() * _previous_transform.basis.orthonormalized().inverse())
 		# q and -q are the same rotation; the positive-w one has the short angle.
-		if rotation.w < 0.0:
-			rotation = -rotation
-		var raw_angular := rotation.get_axis() * rotation.get_angle() / delta if rotation.get_angle() > 1e-6 else Vector3.ZERO
+		if frame_rotation.w < 0.0:
+			frame_rotation = -frame_rotation
+		var raw_angular := frame_rotation.get_axis() * frame_rotation.get_angle() / delta if frame_rotation.get_angle() > 1e-6 else Vector3.ZERO
 		var weight := 1.0 - exp(-delta / VELOCITY_SMOOTHING_TIME)
 		linear_velocity = linear_velocity.lerp(raw_linear, weight)
 		angular_velocity = angular_velocity.lerp(raw_angular, weight)
@@ -114,7 +111,7 @@ func get_point_velocity(world_point : Vector3) -> Vector3:
 
 func _get_configuration_warnings() -> PackedStringArray:
 	if profile == null:
-		return PackedStringArray(["No HullProfile. Set bake_source_paths to the hull meshes and toggle Editor Bake Profile."])
+		return PackedStringArray(["No HullProfile. Set bake_source_paths to the hull meshes and press Bake Profile."])
 	return PackedStringArray()
 
 
@@ -122,19 +119,25 @@ func _get_configuration_warnings() -> PackedStringArray:
 func get_world_bounding_sphere() -> Vector4:
 	var bounds := profile.get_local_bounds()
 	var center := global_transform * bounds.get_center()
-	var scale := global_transform.basis.get_scale()
-	var radius := bounds.size.length() * 0.5 * maxf(scale.x, maxf(scale.y, scale.z))
+	var world_scale := global_transform.basis.get_scale()
+	var radius := bounds.size.length() * 0.5 * maxf(world_scale.x, maxf(world_scale.y, world_scale.z))
 	return Vector4(center.x, center.y, center.z, radius)
 
 
 func bake_profile() -> void:
-	assert(Engine.is_editor_hint(), "Hull profiles can only be baked in the editor.")
+	if not Engine.is_editor_hint():
+		push_error("Hull profiles can only be baked in the editor.")
+		return
 	if bake_source_paths.is_empty():
 		push_error("HullWaterFootprint %s: set bake_source_paths to the hull meshes before baking." % get_path())
 		return
 	var mesh_instances : Array[MeshInstance3D] = []
 	for path in bake_source_paths:
-		mesh_instances.append_array(HullSlicer.collect_mesh_instances(get_node(path)))
+		var source := get_node_or_null(path)
+		if source == null:
+			push_error("HullWaterFootprint %s: bake source %s not found." % [get_path(), path])
+			return
+		mesh_instances.append_array(HullSlicer.collect_mesh_instances(source))
 	if mesh_instances.is_empty():
 		push_error("HullWaterFootprint %s: bake_source_paths contain no MeshInstance3D." % get_path())
 		return
@@ -143,18 +146,26 @@ func bake_profile() -> void:
 	var triangles := HullSlicer.collect_triangles(mesh_instances, global_transform.affine_inverse())
 	var baked := HullProfile.build(triangles, bake_inset)
 	var path := _get_profile_save_path()
+	if baked == null or path.is_empty():
+		return
 	baked.take_over_path(path)
 	var error := ResourceSaver.save(baked, path)
-	assert(error == OK, "Saving %s failed: %s" % [path, error_string(error)])
+	if error != OK:
+		push_error("HullWaterFootprint: saving %s failed: %s" % [path, error_string(error)])
+		return
 	profile = baked
 	Engine.get_singleton(&"EditorInterface").get_resource_filesystem().update_file(path)
+	@warning_ignore("integer_division")
 	print("HullWaterFootprint baked %d triangles into %s in %.1f ms. Save the scene to keep the reference." % [
 		triangles.size() / 3, path, float(Time.get_ticks_usec() - start_usec) / 1000.0])
 
 
+## Empty (reported) while the edited scene has never been saved.
 func _get_profile_save_path() -> String:
 	if profile != null and profile.resource_path.begins_with("res://") and not profile.resource_path.contains("::"):
 		return profile.resource_path
 	var scene_path := get_tree().edited_scene_root.scene_file_path
-	assert(not scene_path.is_empty(), "Save the scene before baking a hull profile.")
+	if scene_path.is_empty():
+		push_error("Save the scene before baking a hull profile.")
+		return ""
 	return scene_path.get_basename() + PROFILE_SUFFIX

@@ -60,7 +60,7 @@ created at runtime as internal nodes and never saved into the scene.
    the stem, and `particle_size` up for large ships (the caravel uses 1.2 m
    and 0.3 m).
 7. On `HullWaterFootprint`, set `bake_source_paths` to the hull mesh (hull
-   only) and toggle **Editor Bake Profile**, then save. This hides water inside
+   only) and press **Bake Profile**, then save. This hides water inside
    the hull near the camera and makes the hull push water in the interaction
    simulation (Kelvin wake, bow wave, rings when heaving). Tune the wake with
    `wake_strength` and `wake_edge_softness`, or turn it off with
@@ -82,7 +82,7 @@ direct children.
 ## `BowSpray`
 
 Spray at the stem. Every physics tick it queries the water at its own position
-(`OceanSystem` surface query) and tracks its velocity from its transform:
+(the world's `WaterSurface` query) and tracks its velocity from its transform:
 
 - **Spray** — while the stem is in the water, a sheet of droplets is thrown to
   both sides, at up to `spray_rate` particles per second as the stem's speed
@@ -93,7 +93,7 @@ Spray at the stem. Every physics tick it queries the water at its own position
   `slam_jet_ratio` (2.5) × the impact speed (capped at `slam_max_jet_speed`),
   up and out to both sides of the bow, `slam_particles_per_speed` particles
   per m/s, and a splash ring in the interaction simulation
-  (`add_water_impulse`). Jets rise up to `jet² / 2g`: a 4 m/s nose-dive
+  (`WaterSurface.add_impulse`). Jets rise up to `jet² / 2g`: a 4 m/s nose-dive
   throws spray ~5 m up, a 6 m/s one ~10 m, well above the caravel's 3 m deck.
   Emits `slammed(impact_speed, position)`.
 

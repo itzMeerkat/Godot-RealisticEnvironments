@@ -41,7 +41,10 @@ var _last_event_time := -1.0e20
 
 
 func _init(probe_node : Node3D, fx_probe : bool, probe_tag : String, enter_threshold : float, exit_threshold : float, event_interval : float) -> void:
-	assert(enter_threshold > exit_threshold, "Probe %s: enter depth threshold (%f) must be above the exit threshold (%f)." % [probe_node.get_path(), enter_threshold, exit_threshold])
+	if enter_threshold <= exit_threshold:
+		# Equal thresholds would toggle wet/dry every tick at the surface.
+		push_error("Probe %s: enter depth threshold (%f) must be above the exit threshold (%f); using exit - 0.01 m." % [probe_node.get_path(), enter_threshold, exit_threshold])
+		exit_threshold = enter_threshold - 0.01
 	probe = probe_node
 	is_fx_probe = fx_probe
 	tag = probe_tag

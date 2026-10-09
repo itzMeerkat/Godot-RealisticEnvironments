@@ -38,6 +38,8 @@ var cell_size : float
 var render_texture : RID
 ## Integer cell coordinate of the window's first cell.
 var window_origin := Vector2i.ZERO
+## Impulses dropped because MAX_IMPULSES were already queued for a step.
+var dropped_impulse_count := 0
 
 var _context : RenderingContext
 var _device : RenderingDevice
@@ -68,6 +70,7 @@ var _has_window := false
 var _pending_impulses := PackedVector4Array()
 
 
+## OceanSystem validates size and meters_per_cell; check has_failed() afterwards.
 func _init(device : RenderingDevice, size : int, meters_per_cell : float) -> void:
 	assert(size >= 64 and size <= 1024 and (size & (size - 1)) == 0, "Interaction grid size must be a power of two in 64..1024.")
 	assert(meters_per_cell > 0.0, "Interaction cell size must be positive.")
@@ -75,11 +78,11 @@ func _init(device : RenderingDevice, size : int, meters_per_cell : float) -> voi
 	cell_size = meters_per_cell
 	_log2_size = int(round(log(float(size)) / log(2.0)))
 	_device = device
-	_context = RenderingContext.create(device)
+	_context = RenderingContext.new(device)
 
 	for shader_name in ['iwave_scroll', 'iwave_impulse', 'iwave_pressure', 'iwave_fft', 'iwave_operator', 'iwave_step']:
 		_shaders[shader_name] = _context.load_shader(SHADER_DIR + shader_name + '.glsl')
-		_pipelines[shader_name] = _context.deletion_queue.push(_device.compute_pipeline_create(_shaders[shader_name]))
+		_pipelines[shader_name] = _context.create_compute_pipeline(_shaders[shader_name])
 
 	var dims := Vector2i(size, size)
 	var storage := RenderingDevice.TEXTURE_USAGE_STORAGE_BIT
@@ -90,53 +93,58 @@ func _init(device : RenderingDevice, size : int, meters_per_cell : float) -> voi
 		empty_state[i] = -1.0e30
 		empty_state[i + 1] = -1.0e30
 	for i in 2:
-		_states.push_back(_context.create_texture(dims, RenderingDevice.DATA_FORMAT_R32G32B32A32_SFLOAT, storage, 0, RDTextureView.new(), [empty_state.to_byte_array()]).rid)
+		_states.push_back(_context.create_texture(dims, RenderingDevice.DATA_FORMAT_R32G32B32A32_SFLOAT, storage, 0, [empty_state.to_byte_array()]).rid)
 	_pressure = _context.create_texture(dims, RenderingDevice.DATA_FORMAT_R32G32B32A32_SFLOAT, storage).rid
 	_spectrum = _context.create_texture(dims, RenderingDevice.DATA_FORMAT_R32G32_SFLOAT, storage).rid
 	var empty_render := PackedByteArray()
 	empty_render.resize(size * size * 8)
-	render_texture = _context.create_texture(dims, RenderingDevice.DATA_FORMAT_R16G16B16A16_SFLOAT, storage | RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT, 0, RDTextureView.new(), [empty_render]).rid
+	render_texture = _context.create_texture(dims, RenderingDevice.DATA_FORMAT_R16G16B16A16_SFLOAT, storage | RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT, 0, [empty_render]).rid
 
 	_hull_buffer = _context.create_storage_buffer(MAX_HULLS * FLOATS_PER_HULL * 4).rid
 	_cascade_buffer = _context.create_storage_buffer(OceanSystem.MAX_CASCADES * OceanSurfaceQueries.BYTES_PER_CASCADE).rid
 	_impulse_buffer = _context.create_storage_buffer(MAX_IMPULSES * 16).rid
 
-	var sampler_state := RDSamplerState.new()
-	sampler_state.min_filter = RenderingDevice.SAMPLER_FILTER_LINEAR
-	sampler_state.mag_filter = RenderingDevice.SAMPLER_FILTER_LINEAR
-	sampler_state.repeat_u = RenderingDevice.SAMPLER_REPEAT_MODE_CLAMP_TO_EDGE
-	sampler_state.repeat_v = RenderingDevice.SAMPLER_REPEAT_MODE_CLAMP_TO_EDGE
-	_profile_sampler = _context.deletion_queue.push(_device.sampler_create(sampler_state))
-	_displacement_sampler = _context.deletion_queue.push(_device.sampler_create(OceanSurfaceQueries.create_displacement_sampler_state()))
+	_profile_sampler = _context.create_sampler(RenderingContext.linear_sampler_state(RenderingDevice.SAMPLER_REPEAT_MODE_CLAMP_TO_EDGE))
+	_displacement_sampler = _context.create_sampler(RenderingContext.linear_sampler_state(RenderingDevice.SAMPLER_REPEAT_MODE_REPEAT))
 	# Bound when no hull profiles exist; never read then (hull count is 0).
-	_empty_profiles = _context.create_texture(Vector2i.ONE, RenderingDevice.DATA_FORMAT_R16G16_SFLOAT, RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT, 1, RDTextureView.new(), [PackedByteArray([0, 0, 0, 0])]).rid
+	_empty_profiles = _context.create_texture(Vector2i.ONE, RenderingDevice.DATA_FORMAT_R16G16_SFLOAT, RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT, 1, [PackedByteArray([0, 0, 0, 0])]).rid
 
 	for i in 2:
 		_scroll_sets.push_back(_create_set('iwave_scroll', [
-			_uniform(0, RenderingDevice.UNIFORM_TYPE_IMAGE, [_states[i]]),
-			_uniform(1, RenderingDevice.UNIFORM_TYPE_IMAGE, [render_texture]),
+			RenderingContext.image_uniform(0, _states[i]),
+			RenderingContext.image_uniform(1, render_texture),
 		]))
 		_impulse_sets.push_back(_create_set('iwave_impulse', [
-			_uniform(0, RenderingDevice.UNIFORM_TYPE_IMAGE, [_states[i]]),
-			_uniform(1, RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER, [_impulse_buffer]),
+			RenderingContext.image_uniform(0, _states[i]),
+			RenderingContext.buffer_uniform(1, _impulse_buffer),
 		]))
 		_step_sets.push_back(_create_set('iwave_step', [
-			_uniform(0, RenderingDevice.UNIFORM_TYPE_IMAGE, [_states[i]]),
-			_uniform(1, RenderingDevice.UNIFORM_TYPE_IMAGE, [_states[1 - i]]),
-			_uniform(2, RenderingDevice.UNIFORM_TYPE_IMAGE, [_pressure]),
-			_uniform(3, RenderingDevice.UNIFORM_TYPE_IMAGE, [_spectrum]),
-			_uniform(4, RenderingDevice.UNIFORM_TYPE_IMAGE, [render_texture]),
+			RenderingContext.image_uniform(0, _states[i]),
+			RenderingContext.image_uniform(1, _states[1 - i]),
+			RenderingContext.image_uniform(2, _pressure),
+			RenderingContext.image_uniform(3, _spectrum),
+			RenderingContext.image_uniform(4, render_texture),
 		]))
-	_fft_set = _create_set('iwave_fft', [_uniform(0, RenderingDevice.UNIFORM_TYPE_IMAGE, [_spectrum])])
-	_operator_set = _create_set('iwave_operator', [_uniform(0, RenderingDevice.UNIFORM_TYPE_IMAGE, [_spectrum])])
+	_fft_set = _create_set('iwave_fft', [RenderingContext.image_uniform(0, _spectrum)])
+	_operator_set = _create_set('iwave_operator', [RenderingContext.image_uniform(0, _spectrum)])
 
 
 ## Queues a splash: a Gaussian bump of the given radius and amplitude (m) added
 ## to the wave state on the next step.
+## At most MAX_IMPULSES per step; more are dropped (dropped_impulse_count).
 func add_impulse(position : Vector3, radius : float, amplitude : float) -> void:
-	assert(_pending_impulses.size() < MAX_IMPULSES, "More than %d water impulses queued in one step." % MAX_IMPULSES)
-	assert(radius > 0.0, "Water impulse radius must be positive.")
+	if radius <= 0.0:
+		push_error("Water impulse radius must be positive; impulse ignored.")
+		return
+	if _pending_impulses.size() >= MAX_IMPULSES:
+		dropped_impulse_count += 1
+		return
 	_pending_impulses.push_back(Vector4(position.x, position.z, radius, amplitude))
+
+
+## True when a GPU resource failed to be created; the simulation must not step.
+func has_failed() -> bool:
+	return _context.failed
 
 
 ## World-space XZ of the window center.
@@ -158,6 +166,7 @@ func clear_uniform_set_cache() -> void:
 ## dt seconds. hull_data holds hull_count SimHull records (FLOATS_PER_HULL floats each).
 func step(dt : float, camera_position : Vector3, hull_data : PackedFloat32Array, hull_count : int, cascade_data : PackedByteArray, cascade_count : int, water_level : float, displacement_a : RID, displacement_b : RID, hull_profiles : RID) -> void:
 	assert(hull_count <= MAX_HULLS, "At most %d hulls can force the interaction simulation." % MAX_HULLS)
+	@warning_ignore("integer_division")
 	var new_origin := Vector2i(floori(camera_position.x / cell_size), floori(camera_position.z / cell_size)) - Vector2i.ONE * (grid_size / 2)
 	var scroll := _has_window and new_origin != window_origin
 	var old_origin := window_origin
@@ -173,6 +182,7 @@ func step(dt : float, camera_position : Vector3, hull_data : PackedFloat32Array,
 		var impulse_bytes := _pending_impulses.to_byte_array()
 		_device.buffer_update(_impulse_buffer, 0, impulse_bytes.size(), impulse_bytes)
 
+	@warning_ignore("integer_division")
 	var groups := grid_size / WORKGROUP_SIZE
 	var profiles := hull_profiles if hull_profiles.is_valid() else _empty_profiles
 	var compute_list := _device.compute_list_begin()
@@ -231,27 +241,19 @@ func _get_pressure_set(state_index : int, hull_profiles : RID, displacement_a : 
 		if not _device.uniform_set_is_valid(_pressure_sets[stale_key]):
 			_pressure_sets.erase(stale_key)
 	var uniform_set := _device.uniform_set_create([
-		_uniform(0, RenderingDevice.UNIFORM_TYPE_IMAGE, [_pressure]),
-		_uniform(1, RenderingDevice.UNIFORM_TYPE_IMAGE, [_spectrum]),
-		_uniform(2, RenderingDevice.UNIFORM_TYPE_IMAGE, [_states[state_index]]),
-		_uniform(3, RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER, [_hull_buffer]),
-		_uniform(4, RenderingDevice.UNIFORM_TYPE_SAMPLER_WITH_TEXTURE, [_profile_sampler, hull_profiles]),
-		_uniform(5, RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER, [_cascade_buffer]),
-		_uniform(6, RenderingDevice.UNIFORM_TYPE_SAMPLER_WITH_TEXTURE, [_displacement_sampler, displacement_a]),
-		_uniform(7, RenderingDevice.UNIFORM_TYPE_SAMPLER_WITH_TEXTURE, [_displacement_sampler, displacement_b]),
+		RenderingContext.image_uniform(0, _pressure),
+		RenderingContext.image_uniform(1, _spectrum),
+		RenderingContext.image_uniform(2, _states[state_index]),
+		RenderingContext.buffer_uniform(3, _hull_buffer),
+		RenderingContext.sampled_uniform(4, _profile_sampler, hull_profiles),
+		RenderingContext.buffer_uniform(5, _cascade_buffer),
+		RenderingContext.sampled_uniform(6, _displacement_sampler, displacement_a),
+		RenderingContext.sampled_uniform(7, _displacement_sampler, displacement_b),
 	], _shaders['iwave_pressure'], 0)
 	_pressure_sets[key] = uniform_set
 	return uniform_set
 
 
 func _create_set(shader_name : String, uniforms : Array) -> RID:
-	return _context.deletion_queue.push(_device.uniform_set_create(uniforms, _shaders[shader_name], 0))
+	return _context.create_uniform_set(uniforms, _shaders[shader_name])
 
-
-func _uniform(binding : int, uniform_type : RenderingDevice.UniformType, ids : Array) -> RDUniform:
-	var uniform := RDUniform.new()
-	uniform.binding = binding
-	uniform.uniform_type = uniform_type
-	for id in ids:
-		uniform.add_id(id)
-	return uniform

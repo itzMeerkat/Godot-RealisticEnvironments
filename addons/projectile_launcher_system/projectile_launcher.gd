@@ -332,12 +332,12 @@ func _update_debug_arrow() -> void:
 	_debug_arrow_mesh.surface_add_vertex(origin)
 	_debug_arrow_mesh.surface_add_vertex(end)
 
-	var basis := _basis_for_direction(direction)
+	var arrow_basis := _basis_for_direction(direction)
 	var head_length := minf(DEBUG_ARROW_HEAD_LENGTH, DEBUG_ARROW_LENGTH * 0.5)
 	var head_side_offset := tan(deg_to_rad(DEBUG_ARROW_HEAD_ANGLE_DEGREES)) * head_length
-	var back := basis.z * head_length
-	var right := basis.x * head_side_offset
-	var up := basis.y * head_side_offset
+	var back := arrow_basis.z * head_length
+	var right := arrow_basis.x * head_side_offset
+	var up := arrow_basis.y * head_side_offset
 	_add_debug_arrow_head_line(end, back + right)
 	_add_debug_arrow_head_line(end, back - right)
 	_add_debug_arrow_head_line(end, back + up)

@@ -125,9 +125,9 @@ func _init() -> void:
 	access_resolved_color = true
 	_rd = RenderingServer.get_rendering_device()
 	_capture_shader = _compile_shader(CAPTURE_SHADER)
-	_capture_pipeline = _rd.compute_pipeline_create(_capture_shader)
+	_capture_pipeline = _rd.compute_pipeline_create(_capture_shader) if _capture_shader.is_valid() else RID()
 	_downsample_shader = _compile_shader(DOWNSAMPLE_SHADER)
-	_downsample_pipeline = _rd.compute_pipeline_create(_downsample_shader)
+	_downsample_pipeline = _rd.compute_pipeline_create(_downsample_shader) if _downsample_shader.is_valid() else RID()
 	var sampler_state := RDSamplerState.new()
 	sampler_state.min_filter = RenderingDevice.SAMPLER_FILTER_NEAREST
 	sampler_state.mag_filter = RenderingDevice.SAMPLER_FILTER_NEAREST
@@ -149,8 +149,10 @@ func _notification(what: int) -> void:
 	if _distance_rid.is_valid():
 		_rd.free_rid(_distance_rid)
 	# Freeing a shader frees its pipeline.
-	_rd.free_rid(_capture_shader)
-	_rd.free_rid(_downsample_shader)
+	if _capture_shader.is_valid():
+		_rd.free_rid(_capture_shader)
+	if _downsample_shader.is_valid():
+		_rd.free_rid(_downsample_shader)
 	_rd.free_rid(_sampler)
 
 
@@ -170,7 +172,9 @@ func set_size(size: Vector2i) -> void:
 	format.mipmaps = mip_count
 	format.usage_bits = RenderingDevice.TEXTURE_USAGE_STORAGE_BIT | RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT | RenderingDevice.TEXTURE_USAGE_CAN_COPY_TO_BIT
 	var texture_rid := _rd.texture_create(format, RDTextureView.new())
-	assert(texture_rid.is_valid(), "PlanarReflectionCaptureEffect failed to create its texture.")
+	if not texture_rid.is_valid():
+		push_error("PlanarReflectionCaptureEffect: creating the %s capture texture failed; keeping the previous one." % size)
+		return
 	# Nothing is captured before the first render: read as "no geometry".
 	_rd.texture_clear(texture_rid, Color(0.0, 0.0, 0.0, 0.0), 0, mip_count, 0, 1)
 	# Storage bindings need single-mip views.
@@ -180,7 +184,12 @@ func set_size(size: Vector2i) -> void:
 	format.format = RenderingDevice.DATA_FORMAT_R32_SFLOAT
 	format.mipmaps = 1
 	var distance_rid := _rd.texture_create(format, RDTextureView.new())
-	assert(distance_rid.is_valid(), "PlanarReflectionCaptureEffect failed to create its distance texture.")
+	if not distance_rid.is_valid():
+		push_error("PlanarReflectionCaptureEffect: creating the %s distance texture failed; keeping the previous one." % size)
+		for view in mip_views:
+			_rd.free_rid(view)
+		_rd.free_rid(texture_rid)
+		return
 	_rd.texture_clear(distance_rid, Color(0.0, 0.0, 0.0, 0.0), 0, 1, 0, 1)
 	_params_mutex.lock()
 	var old_rids : Array[RID] = _mip_views.duplicate()
@@ -214,6 +223,9 @@ func _render_callback(_callback_type: int, render_data: RenderData) -> void:
 	var distance_rid := _distance_rid
 	var push_values := [water_level, clip_bias, 1.0 if clip_below_water else 0.0]
 	_params_mutex.unlock()
+	# Shaders that failed to compile were reported in _init().
+	if not _capture_pipeline.is_valid() or not _downsample_pipeline.is_valid():
+		return
 	if raster_size != size:
 		push_error("PlanarReflectionCaptureEffect: render size %s does not match the capture texture %s (set_size() not called after a resize?)." % [raster_size, size])
 		return
@@ -228,7 +240,7 @@ func _render_callback(_callback_type: int, render_data: RenderData) -> void:
 	depth_uniform.binding = 1
 	depth_uniform.add_id(_sampler)
 	depth_uniform.add_id(render_scene_buffers.get_depth_layer(0))
-	var capture_set := UniformSetCacheRD.get_cache(_capture_shader, 0, [color_uniform, depth_uniform, _image_uniform(2, mip_views[0]), _image_uniform(3, distance_rid)])
+	var capture_set := UniformSetCacheRD.get_cache(_capture_shader, 0, [color_uniform, depth_uniform, RenderingContext.image_uniform(2, mip_views[0]), RenderingContext.image_uniform(3, distance_rid)])
 
 	var camera_transform := render_scene_data.get_cam_transform()
 	var view_projection := render_scene_data.get_view_projection(0) * Projection(camera_transform.affine_inverse())
@@ -252,7 +264,7 @@ func _render_callback(_callback_type: int, render_data: RenderData) -> void:
 		_rd.compute_list_bind_compute_pipeline(compute_list, _downsample_pipeline)
 		var source_size := Vector2i(maxi(size.x >> (mip - 1), 1), maxi(size.y >> (mip - 1), 1))
 		var target_size := Vector2i(maxi(size.x >> mip, 1), maxi(size.y >> mip, 1))
-		var downsample_set := UniformSetCacheRD.get_cache(_downsample_shader, 0, [_image_uniform(0, mip_views[mip - 1]), _image_uniform(1, mip_views[mip])])
+		var downsample_set := UniformSetCacheRD.get_cache(_downsample_shader, 0, [RenderingContext.image_uniform(0, mip_views[mip - 1]), RenderingContext.image_uniform(1, mip_views[mip])])
 		_rd.compute_list_bind_uniform_set(compute_list, downsample_set, 0)
 		var downsample_push := PackedInt32Array([source_size.x, source_size.y, target_size.x, target_size.y]).to_byte_array()
 		_rd.compute_list_set_push_constant(compute_list, downsample_push, downsample_push.size())
@@ -265,15 +277,8 @@ func _compile_shader(source: String) -> RID:
 	shader_source.language = RenderingDevice.SHADER_LANGUAGE_GLSL
 	shader_source.source_compute = source
 	var spirv := _rd.shader_compile_spirv_from_source(shader_source)
-	assert(spirv.compile_error_compute.is_empty(), "Planar reflection capture shader failed to compile: %s" % spirv.compile_error_compute)
-	var shader := _rd.shader_create_from_spirv(spirv)
-	assert(shader.is_valid(), "Planar reflection capture shader could not be created.")
-	return shader
+	if not spirv.compile_error_compute.is_empty():
+		push_error("Planar reflection capture shader failed to compile; reflected geometry is off: %s" % spirv.compile_error_compute)
+		return RID()
+	return _rd.shader_create_from_spirv(spirv)
 
-
-static func _image_uniform(binding: int, texture_rid: RID) -> RDUniform:
-	var uniform := RDUniform.new()
-	uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
-	uniform.binding = binding
-	uniform.add_id(texture_rid)
-	return uniform

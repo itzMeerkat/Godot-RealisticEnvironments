@@ -46,10 +46,12 @@ var _adapted_lux := -1.0
 
 
 func _ready() -> void:
-	_light_source = get_node(light_source_path)
-	assert(_light_source.has_method(&"get_scene_illuminance") and _light_source.has_method(&"get_illuminance_unit_lux"),
-			"ExposureController's light source must have get_scene_illuminance() and get_illuminance_unit_lux(): %s" % _light_source.get_path())
-	var target := get_node(target_path)
+	_light_source = get_node_or_null(light_source_path)
+	if _light_source == null or not (_light_source.has_method(&"get_scene_illuminance") and _light_source.has_method(&"get_illuminance_unit_lux")):
+		push_error("ExposureController %s: light_source_path must point to a node with get_scene_illuminance() and get_illuminance_unit_lux(); exposure is fixed." % get_path())
+		set_process(false)
+		return
+	var target := get_node_or_null(target_path)
 	if target is WorldEnvironment:
 		if target.camera_attributes == null:
 			target.camera_attributes = CameraAttributesPractical.new()
@@ -59,7 +61,8 @@ func _ready() -> void:
 			target.attributes = CameraAttributesPractical.new()
 		_attributes = target.attributes
 	else:
-		push_error("ExposureController's target must be a WorldEnvironment or a Camera3D: %s" % target.get_path())
+		push_error("ExposureController %s: target_path must point to a WorldEnvironment or a Camera3D; exposure is fixed." % get_path())
+		set_process(false)
 
 
 ## The illuminance (lux) the exposure is currently adapted to; < 0 before the first reading.

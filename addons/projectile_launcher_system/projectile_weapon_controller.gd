@@ -415,26 +415,26 @@ func _simulate_ballistic_pitch(shot: BallisticShot, pitch: float) -> Vector3:
 	var launch_direction := (shot.horizontal_direction * cos(pitch) + Vector3.UP * sin(pitch)).normalized()
 	var velocity_3d := launch_direction * shot.initial_speed + shot.inherited_velocity
 	var velocity := Vector2(velocity_3d.dot(shot.horizontal_direction), velocity_3d.y)
-	var position := Vector2(0.0, shot.origin_y)
+	var shot_position := Vector2(0.0, shot.origin_y)
 	var step := maxf(simulation_step, 0.001)
 	var gravity := Vector2(0.0, -_gravity)
 	var elapsed := 0.0
 	while elapsed < max_simulation_time:
-		var previous_position := position
+		var previous_position := shot_position
 		var acceleration := gravity
 		var speed_squared := velocity.length_squared()
 		if drag_coefficient > 0.0 and speed_squared > 0.0001:
 			acceleration += -velocity.normalized() * speed_squared * drag_coefficient / projectile_mass
 		velocity += acceleration * step
-		position += velocity * step
+		shot_position += velocity * step
 		elapsed += step
 
-		if position.x >= horizontal_distance:
-			var segment_distance := position.x - previous_position.x
+		if shot_position.x >= horizontal_distance:
+			var segment_distance := shot_position.x - previous_position.x
 			var weight := 1.0 if absf(segment_distance) <= 0.0001 else clampf((horizontal_distance - previous_position.x) / segment_distance, 0.0, 1.0)
-			return Vector3(lerpf(previous_position.y, position.y, weight) - target_y, 1.0, 1.0)
-		if position.y <= target_y and velocity.y < 0.0:
-			return Vector3(position.y - target_y, 0.0, 1.0)
+			return Vector3(lerpf(previous_position.y, shot_position.y, weight) - target_y, 1.0, 1.0)
+		if shot_position.y <= target_y and velocity.y < 0.0:
+			return Vector3(shot_position.y - target_y, 0.0, 1.0)
 	return Vector3.ZERO
 
 
