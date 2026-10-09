@@ -122,8 +122,12 @@ Heights match the rendered mesh:
   one with `get_atmosphere_sky_volumes()`
   its atmosphere, and one with `get_atmosphere_view_volumes()` the air between
   the camera and the water (see Lighting below).
-- **Planar Reflections** — mirrored-camera reflection of scene geometry,
-  resolution, strength, and clipping of submerged pixels.
+- **Reflections** — `reflection_mode`: Sky Only (the sky, its clouds and
+  stars), Screen Space (reflected rays marched against the opaque scene the
+  camera drew: nearly free, but misses what is off screen or hidden and fades at
+  the screen's edges) or Planar (a mirrored camera renders the scene: complete,
+  a second scene render). Planar's resolution, strength and clipping of
+  submerged pixels are in its subgroup.
 - **External Wind** — `use_external_wind`, `wind_source_path`.
 - **`parameters`** — the ordered `Array[WaveCascadeParameters]` (at most 8).
 - **Performance** — `shader_quality` (Low / Medium / High water shader, see

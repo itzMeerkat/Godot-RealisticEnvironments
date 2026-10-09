@@ -61,6 +61,13 @@
 #ifndef REFRACTION_MARCH_STEPS
 #define REFRACTION_MARCH_STEPS 32
 #endif
+// Screen-space reflections (find_reflected_scene()): march steps along the reflected ray,
+// the longest path (m) searched, and the share of the screen's edge over which hits fade.
+#ifndef SCREEN_REFLECTION_STEPS
+#define SCREEN_REFLECTION_STEPS 24
+#endif
+#define SCREEN_REFLECTION_MAX_DISTANCE 400.0
+#define SCREEN_REFLECTION_EDGE_FADE 0.1
 #ifndef REFRACTION_REFINE_STEPS
 #define REFRACTION_REFINE_STEPS 6
 #endif
@@ -161,6 +168,9 @@ uniform int water_debug_view : hint_range(0, 15) = 0;
 // exposes itself) divides by it.
 uniform float scene_exposure = 1.0;
 uniform bool planar_reflection_enabled = false;
+// Screen-space reflections (OceanSystem.reflection_mode): the reflected ray is marched
+// against the opaque scene the camera already drew (scene_color, scene_depth).
+uniform bool screen_space_reflections_enabled = false;
 // Linear HDR, rgb premultiplied by geometry coverage (a), with a mip chain (PlanarReflectionCaptureEffect).
 uniform sampler2D planar_reflection_texture : filter_linear_mipmap, repeat_disable;
 // Distance (m) from the mirrored camera to the surface each texel shows, 0 = no geometry.
@@ -755,6 +765,52 @@ vec2 find_refracted_scene(vec3 origin, vec3 direction, vec3 up, float bottom_dep
 	return screen_project(origin + direction * t, projection);
 }
 
+/*
+ * Where the ray reflected at origin (view space) along direction meets the opaque scene
+ * the camera drew: xy the screen point, z the coverage (0: no hit, the sky shows). The
+ * march steps along the ray's image on the screen (depth interpolated perspective-
+ * correctly, steps growing quadratically); a hit is where the ray goes behind a surface
+ * by less than its own depth change over the step plus REFRACTION_THICKNESS (farther
+ * behind, it passed behind an object). Hits fade near the screen's edge, and rays toward
+ * the camera find what faces it only (the screen holds no back sides): they fade too.
+ */
+vec3 find_reflected_scene(vec3 origin, vec3 direction, mat4 projection, mat4 inv_projection) {
+	vec3 end = origin + direction * SCREEN_REFLECTION_MAX_DISTANCE;
+	if (end.z > -REFRACTION_NEAR) // Keep the end in front of the camera.
+		end = origin + direction * ((-REFRACTION_NEAR - origin.z) / min(direction.z, -1e-4));
+	vec2 start_uv = screen_project(origin, projection);
+	vec2 delta = screen_project(end, projection) - start_uv;
+	float start_k = 1.0 / -origin.z;
+	float end_k = 1.0 / -end.z;
+	float u_max = 1.0;
+	for (int axis = 0; axis < 2; ++axis) {
+		float end_uv = start_uv[axis] + delta[axis];
+		if (end_uv < 0.0)
+			u_max = min(u_max, -start_uv[axis] / delta[axis]);
+		else if (end_uv > 1.0)
+			u_max = min(u_max, (1.0 - start_uv[axis]) / delta[axis]);
+	}
+	float previous_depth = -origin.z;
+	for (int i = 1; i <= SCREEN_REFLECTION_STEPS; ++i) {
+		float step_fraction = float(i) / float(SCREEN_REFLECTION_STEPS);
+		float u = u_max * step_fraction * step_fraction;
+		vec2 uv = start_uv + delta * u;
+		float ray_depth = 1.0 / mix(start_k, end_k, u);
+		float scene = scene_view_depth(uv, inv_projection);
+		if (scene > 0.0 && ray_depth >= scene) {
+			if (ray_depth - scene <= abs(ray_depth - previous_depth) + REFRACTION_THICKNESS) {
+				vec2 edge = min(uv, 1.0 - uv);
+				float coverage = smoothstep(0.0, SCREEN_REFLECTION_EDGE_FADE, min(edge.x, edge.y));
+				coverage *= smoothstep(0.6, 0.0, direction.z);
+				return vec3(uv, coverage);
+			}
+			return vec3(0.0); // Behind an object: what it meets is hidden.
+		}
+		previous_depth = ray_depth;
+	}
+	return vec3(0.0);
+}
+
 /* Cascade i's wave slope (gradient of the height) at a rest position, from mip lod. */
 vec2 cascade_slope(uint i, vec2 rest_xz, float lod) {
 	vec4 scales = map_scales[i];
@@ -1262,8 +1318,9 @@ void fragment() {
 	// The highlight itself is lit in light(); this copy (per unit of sun irradiance) is for the debug view.
 	sun_specular_amount = water_specular_brdf(world_normal, view_direction_world, sun_dir, effective_reflection_roughness) * saturate(dot(world_normal, sun_dir));
 
-	// The planar reflection: rgb premultiplied by geometry coverage (a), and the share of
-	// the reflection it covers (0 off screen of the mirrored camera or when disabled).
+	// The planar (or screen-space) reflection: rgb premultiplied by geometry coverage (a),
+	// and the share of the reflection it covers (0 off screen of the mirrored camera, where
+	// the screen-space ray finds nothing, or when disabled).
 	vec4 planar_sample = vec4(0.0);
 	float planar_coverage = 0.0;
 	if (planar_reflection_enabled && planar_reflection_strength > 0.0) {
@@ -1295,6 +1352,21 @@ void fragment() {
 		float reflection_lod = log2(max(alpha * 4.9 * lobe_scale / planar_reflection_texel_angle, 1.0));
 		planar_sample = textureLod(planar_reflection_texture, reflection_uv.xy, reflection_lod);
 		planar_coverage = planar_reflection_strength * reflection_uv.z;
+	} else if (screen_space_reflections_enabled) {
+		vec3 reflection_view = (VIEW_MATRIX * vec4(reflection_direction, 0.0)).xyz;
+		vec3 hit = find_reflected_scene(VERTEX, reflection_view, PROJECTION_MATRIX, INV_PROJECTION_MATRIX);
+		if (hit.z > 0.0) {
+			// Blurred over the reflection lobe like the planar reflection: the rays spread by
+			// about sqrt(2) alpha over the distance to what they meet.
+			vec4 hit_position = scene_view_position(hit.xy, INV_PROJECTION_MATRIX);
+			float hit_distance = distance(hit_position.xyz, VERTEX);
+			float meters_per_pixel = 2.0 * max(-hit_position.z, 0.001) / (abs(PROJECTION_MATRIX[1][1]) * VIEWPORT_SIZE.y);
+			float alpha = effective_reflection_roughness * effective_reflection_roughness;
+			float reflection_lod = log2(max(2.0 * 1.41421356 * alpha * hit_distance / meters_per_pixel, 1.0));
+			// Explicit LOD: this follows the hull discard. Opaque: coverage is the hit's.
+			planar_sample = vec4(textureLod(scene_color, hit.xy, reflection_lod).rgb, 1.0);
+			planar_coverage = hit.z;
+		}
 	}
 	if (sky_reflection_enabled) {
 		// Seen from the bottom of the atmosphere; the camera's own path to the water is

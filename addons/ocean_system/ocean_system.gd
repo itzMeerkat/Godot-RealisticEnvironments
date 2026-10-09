@@ -208,14 +208,17 @@ const WATER_DEBUG_VIEW_NORMAL := 0
 		foam_detail_tile_size = value
 		_set_water_shader_parameter(&'foam_detail_tile_size', foam_detail_tile_size)
 
-@export_group('Planar Reflections')
-## Renders a mirrored camera into a texture so dynamic scene geometry can appear
-## reflected in the water. This is more expensive than procedural sky reflection
-## and is created lazily only when enabled.
-@export var enable_planar_reflections := true :
+@export_group('Reflections')
+## How the water reflects the scene's geometry (the sky, its clouds and stars are
+## always reflected). Sky Only: no geometry. Screen Space: the reflected rays are
+## marched against what the camera already drew, nearly free, but what is off screen
+## or hidden is missed and hits fade at the screen's edges. Planar: a mirrored camera
+## renders the scene (complete, costs a second scene render; created lazily).
+@export_enum('Sky Only:0', 'Screen Space:1', 'Planar:2') var reflection_mode := 2 :
 	set(value):
-		enable_planar_reflections = value
+		reflection_mode = value
 		if is_node_ready(): _update_planar_reflection_settings()
+@export_subgroup('Planar')
 ## Maximum side length for the planar reflection texture after resolution_scale
 ## is applied. Larger values sharpen reflected objects but add render cost.
 @export_range(128, 4096, 1) var reflection_texture_size := 1024 :
@@ -985,8 +988,10 @@ func _setup_water_mesh() -> void:
 	_lod_grid.attach(get_instance())
 
 func _update_planar_reflection_settings() -> void:
-	# Reflections never render in the editor, and the renderer is only created once enabled.
-	if Engine.is_editor_hint() or (_reflection_renderer == null and not enable_planar_reflections):
+	_set_water_shader_parameter(&'screen_space_reflections_enabled', reflection_mode == 1)
+	var planar := reflection_mode == 2
+	# Planar reflections never render in the editor, and the renderer is only created once enabled.
+	if Engine.is_editor_hint() or (_reflection_renderer == null and not planar):
 		_set_water_shader_parameter(&'planar_reflection_enabled', false)
 		_set_water_shader_parameter(&'planar_reflection_strength', 0.0)
 		return
@@ -994,7 +999,7 @@ func _update_planar_reflection_settings() -> void:
 		_reflection_renderer = OCEAN_REFLECTION_RENDERER.new()
 		_reflection_renderer.name = "OceanReflectionRenderer"
 		add_child(_reflection_renderer)
-	_reflection_renderer.enabled = enable_planar_reflections
+	_reflection_renderer.enabled = planar
 	_reflection_renderer.texture_size = reflection_texture_size
 	_reflection_renderer.resolution_scale = reflection_resolution_scale
 	_reflection_renderer.reflection_strength = reflection_strength
