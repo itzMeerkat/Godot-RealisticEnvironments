@@ -92,6 +92,14 @@ before touching its code; this file only records what is easy to get wrong.
     frame. Optional `get_cloud_cubemap()` returns a cubemap (rgb premultiplied
     cloud radiance as seen at the cloud, a opacity; `null` = no clouds) with a
     full mip chain, read at the mip that matches the water's roughness.
+    Optional `get_star_cubemap()` (rgb star radiance in cd/m² above the
+    atmosphere, mip chain; `null` = no stars), `get_star_basis()` (world
+    direction into the cubemap's frame; it turns with the sky) and
+    `get_star_radiance_scale()` (cubemap value to unexposed scene radiance)
+    give the stars the water reflects, dimmed by the sea-level transmittance
+    and behind the clouds. Where the planar reflection covers the reflected
+    ray, the mirrored camera's own starfield brings them instead (the cubemap
+    is weighted by `1 − coverage`), so stars are never counted twice.
     Optional `get_atmosphere_sky_volumes()` (`[transmittance, inscatter,
     inscatter_lobe]` `Texture3D`s for an observer on the sea, two slices: at
     the cloud base and at the ray's end; empty = no atmosphere) and

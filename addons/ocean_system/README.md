@@ -118,7 +118,8 @@ Heights match the rendered mesh:
 - **Sky Reflection** — procedural sky reflection, `sun_specular_strength`, sun
   glitter; `manual_*` values are used when no sky source is set or the source
   lacks a value. A sky source with `get_cloud_cubemap()` (SkySystem) also puts
-  its clouds into the reflection, one with `get_atmosphere_sky_volumes()`
+  its clouds into the reflection, one with `get_star_cubemap()` its stars,
+  one with `get_atmosphere_sky_volumes()`
   its atmosphere, and one with `get_atmosphere_view_volumes()` the air between
   the camera and the water (see Lighting below).
 - **Planar Reflections** — mirrored-camera reflection of scene geometry,
@@ -550,6 +551,16 @@ Lighting:
   deviation `σ = √2 α` per axis, by the 4-point Gaussian cubature at `±√2 σ`
   along the elevation and the azimuth; clouds from the cloud cubemap's mip
   whose blur matches the lobe) and planar reflection.
+- Stars (`sample_stars()`): with a sky source that has `get_star_cubemap()`,
+  `get_star_basis()` and `get_star_radiance_scale()` (SkySystem), the
+  reflected sky gets the stars from the cubemap's mip that matches the lobe,
+  dimmed by the atmosphere's transmittance to the ray's end and hidden by the
+  clouds. Where the planar reflection covers the reflected ray its mirrored
+  camera draws the starfield sharp, so the cubemap only fills in the rest
+  (weight `1 − coverage`). By day (scene radiance scale times exposure below
+  1e-4) the lookup is skipped. The reflection keeps the stars' light; on
+  rough water it is spread over the reflection lobe and too faint to see,
+  and only nearly glassy water (low `clear_roughness`) shows star glints.
 - Atmosphere (`atmosphere_sea_lookup()`): with a sky source that has
   `get_atmosphere_sky_volumes()` and `get_atmosphere_light()` (SkySystem), the
   reflected clear sky is the atmosphere's, seen from the sea surface: a lookup

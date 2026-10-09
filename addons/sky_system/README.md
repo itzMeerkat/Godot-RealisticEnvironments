@@ -37,7 +37,8 @@ Without one, nights and heavy overcast render near black.
   world up; default north is −Z), `axis_tilt_degrees`,
   `sun_energy_multiplier` / `moon_energy_multiplier` (scale the lights'
   energy above the atmosphere).
-- **Stars** — `star_catalog`, `star_brightness` (see [Stars](#stars)).
+- **Stars** — `star_catalog`, `star_brightness`, `star_cubemap_size` (see
+  [Stars](#stars)).
   The sky's colours, the lights and the ambient light all come from the
   atmosphere.
 - **Sun and moon light** — both are white
@@ -108,6 +109,17 @@ colours). `stars/bright_star_catalog.tres` is baked by
 `tools/bake_star_catalog.py` from the Bright Star Catalogue, 5th Revised Ed.
 (Hoffleit & Warren 1991; CDS catalogue V/50); any other catalog baked to the
 same format works.
+
+**Reflections.** `get_star_cubemap()` holds the same stars for consumers
+that draw their own sky (the ocean): a cubemap of `star_cubemap_size`² texels
+per face (256: about 4 MB with mips), radiance in cd/m² above the atmosphere in
+the catalog's frame, each star spread bilinearly over the four texels around
+it (energy kept), mips box-filtered. `get_star_basis()` turns world directions
+into its frame and `get_star_radiance_scale()` its values into scene radiance
+(`star_brightness` included). It is built once; only the basis turns with the
+sky. The starfield itself is also drawn by other cameras (the ocean's mirrored
+planar-reflection camera), so the water weighs the cubemap by what the planar
+reflection does not cover.
 
 The starfield is an internal child created at startup (in the editor too) and
 never saved with the scene; its material is a private copy of
@@ -315,7 +327,8 @@ what Godot's exposure means).
 
 `get_sun_direction()`, `get_moon_direction()` (unit vectors pointing *toward*
 the body), `get_sun_color()`, `get_sun_visibility()`, `get_moon_visibility()`,
-`get_moon_phase()`, `get_time_of_day()`. Exposure:
+`get_moon_phase()`, `get_time_of_day()`. Stars: `get_star_cubemap()`,
+`get_star_basis()`, `get_star_radiance_scale()`. Exposure:
 `get_scene_illuminance()`, `get_illuminance_unit_lux()`.
 Atmosphere: `get_atmosphere_sky_volumes()` (the sea-level view volumes,
 `[transmittance, inscatter, inscatter_lobe]` as `Texture3D`s, or empty without

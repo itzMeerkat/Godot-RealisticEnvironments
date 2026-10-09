@@ -93,6 +93,15 @@ uniform float sky_sun_visibility : hint_range(0.0, 1.0) = 1.0;
 // radiance, a opacity, with a mip chain for rough reflections. Set at runtime by OceanSystem.
 uniform bool sky_clouds_enabled = false;
 uniform samplerCube sky_cloud_cubemap : filter_linear_mipmap;
+// Stars from the sky source (get_star_cubemap()): rgb radiance (cd/m2) above the
+// atmosphere with a mip chain, in the frame sky_star_basis turns world directions into;
+// sky_star_radiance_scale turns it into scene radiance. Set at runtime by OceanSystem.
+// Where the planar reflection covers the reflected ray it brings the stars itself (the
+// mirrored camera draws the starfield sharp), so the cubemap fills in only the rest.
+uniform bool sky_stars_enabled = false;
+uniform samplerCube sky_star_cubemap : filter_linear_mipmap;
+uniform mat3 sky_star_basis = mat3(1.0);
+uniform float sky_star_radiance_scale = 0.0;
 // The sky source's atmosphere seen from the sea (get_atmosphere_sky_volumes(): transmittance,
 // in-scatter but the lobe, lobe in-scatter per unit phase, at the cloud base and at the ray's
 // end; get_atmosphere_light(): xyz toward its light, w the lobe's g). With it the sky the
@@ -472,6 +481,22 @@ vec4 sample_clouds(vec3 direction, float roughness) {
 }
 
 /*
+ * The sky source's stars seen in direction (pre-exposed radiance above the atmosphere),
+ * blurred over the reflection lobe like the clouds (sample_clouds()); none below the
+ * horizon, by day (too faint for the exposure to show) or without stars.
+ */
+vec3 sample_stars(vec3 direction, float roughness) {
+	float scale = sky_star_radiance_scale * scene_exposure;
+	// The brightest star spread over a texel is well under 1 cd/m2.
+	if (!sky_stars_enabled || scale < 1e-4 || direction.y <= 0.0) {
+		return vec3(0.0);
+	}
+	float alpha = roughness * roughness;
+	float lod = log2(max(alpha * float(textureSize(sky_star_cubemap, 0).x) * 2.45, 1.0));
+	return textureLod(sky_star_cubemap, sky_star_basis * direction, lod).rgb * scale;
+}
+
+/*
  * The sky without clouds in direction, from the sky source's atmosphere when it has one
  * (the in-scatter at the ray's end), else from the gradient.
  */
@@ -491,9 +516,10 @@ vec3 sample_clear_sky(vec3 direction) {
  * per axis (as for the clouds, sample_clouds()), by the 4-point Gaussian cubature
  * (+-sqrt(2) sigma along the elevation and the azimuth, weights 1/4: exact for skies that
  * vary up to cubically across the lobe). Directions below the horizon are mirrored up, as
- * the reflection is. The clouds are prefiltered (cubemap mips) and read once.
+ * the reflection is. The clouds and the stars are prefiltered (cubemap mips) and read
+ * once; star_weight scales the stars (the share the planar reflection does not bring).
  */
-vec3 sample_rough_procedural_environment(vec3 direction, float roughness) {
+vec3 sample_rough_procedural_environment(vec3 direction, float roughness, float star_weight) {
 	float rough = saturate(roughness);
 	float sigma = 1.41421356 * rough * rough;
 	vec3 sky;
@@ -511,6 +537,15 @@ vec3 sample_rough_procedural_environment(vec3 direction, float roughness) {
 			sky += sample_clear_sky(sample_direction) * 0.25;
 		}
 	}
+	// The stars lie beyond the atmosphere, dimmed by it along the whole ray.
+	vec3 stars = star_weight > 0.0 ? sample_stars(direction, rough) * star_weight : vec3(0.0);
+	if (sky_atmosphere_enabled && stars != vec3(0.0)) {
+		vec3 transmittance_end;
+		vec3 inscatter_end;
+		atmosphere_sea_lookup(direction, 1.0, transmittance_end, inscatter_end);
+		stars *= transmittance_end;
+	}
+	sky += stars;
 	vec3 cloud_direction = direction;
 	vec4 cloud = sample_clouds(cloud_direction, rough);
 	if (!sky_atmosphere_enabled) {
@@ -1169,17 +1204,13 @@ void fragment() {
 	// Bubble cells (low pattern values) are a little darker than the lace between them.
 	vec3 base_albedo = mix(body_albedo, foam_color.rgb * mix(0.75, 1.0, detail), foam_factor);
 	sky_reflection_amount = saturate(sky_reflection_strength * sky_fresnel * clear_water_mask);
-	if (sky_reflection_enabled) {
-		// Seen from the bottom of the atmosphere; the camera's own path to the water is
-		// hazed afterwards, with the rest of the scene (the sky source's aerial perspective).
-		reflected_sky_color = sample_rough_procedural_environment(reflection_direction, effective_reflection_roughness);
-	}
-	vec3 reflected_color = reflected_sky_color;
-
 	// The highlight itself is lit in light(); this copy (per unit of sun irradiance) is for the debug view.
 	sun_specular_amount = water_specular_brdf(world_normal, view_direction_world, sun_dir, effective_reflection_roughness) * saturate(dot(world_normal, sun_dir));
 
-	// Reflected scene geometry hides the sky behind it (alpha: geometry coverage).
+	// The planar reflection: rgb premultiplied by geometry coverage (a), and the share of
+	// the reflection it covers (0 off screen of the mirrored camera or when disabled).
+	vec4 planar_sample = vec4(0.0);
+	float planar_coverage = 0.0;
 	if (planar_reflection_enabled && planar_reflection_strength > 0.0) {
 		// Find what this pixel's reflected ray (about its own wave normal) hits. The
 		// mirrored camera sees every surface a ray from the water plane can reach,
@@ -1207,10 +1238,16 @@ void fragment() {
 		float lobe_scale = ray_end.w > 0.0 ? hit_distance / max(distance(ray_end.xyz, planar_reflection_camera_position), 0.001) : 1.0;
 		float alpha = effective_reflection_roughness * effective_reflection_roughness;
 		float reflection_lod = log2(max(alpha * 4.9 * lobe_scale / planar_reflection_texel_angle, 1.0));
-		vec4 reflected_sample = textureLod(planar_reflection_texture, reflection_uv.xy, reflection_lod);
-		float geometry_coverage = planar_reflection_strength * reflection_uv.z;
-		reflected_color = reflected_color * (1.0 - geometry_coverage * reflected_sample.a) + reflected_sample.rgb * geometry_coverage;
+		planar_sample = textureLod(planar_reflection_texture, reflection_uv.xy, reflection_lod);
+		planar_coverage = planar_reflection_strength * reflection_uv.z;
 	}
+	if (sky_reflection_enabled) {
+		// Seen from the bottom of the atmosphere; the camera's own path to the water is
+		// hazed afterwards, with the rest of the scene (the sky source's aerial perspective).
+		reflected_sky_color = sample_rough_procedural_environment(reflection_direction, effective_reflection_roughness, 1.0 - planar_coverage);
+	}
+	// Reflected scene geometry hides the sky behind it (alpha: geometry coverage).
+	vec3 reflected_color = reflected_sky_color * (1.0 - planar_coverage * planar_sample.a) + planar_sample.rgb * planar_coverage;
 	vec3 reflection_radiance = reflected_color * sky_reflection_amount;
 
 	if (water_debug_view > 0) {

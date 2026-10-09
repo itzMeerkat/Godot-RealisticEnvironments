@@ -114,12 +114,22 @@ const NEGLIGIBLE_LIGHT_SHARE := 0.001
 		_update_sky()
 ## Multiplies the stars' light. 1 is physical: the exposure decides which stars show
 ## (none by day, the brightest first at dusk, fewer under a bright moon).
-@export_range(0.0, 8.0, 0.01, "or_greater") var star_brightness := 1.0
+@export_range(0.0, 8.0, 0.01, "or_greater") var star_brightness := 1.0 :
+	set(value):
+		star_brightness = value
+		_update_sky()
 ## The stars drawn in the sky (default: the Yale Bright Star Catalogue, every star
 ## the naked eye can see).
 @export var star_catalog : StarCatalog = DefaultStarCatalog :
 	set(value):
 		star_catalog = value
+		if is_node_ready():
+			_setup_starfield()
+## Edge length in texels of the star cubemap the water reflects (get_star_cubemap()).
+## Smaller is cheaper; reflections on rough water read its blurred mips anyway.
+@export_range(64, 1024, 64) var star_cubemap_size := 256 :
+	set(value):
+		star_cubemap_size = value
 		if is_node_ready():
 			_setup_starfield()
 
@@ -305,6 +315,8 @@ var _cloud_frames_until_material_push := 0
 ## Internal child drawing star_catalog; not saved with the scene.
 var _starfield : MeshInstance3D
 var _starfield_material : ShaderMaterial
+## star_catalog as a cubemap for reflections (get_star_cubemap()); null without stars.
+var _star_cubemap : Cubemap
 
 
 func _init() -> void:
@@ -409,6 +421,27 @@ func get_moon_phase() -> float:
 ## clouds are rebuilt; lighting_changed fires then.
 func get_cloud_cubemap() -> Texture:
 	return _cloud_renderer.cubemap if _cloud_renderer else null
+
+
+## The stars for consumers that draw their own sky (the ocean's reflection): a cubemap
+## of their radiance in cd/m2 (lux per steradian) above the atmosphere, each star
+## spread over the texels around it, with a mip chain (box-filtered), in the frame of
+## get_star_basis(); or null without stars. The object changes when the stars are
+## rebuilt; lighting_changed fires then.
+func get_star_cubemap() -> Cubemap:
+	return _star_cubemap
+
+
+## Turns a world direction into the star cubemap's frame (J2000 equatorial; it
+## follows the sidereal time, so read it on lighting_changed).
+func get_star_basis() -> Basis:
+	return _get_equatorial_to_world_basis().transposed()
+
+
+## Multiplies the star cubemap's values into scene radiance (unexposed, the units of
+## the scene's lights): star_brightness over the lux of the scene's irradiance 1.
+func get_star_radiance_scale() -> float:
+	return star_brightness / get_illuminance_unit_lux()
 
 
 ## The cloud weather on screen (a blend while a transition runs), or null while
@@ -749,7 +782,9 @@ func _setup_starfield() -> void:
 		_starfield.custom_aabb = AABB(Vector3.ONE * -1e6, Vector3.ONE * 2e6)
 		add_child(_starfield, false, INTERNAL_MODE_FRONT)
 	_starfield.mesh = _build_starfield_mesh(star_catalog)
+	_star_cubemap = _build_star_cubemap(star_catalog, star_cubemap_size) if _starfield.mesh else null
 	_update_starfield()
+	_update_sky()
 
 
 ## One quad per star (see shaders/starfield.gdshader): its four corners hold the star's
@@ -795,6 +830,65 @@ func _build_starfield_mesh(catalog : StarCatalog) -> ArrayMesh:
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays, [], {}, Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT)
 	return mesh
+
+
+## The catalog's stars as a cubemap of radiance (cd/m2) in its own (equatorial) frame:
+## each star's illuminance spread bilinearly over the four texels around its direction,
+## divided by their solid angles, so the light is kept. GL / Vulkan cube face layout.
+func _build_star_cubemap(catalog : StarCatalog, size : int) -> Cubemap:
+	var data := PackedFloat32Array()
+	data.resize(6 * size * size * 4)
+	var texel_solid_angle := 4.0 / float(size * size)
+	for star in catalog.get_star_count():
+		var lux := SOLAR_ILLUMINANCE_LUX * pow(10.0, -0.4 * (catalog.magnitudes[star] - SUN_MAGNITUDE))
+		var color := catalog.colors[star]
+		var face_coords := _cubemap_face_coords(catalog.directions[star])
+		var face := int(face_coords.x)
+		var x := (face_coords.y * 0.5 + 0.5) * size - 0.5
+		var y := (face_coords.z * 0.5 + 0.5) * size - 0.5
+		var x0 := floori(x)
+		var y0 := floori(y)
+		for corner in 4:
+			var px := clampi(x0 + (corner & 1), 0, size - 1)
+			var py := clampi(y0 + (corner >> 1), 0, size - 1)
+			var weight := (1.0 - absf(x - (x0 + (corner & 1)))) * (1.0 - absf(y - (y0 + (corner >> 1))))
+			var a := (px + 0.5) / size * 2.0 - 1.0
+			var b := (py + 0.5) / size * 2.0 - 1.0
+			var radiance := lux * weight * pow(1.0 + a * a + b * b, 1.5) / texel_solid_angle
+			var index := ((face * size + py) * size + px) * 4
+			data[index] += color.r * radiance
+			data[index + 1] += color.g * radiance
+			data[index + 2] += color.b * radiance
+	var faces : Array[Image] = []
+	var face_size := size * size * 4
+	for face in 6:
+		var image := Image.create_from_data(size, size, false, Image.FORMAT_RGBAF, data.slice(face * face_size, (face + 1) * face_size).to_byte_array())
+		image.convert(Image.FORMAT_RGBAH)
+		image.generate_mipmaps()
+		faces.append(image)
+	var cubemap := Cubemap.new()
+	var error := cubemap.create_from_images(faces)
+	if error != OK:
+		push_error("SkySystem %s: building the star cubemap failed (%s); the water reflects no stars." % [get_path(), error_string(error)])
+		return null
+	return cubemap
+
+
+## Cube face (x: 0-5 for +X, -X, +Y, -Y, +Z, -Z) and coordinates on it (y, z in -1..1,
+## y to the right, z down) of a direction, as a GPU samples a cubemap.
+static func _cubemap_face_coords(direction : Vector3) -> Vector3:
+	var abs_direction := direction.abs()
+	if abs_direction.x >= abs_direction.y and abs_direction.x >= abs_direction.z:
+		if direction.x > 0.0:
+			return Vector3(0, -direction.z / abs_direction.x, -direction.y / abs_direction.x)
+		return Vector3(1, direction.z / abs_direction.x, -direction.y / abs_direction.x)
+	if abs_direction.y >= abs_direction.z:
+		if direction.y > 0.0:
+			return Vector3(2, direction.x / abs_direction.y, direction.z / abs_direction.y)
+		return Vector3(3, direction.x / abs_direction.y, -direction.z / abs_direction.y)
+	if direction.z > 0.0:
+		return Vector3(4, direction.x / abs_direction.z, -direction.y / abs_direction.z)
+	return Vector3(5, -direction.x / abs_direction.z, -direction.y / abs_direction.z)
 
 
 ## Turns the starfield to the sky of this moment and passes it this frame's exposure.

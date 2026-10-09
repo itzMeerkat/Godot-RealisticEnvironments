@@ -892,6 +892,14 @@ func _update_sky_lighting_shader_parameters() -> void:
 	var cloud_cubemap : Texture = sky_source.call(&'get_cloud_cubemap') if sky_source != null and sky_source.has_method(&'get_cloud_cubemap') else null
 	_set_water_shader_parameter(&'sky_clouds_enabled', cloud_cubemap != null)
 	_set_water_shader_parameter(&'sky_cloud_cubemap', cloud_cubemap)
+	# Optional stars: a cubemap, the rotation into its frame (it turns with the sky) and
+	# the scale of its values to scene radiance.
+	var star_cubemap : Texture = sky_source.call(&'get_star_cubemap') if sky_source != null and sky_source.has_method(&'get_star_cubemap') else null
+	_set_water_shader_parameter(&'sky_stars_enabled', star_cubemap != null)
+	_set_water_shader_parameter(&'sky_star_cubemap', star_cubemap)
+	if star_cubemap != null:
+		_set_water_shader_parameter(&'sky_star_basis', sky_source.call(&'get_star_basis'))
+		_set_water_shader_parameter(&'sky_star_radiance_scale', sky_source.call(&'get_star_radiance_scale'))
 	# Optional atmosphere between the sea and the reflected sky; a source without one
 	# lacks the method or returns no volumes.
 	var volumes : Array = sky_source.call(&'get_atmosphere_sky_volumes') if sky_source != null and sky_source.has_method(&'get_atmosphere_sky_volumes') else []
