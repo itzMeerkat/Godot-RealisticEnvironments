@@ -135,7 +135,10 @@ before touching its code; this file only records what is easy to get wrong.
     textures pre-exposed. `SkySystem` scales the key light of its compute
     passes by it (and publishes `atmosphere_exposure`); the sky shader and
     the water divide what Godot exposes again. Don't apply exposure anywhere
-    else, and keep physical light units off.
+    else, and keep physical light units off. `ExposureController` also adds a
+    `NightVisionEffect` (rod vision: per-pixel desaturation and blue shift
+    below ~3 cd/m²) to its target's compositor at runtime; don't add other
+    night tints or desaturation in materials.
   - Atmosphere globals: global shader uniforms `atmosphere_*` (declared in
     `project.godot` `[shader_globals]`, published by `SkySystem`, read through
     `sky_system/shaders/atmosphere.gdshaderinc`). Transparent materials that

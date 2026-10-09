@@ -38,9 +38,18 @@ const DARKEST_GREY_LUMINANCE := 1e-4
 ## quickly and to darkness slowly.
 @export_range(0.0, 60.0, 0.1, "or_greater") var brighten_seconds := 1.0
 @export_range(0.0, 600.0, 0.1, "or_greater") var darken_seconds := 5.0
+## See like an eye in dim light: colours fade to a slightly blue grey where the scene
+## is dark (rods take over from cones, NightVisionEffect). Added to the target's
+## compositor at runtime; needs a RenderingDevice (Forward+ or Mobile).
+@export var night_vision := true
+## How far colours shift toward rod vision (0-1).
+@export_range(0.0, 1.0, 0.01) var night_vision_strength := 1.0
 
 var _light_source : Node
 var _attributes : CameraAttributes
+## The target's compositor holding _night_vision, and the effect; null without.
+var _compositor : Compositor
+var _night_vision : NightVisionEffect
 ## Illuminance (lux) the eye is adapted to; < 0 before the first reading.
 var _adapted_lux := -1.0
 
@@ -63,6 +72,36 @@ func _ready() -> void:
 	else:
 		push_error("ExposureController %s: target_path must point to a WorldEnvironment or a Camera3D; exposure is fixed." % get_path())
 		set_process(false)
+		return
+	if night_vision:
+		_add_night_vision(target)
+
+
+func _exit_tree() -> void:
+	if _compositor and _night_vision:
+		var effects := _compositor.compositor_effects
+		effects.erase(_night_vision)
+		_compositor.compositor_effects = effects
+	_compositor = null
+	_night_vision = null
+
+
+## Appends a NightVisionEffect to the target's compositor (created if missing).
+func _add_night_vision(target : Node) -> void:
+	if RenderingServer.get_rendering_device() == null:
+		push_error("ExposureController %s: night vision needs a RenderingDevice (Forward+ or Mobile renderer); it is off." % get_path())
+		return
+	var effect := NightVisionEffect.new()
+	if not effect.is_valid():
+		return
+	_compositor = target.get(&"compositor")
+	if _compositor == null:
+		_compositor = Compositor.new()
+		target.set(&"compositor", _compositor)
+	var effects := _compositor.compositor_effects
+	effects.push_back(effect)
+	_compositor.compositor_effects = effects
+	_night_vision = effect
 
 
 ## The illuminance (lux) the exposure is currently adapted to; < 0 before the first reading.
@@ -83,7 +122,11 @@ func _process(delta : float) -> void:
 		var time_constant := brighten_seconds if lux > _adapted_lux else darken_seconds
 		var weight := 1.0 - exp(-delta / time_constant) if time_constant > 0.0 else 1.0
 		_adapted_lux = exp(lerpf(log(_adapted_lux), log(lux), weight))
-	_attributes.exposure_multiplier = _get_exposure(_adapted_lux, _light_source.get_illuminance_unit_lux())
+	var unit_lux : float = _light_source.get_illuminance_unit_lux()
+	_attributes.exposure_multiplier = _get_exposure(_adapted_lux, unit_lux)
+	if _night_vision:
+		_night_vision.luminance_scale = unit_lux / _attributes.exposure_multiplier
+		_night_vision.strength = night_vision_strength
 
 
 ## The exposure for an eye adapted to lux, in the light source's units (unit_lux: lux of

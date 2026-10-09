@@ -86,6 +86,13 @@ since J2000 is ignored).
   pre-exposed. So the exposure decides what shows, with no visibility curve:
   nothing by day, the brightest stars first at dusk, the faint ones washed out
   by a bright moon. `star_brightness` multiplies it (1 = physical).
+- **The eye's sensitivity to points:** a screen shows a star by its contrast
+  with the background (Weber's law), while the dark-adapted eye's threshold
+  grows only with the background's square root (de Vries–Rose). The starfield
+  (stars and planets, not the Milky Way) is multiplied by
+  `sqrt(scene lux / 0.002)`, between 1 and 16 (`STAR_GAIN_*`; above ~0.5 lux
+  the cones' Weber law holds again): under a full moon stars stay visible to
+  about magnitude 4, as they do to the eye.
 - **Colour** is the blackbody colour of the star's B−V index (Ballesteros 2012),
   luminance 1: blue-white Rigel, orange Betelgeuse.
 - **Atmosphere:** each star is dimmed and reddened per channel by the

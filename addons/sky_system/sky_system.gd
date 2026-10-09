@@ -48,6 +48,14 @@ const AIRGLOW_ZENITH_LUMINANCE := 1.3e-4
 const AIRGLOW_COLOR := Color(0.929, 1.119, 0.032)
 ## Stars' twinkling without a cloud_preset (as CloudPreset.star_scintillation).
 const DEFAULT_STAR_SCINTILLATION := 0.15
+## Point sources seen by the eye in dim light: a screen shows a star by its contrast
+## against the background (Weber: the threshold grows with the background), while the
+## dark-adapted eye's threshold grows only with its square root (de Vries-Rose). The
+## starfield multiplies the stars by sqrt(illuminance / STAR_GAIN_REFERENCE_LUX), at
+## least 1 and at most STAR_GAIN_MAX (the cones' Weber range above ~0.5 lux): under a
+## full moon the eye still sees stars to about magnitude 4.
+const STAR_GAIN_REFERENCE_LUX := 0.002
+const STAR_GAIN_MAX := 16.0
 ## The starfield's twinkling clock wraps after this many seconds (float precision).
 const STAR_TIME_PERIOD := 3600.0
 ## Julian date of the March equinox of 2000 (day_of_year 80, where the sun's ecliptic
@@ -1037,7 +1045,7 @@ func _update_starfield() -> void:
 	var camera := _get_render_camera()
 	var origin := camera.global_position if camera else global_position
 	_starfield.global_transform = Transform3D(_get_equatorial_to_world_basis(), origin)
-	_starfield_material.set_shader_parameter(&"illuminance_scale", star_brightness * _exposure / get_illuminance_unit_lux())
+	_starfield_material.set_shader_parameter(&"illuminance_scale", star_brightness * _exposure / get_illuminance_unit_lux() * _get_star_gain())
 	_starfield_material.set_shader_parameter(&"scintillation", _cloud_state.star_scintillation if _cloud_state else DEFAULT_STAR_SCINTILLATION)
 	_starfield_material.set_shader_parameter(&"time", fposmod(_elapsed_time, STAR_TIME_PERIOD))
 	_starfield_material.set_shader_parameter(&"planet_directions", _planet_directions)
@@ -1195,6 +1203,14 @@ static func _orbit_position(elements : PackedFloat64Array, centuries : float) ->
 		(cos_w * cos_node - sin_w * sin_node * cos_i) * x + (-sin_w * cos_node - cos_w * sin_node * cos_i) * y,
 		(cos_w * sin_node + sin_w * cos_node * cos_i) * x + (-sin_w * sin_node + cos_w * cos_node * cos_i) * y,
 		sin_w * sin(inclination) * x + cos_w * sin(inclination) * y)
+
+
+## The eye's sensitivity to point sources against the scene's light (STAR_GAIN_*).
+func _get_star_gain() -> float:
+	var lux := get_scene_illuminance()
+	if lux <= 0.0:
+		return 1.0
+	return clampf(sqrt(lux / STAR_GAIN_REFERENCE_LUX), 1.0, STAR_GAIN_MAX)
 
 
 ## Turns J2000 equatorial directions (StarCatalog) into world directions at the

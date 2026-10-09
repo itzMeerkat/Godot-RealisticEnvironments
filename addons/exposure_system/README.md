@@ -29,6 +29,9 @@ Exports:
   light and to less (the eye adapts to light quickly, to darkness slowly). The
   first reading applies at once.
 
+- `night_vision` (on), `night_vision_strength` — see like an eye in dim light
+  (Night vision below).
+
 `get_adapted_illuminance()` returns the lux the exposure is currently adapted to.
 
 ## How it works
@@ -51,7 +54,28 @@ Exports:
   write their own light (the sky system's atmosphere and clouds, the ocean's
   reflections) read the same value and match it. Keep physical light units off.
 
+## Night vision
+
+In dim light the eye's rods take over from its cones: colour fades and what is
+left is slightly blue. `NightVisionEffect` (`night_vision.glsl`) does that per
+pixel, from the pixel's absolute luminance (`unit_lux / exposure` cd/m² per unit
+of the colour buffer, set by the controller every frame): cones above
+3 cd/m², rods below 0.01 cd/m², blended by log luminance in between (the
+mesopic range). The rods see Larson et al.'s (1997) scotopic luminance,
+normalized to the photopic one for white, tinted by Jensen et al.'s (2000) blue
+shift. So the moon keeps its colour while the moonlit sea, the sky and the
+airglow go blue-grey, and a moonless sky is no longer the yellow-green a camera
+records. The controller appends the effect to its target's compositor at
+runtime (a `WorldEnvironment`'s or a `Camera3D`'s, created if missing) and
+removes it in `_exit_tree`; it runs after the transparent pass, on the HDR
+colour before tonemapping, and needs a RenderingDevice.
+
+Limits: star images on screen are a pixel wide, far wider than the eye's
+point-spread, so their luminance per pixel is too low for the cones: bright
+stars lose their colour (Antares and Betelgeuse look tinted to the eye).
+
 ## Files
 
-`exposure_controller.gd` (`ExposureController`), `exposure_system_plugin.gd`,
+`exposure_controller.gd` (`ExposureController`), `night_vision_effect.gd`
+(`NightVisionEffect`), `night_vision.glsl`, `exposure_system_plugin.gd`,
 `plugin.cfg`.
