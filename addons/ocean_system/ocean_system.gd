@@ -268,6 +268,12 @@ const WATER_DEBUG_VIEW_NORMAL := 0
 		interaction_enabled = value
 		if is_node_ready():
 			_setup_interaction()
+## Simulation steps per second. 0 steps once per physics tick (every hull pose
+## moves the water). A fixed rate decouples the cost from the physics rate: a game
+## ticking at 120 Hz can simulate the water at 60 or 30. Use a divisor of the
+## physics rate, so every step sees the same number of new hull poses (each step
+## uses the latest ones); stable to ~5 steps a second at the default cell size.
+@export_range(0.0, 240.0, 1.0) var interaction_steps_per_second := 0.0
 ## Simulation grid resolution. The window covers grid size x cell size meters.
 @export_enum('256x256:256', '512x512:512', '1024x1024:1024') var interaction_grid_size := 512 :
 	set(value):
@@ -466,6 +472,8 @@ var _hulls := OceanHulls.new(_set_water_shader_parameter)
 ## Null while interaction_enabled is off, in the editor, or before _ready.
 var _interaction : WaterInteractionSim
 var _interaction_texture := Texture2DRD.new()
+## Simulation time not yet stepped (interaction_steps_per_second).
+var _interaction_time_due := 0.0
 func _init() -> void:
 	rng.set_seed(1234) # This seed gives big waves!
 
@@ -520,7 +528,16 @@ func _process(delta : float) -> void:
 ## The interaction simulation steps with physics: one step per tick sees exactly
 ## one new pose of every hull, so hull motion reaches it without stutter.
 func _physics_process(delta : float) -> void:
-	_step_interaction(delta)
+	if interaction_steps_per_second <= 0.0:
+		_step_interaction(delta)
+		return
+	# A fixed rate: as many steps as have come due, but never more than two
+	# steps' or ticks' worth at once (a hitch is not caught up).
+	var step := 1.0 / interaction_steps_per_second
+	_interaction_time_due = minf(_interaction_time_due + delta, 2.0 * maxf(step, delta))
+	while _interaction_time_due >= step:
+		_interaction_time_due -= step
+		_step_interaction(step)
 
 ## Pushes every shader parameter this node owns into the current water material.
 func _push_all_shader_parameters() -> void:

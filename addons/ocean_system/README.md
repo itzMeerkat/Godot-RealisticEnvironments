@@ -304,7 +304,11 @@ How it works:
   Their own radiation is approximated by `BuoyantBody.vertical_water_drag`.
 - **Step** (once per physics tick, from `OceanSystem._physics_process`, so each
   step sees exactly one new pose of every hull; stepping per frame made hull
-  motion stutter into the forcing and ring at grid scale):
+  motion stutter into the forcing and ring at grid scale). Or at a fixed
+  `interaction_steps_per_second`, to decouple the cost from the physics rate:
+  pick a divisor of the physics rate (60 Hz ticks: 30, 20, 15) so every step
+  sees the same number of new poses; each uses the latest ones. The scheme is
+  stable to about 5 steps a second at the default cell size:
   1. `iwave_pressure` computes `p` for every cell covered by up to 32 nearby
      hulls, tapered to 0 at the waterline and over `wake_edge_softness` at the
      bow and stern (a hard end switched cells on and off as the hull crossed
@@ -352,7 +356,8 @@ Known limits:
 5. pushes the per-cascade frame blend and dispatches the queued surface
    queries.
 
-`_physics_process` steps the interaction simulation once per physics tick.
+`_physics_process` steps the interaction simulation once per physics tick (or
+at `interaction_steps_per_second`).
 
 Dependencies (wind and sky source, RenderingDevice) are resolved once in
 `_ready` and again only when their exports change. Exports set during scene

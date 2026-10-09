@@ -279,7 +279,8 @@ before touching its code; this file only records what is easy to get wrong.
   separate its own waves, and with the readback delay they make it oscillate
   by itself. Don't reintroduce a geometric own-wave mask for buoyancy (probes
   are not guaranteed to sit inside hull coverage). It steps once per
-  physics tick (`OceanSystem._physics_process`). Its operator is an exact FFT
+  physics tick (`OceanSystem._physics_process`), or at
+  `interaction_steps_per_second` when that is set (latest hull poses). Its operator is an exact FFT
   of `g·|k|`; `interaction_grid_size` must stay a power of two (the FFT pass
   holds one 1024-wide line in shared memory).
 - `HullProfile` images are RGBA16F (half-width, keel, station top; a unused):
