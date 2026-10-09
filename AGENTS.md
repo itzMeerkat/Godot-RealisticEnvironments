@@ -317,6 +317,11 @@ before touching its code; this file only records what is easy to get wrong.
   its altitude). After editing `cloud_noise.glslinc` reimport
   `cloud_noise_bake.glsl` and `cloud_weather.glsl`.
 
+- Keep `rendering/anti_aliasing/quality/use_debanding` on. Night and twilight
+  skies are smooth gradients only a few 8-bit codes deep (the Rayleigh minimum
+  90° from the moon); without dithering they band into contours whose darkest
+  step reads as a dark disk in the sky.
+
 ## Star invariants
 - Stars are physical light: `SkySystem` turns each `StarCatalog` magnitude into
   lux above the atmosphere (tied to the sun's magnitude and

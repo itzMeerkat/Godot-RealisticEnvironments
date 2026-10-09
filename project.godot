@@ -309,6 +309,7 @@ fire_projectile={
 [rendering]
 
 anti_aliasing/quality/msaa_3d=1
+anti_aliasing/quality/use_debanding=true
 
 [shader_globals]
 
