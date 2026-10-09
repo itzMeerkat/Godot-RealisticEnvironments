@@ -50,6 +50,39 @@ const AIRGLOW_COLOR := Color(0.929, 1.119, 0.032)
 const DEFAULT_STAR_SCINTILLATION := 0.15
 ## The starfield's twinkling clock wraps after this many seconds (float precision).
 const STAR_TIME_PERIOD := 3600.0
+## Julian date of the March equinox of 2000 (day_of_year 80, where the sun's ecliptic
+## longitude is 0), and of J2000.0, the planets' epoch.
+const EQUINOX_2000_JULIAN_DATE := 2451623.82
+const J2000_JULIAN_DATE := 2451545.0
+## Obliquity of the ecliptic at J2000 (rad): the planets' orbits are given in the ecliptic,
+## the stars in the equator's frame.
+const J2000_OBLIQUITY := 0.40909280
+## The naked-eye planets, in the order of every PLANET_* table and get_planet_*() array.
+const PLANET_NAMES : Array[StringName] = [&"Mercury", &"Venus", &"Mars", &"Jupiter", &"Saturn"]
+## Keplerian elements of the planets and of the Earth-Moon barycenter for 1800-2050 (JPL,
+## Standish: "Approximate Positions of the Planets"): a (AU), e, I, L, long. perihelion,
+## long. node (degrees), then their rates per Julian century, J2000 ecliptic.
+const PLANET_ELEMENTS : Array[PackedFloat64Array] = [
+	[0.38709927, 0.20563593, 7.00497902, 252.25032350, 77.45779628, 48.33076593,
+		0.00000037, 0.00001906, -0.00594749, 149472.67411175, 0.16047689, -0.12534081],
+	[0.72333566, 0.00677672, 3.39467605, 181.97909950, 131.60246718, 76.67984255,
+		0.00000390, -0.00004107, -0.00078890, 58517.81538729, 0.00268329, -0.27769418],
+	[1.52371034, 0.09339410, 1.84969142, -4.55343205, -23.94362959, 49.55953891,
+		0.00001847, 0.00007882, -0.00813131, 19140.30268499, 0.44441088, -0.29257343],
+	[5.20288700, 0.04838624, 1.30439695, 34.39644051, 14.72847983, 100.47390909,
+		-0.00011607, -0.00013253, -0.00183714, 3034.74612775, 0.21252668, 0.20469106],
+	[9.53667594, 0.05386179, 2.48599187, 49.95424423, 92.59887831, 113.66242448,
+		-0.00125060, -0.00050991, 0.00193609, 1222.49362201, -0.41897216, -0.28867794],
+]
+const EARTH_ELEMENTS : PackedFloat64Array = [1.00000261, 0.01671123, -0.00001531, 100.46457166, 102.93768193, 0.0,
+		0.00000562, -0.00004392, -0.01294668, 35999.37244981, 0.32327364, 0.0]
+## Linear Rec. 709 colours of the planets' light (luminance 1), from their B-V indices
+## like the stars' (tools/bake_star_catalog.py): 0.93, 0.82, 1.36, 0.83, 1.04.
+const PLANET_COLORS : Array[Color] = [Color(1.222, 0.960, 0.744), Color(1.177, 0.967, 0.807),
+		Color(1.402, 0.927, 0.537), Color(1.181, 0.966, 0.801), Color(1.267, 0.952, 0.685)]
+## Saturn's ring-plane pole, J2000 equatorial (RA 40.59, Dec 83.54 degrees): the rings'
+## tilt toward Earth brightens it.
+const SATURN_RING_POLE := Vector3(0.08537, 0.07311, 0.99366)
 ## Rec. 709 luminance of linear rgb.
 const LUMINANCE_WEIGHTS := Vector3(0.2126, 0.7152, 0.0722)
 ## Angular radii (rad) of the sun's and the moon's disks, as the sky material's
@@ -105,6 +138,12 @@ const NEGLIGIBLE_LIGHT_SHARE := 0.001
 @export_range(0.0, 29.530588, 0.01) var lunar_age_days := 14.765 :
 	set(value):
 		lunar_age_days = fposmod(value, SYNODIC_MONTH_DAYS)
+		_update_sky()
+## The year: with day_of_year it places the planets (valid 1800-2050). The day cycle
+## advances it when day_of_year wraps.
+@export_range(1800, 2050, 1) var year := 2026 :
+	set(value):
+		year = value
 		_update_sky()
 ## Rotates celestial north around world up, useful when a level's north is not -Z.
 @export_range(-180.0, 180.0, 0.1) var north_offset_degrees := 0.0 :
@@ -339,6 +378,10 @@ var _starfield : MeshInstance3D
 var _starfield_material : ShaderMaterial
 ## star_catalog as a cubemap for reflections (get_star_cubemap()); null without stars.
 var _star_cubemap : Cubemap
+## The planets (PLANET_NAMES order): directions in the J2000 equatorial frame (the
+## stars' frame), and the illuminance (lux, rgb) each gives above the atmosphere.
+var _planet_directions := PackedVector3Array()
+var _planet_lux := PackedVector3Array()
 
 
 func _init() -> void:
@@ -374,7 +417,10 @@ func _process(delta : float) -> void:
 		_advancing_cycle = true
 		time_of_day = time_of_day + day_delta
 		if advance_calendar_with_cycle:
+			var previous_day := day_of_year
 			day_of_year = day_of_year + day_delta
+			if day_of_year < previous_day:
+				year += 1
 			lunar_age_days = lunar_age_days + day_delta
 		_advancing_cycle = false
 		_update_sky()
@@ -540,6 +586,25 @@ func transition_clouds_to(preset : CloudPreset, seconds : float) -> void:
 	cloud_preset = preset
 
 
+## World directions toward the planets (PLANET_NAMES order), for consumers that reflect
+## them (the ocean's glints). They move with the sky: read them on lighting_changed.
+func get_planet_directions() -> PackedVector3Array:
+	var to_world := _get_equatorial_to_world_basis()
+	var directions := PackedVector3Array()
+	for direction in _planet_directions:
+		directions.push_back(to_world * direction)
+	return directions
+
+
+## The planets' irradiance (rgb, scene units, unexposed) above the atmosphere, facing
+## them: their light as point sources, star_brightness included.
+func get_planet_irradiance() -> PackedVector3Array:
+	var irradiance := PackedVector3Array()
+	for lux in _planet_lux:
+		irradiance.push_back(lux * get_star_radiance_scale())
+	return irradiance
+
+
 ## Recomputes the astronomy and the lights behind the public getters.
 func _update_lighting_state() -> void:
 	var solar_coordinates := _get_solar_equatorial_coordinates()
@@ -558,6 +623,7 @@ func _update_lighting_state() -> void:
 	# The disks are drawn behind the haze and the clouds, which dim them themselves.
 	_sun_irradiance = _get_atmosphere_transmittance(0.0, _above_horizon(_sun_direction), false) * (_get_sun_energy() * PI)
 	_moon_irradiance = _get_atmosphere_transmittance(0.0, _above_horizon(_moon_direction), false) * (MOON_ENERGY * moon_energy_multiplier * PI)
+	_update_planets()
 
 
 func _update_sky() -> void:
@@ -807,23 +873,23 @@ func _setup_starfield() -> void:
 		_starfield.custom_aabb = AABB(Vector3.ONE * -1e6, Vector3.ONE * 2e6)
 		add_child(_starfield, false, INTERNAL_MODE_FRONT)
 	_starfield.mesh = _build_starfield_mesh(star_catalog)
-	_star_cubemap = _build_star_cubemap(star_catalog, star_cubemap_size) if _starfield.mesh else null
+	_star_cubemap = _build_star_cubemap(star_catalog, star_cubemap_size) if star_catalog != null and star_catalog.is_valid() else null
 	_update_starfield()
 	_update_sky()
 
 
 ## One quad per star (see shaders/starfield.gdshader): its four corners hold the star's
 ## equatorial direction, the corner (UV) and its colour times its illuminance in lux
-## above the atmosphere (CUSTOM0). Null for no catalog or an invalid one.
+## above the atmosphere (CUSTOM0 rgb), then one quad per planet (CUSTOM0 a: the planet's
+## index + 1; the shader reads its direction and light from uniforms).
 func _build_starfield_mesh(catalog : StarCatalog) -> ArrayMesh:
-	if catalog == null:
-		return null
-	if not catalog.is_valid():
-		push_error("SkySystem %s: star_catalog's arrays differ in length; no stars are drawn." % get_path())
-		return null
-	var count := catalog.get_star_count()
-	if count == 0:
-		return null
+	var star_count := 0
+	if catalog != null:
+		if catalog.is_valid():
+			star_count = catalog.get_star_count()
+		else:
+			push_error("SkySystem %s: star_catalog's arrays differ in length; no stars are drawn." % get_path())
+	var count := star_count + PLANET_NAMES.size()
 	var corners : Array[Vector2] = [Vector2(-1.0, -1.0), Vector2(1.0, -1.0), Vector2(1.0, 1.0), Vector2(-1.0, 1.0)]
 	var corner_indices : Array[int] = [0, 1, 2, 0, 2, 3]
 	var vertices := PackedVector3Array()
@@ -835,15 +901,22 @@ func _build_starfield_mesh(catalog : StarCatalog) -> ArrayMesh:
 	lights.resize(count * 16)
 	indices.resize(count * 6)
 	for star in count:
-		var lux := SOLAR_ILLUMINANCE_LUX * pow(10.0, -0.4 * (catalog.magnitudes[star] - SUN_MAGNITUDE))
-		var color := catalog.colors[star]
+		var planet := star - star_count
+		var direction := Vector3.RIGHT
+		var light := Color(0.0, 0.0, 0.0, planet + 1.0)
+		if planet < 0:
+			var lux := SOLAR_ILLUMINANCE_LUX * pow(10.0, -0.4 * (catalog.magnitudes[star] - SUN_MAGNITUDE))
+			direction = catalog.directions[star]
+			light = catalog.colors[star] * lux
+			light.a = 0.0
 		for corner in 4:
 			var vertex := star * 4 + corner
-			vertices[vertex] = catalog.directions[star]
+			vertices[vertex] = direction
 			uvs[vertex] = corners[corner]
-			lights[vertex * 4] = color.r * lux
-			lights[vertex * 4 + 1] = color.g * lux
-			lights[vertex * 4 + 2] = color.b * lux
+			lights[vertex * 4] = light.r
+			lights[vertex * 4 + 1] = light.g
+			lights[vertex * 4 + 2] = light.b
+			lights[vertex * 4 + 3] = light.a
 		for i in 6:
 			indices[star * 6 + i] = star * 4 + corner_indices[i]
 	var arrays := []
@@ -967,6 +1040,9 @@ func _update_starfield() -> void:
 	_starfield_material.set_shader_parameter(&"illuminance_scale", star_brightness * _exposure / get_illuminance_unit_lux())
 	_starfield_material.set_shader_parameter(&"scintillation", _cloud_state.star_scintillation if _cloud_state else DEFAULT_STAR_SCINTILLATION)
 	_starfield_material.set_shader_parameter(&"time", fposmod(_elapsed_time, STAR_TIME_PERIOD))
+	_starfield_material.set_shader_parameter(&"planet_directions", _planet_directions)
+	_starfield_material.set_shader_parameter(&"planet_light", _planet_lux)
+	_starfield_material.set_shader_parameter(&"sea_level", sea_level)
 
 
 func _update_visual_colors(sun_visibility : float, moon_visibility : float) -> void:
@@ -1059,6 +1135,66 @@ func _equatorial_to_horizontal_direction(declination : float, hour_angle : float
 
 func _horizontal_to_world(local_direction : Vector3) -> Vector3:
 	return Basis(Vector3.UP, deg_to_rad(north_offset_degrees)) * local_direction
+
+
+## The planets for year and day_of_year: geocentric directions from JPL's approximate
+## orbits, magnitudes from their distances and phase angles (Meeus, Astronomical
+## Algorithms ch. 41; Saturn's rings by their tilt).
+func _update_planets() -> void:
+	var julian_date := EQUINOX_2000_JULIAN_DATE + SOLAR_YEAR_DAYS * (year - 2000) + (day_of_year - 80.0)
+	var centuries := (julian_date - J2000_JULIAN_DATE) / 36525.0
+	var earth := _orbit_position(EARTH_ELEMENTS, centuries)
+	_planet_directions.resize(PLANET_NAMES.size())
+	_planet_lux.resize(PLANET_NAMES.size())
+	for planet in PLANET_NAMES.size():
+		var heliocentric := _orbit_position(PLANET_ELEMENTS[planet], centuries)
+		var geocentric := heliocentric - earth
+		var r := heliocentric.length()
+		var distance := geocentric.length()
+		var phase := rad_to_deg(acos(clampf((r * r + distance * distance - earth.length_squared()) / (2.0 * r * distance), -1.0, 1.0)))
+		var direction := Vector3(geocentric.x,
+			geocentric.y * cos(J2000_OBLIQUITY) - geocentric.z * sin(J2000_OBLIQUITY),
+			geocentric.y * sin(J2000_OBLIQUITY) + geocentric.z * cos(J2000_OBLIQUITY)) / distance
+		var magnitude := 5.0 * log(r * distance) / log(10.0)
+		match planet:
+			0: magnitude += -0.42 + 0.0380 * phase - 0.000273 * phase * phase + 0.000002 * phase * phase * phase
+			1: magnitude += -4.40 + 0.0009 * phase + 0.000239 * phase * phase - 0.00000065 * phase * phase * phase
+			2: magnitude += -1.52 + 0.016 * phase
+			3: magnitude += -9.40 + 0.005 * phase
+			4:
+				var ring_tilt := absf(direction.dot(SATURN_RING_POLE))
+				magnitude += -8.88 + 0.044 * phase - 2.60 * ring_tilt + 1.25 * ring_tilt * ring_tilt
+		var lux := SOLAR_ILLUMINANCE_LUX * pow(10.0, -0.4 * (magnitude - SUN_MAGNITUDE))
+		var color := PLANET_COLORS[planet]
+		_planet_directions[planet] = direction
+		_planet_lux[planet] = Vector3(color.r, color.g, color.b) * lux
+
+
+## Heliocentric position (AU, J2000 ecliptic) of an orbit given by Keplerian elements
+## (PLANET_ELEMENTS layout) at Julian centuries since J2000.
+static func _orbit_position(elements : PackedFloat64Array, centuries : float) -> Vector3:
+	var a := elements[0] + elements[6] * centuries
+	var e := elements[1] + elements[7] * centuries
+	var inclination := deg_to_rad(elements[2] + elements[8] * centuries)
+	var mean_longitude := deg_to_rad(elements[3] + elements[9] * centuries)
+	var perihelion := deg_to_rad(elements[4] + elements[10] * centuries)
+	var node := deg_to_rad(elements[5] + elements[11] * centuries)
+	var mean_anomaly := wrapf(mean_longitude - perihelion, -PI, PI)
+	var eccentric_anomaly := mean_anomaly + e * sin(mean_anomaly)
+	for i in 6:
+		eccentric_anomaly -= (eccentric_anomaly - e * sin(eccentric_anomaly) - mean_anomaly) / (1.0 - e * cos(eccentric_anomaly))
+	var x := a * (cos(eccentric_anomaly) - e)
+	var y := a * sqrt(1.0 - e * e) * sin(eccentric_anomaly)
+	var argument := perihelion - node
+	var cos_w := cos(argument)
+	var sin_w := sin(argument)
+	var cos_node := cos(node)
+	var sin_node := sin(node)
+	var cos_i := cos(inclination)
+	return Vector3(
+		(cos_w * cos_node - sin_w * sin_node * cos_i) * x + (-sin_w * cos_node - cos_w * sin_node * cos_i) * y,
+		(cos_w * sin_node + sin_w * cos_node * cos_i) * x + (-sin_w * sin_node + cos_w * cos_node * cos_i) * y,
+		sin_w * sin(inclination) * x + cos_w * sin(inclination) * y)
 
 
 ## Turns J2000 equatorial directions (StarCatalog) into world directions at the

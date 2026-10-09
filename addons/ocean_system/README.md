@@ -559,6 +559,11 @@ Lighting:
   deviation `σ = √2 α` per axis, by the 4-point Gaussian cubature at `±√2 σ`
   along the elevation and the azimuth; clouds from the cloud cubemap's mip
   whose blur matches the lobe) and planar reflection.
+- Planets (`sky_point_glints()`): a sky source with `get_planet_directions()` and
+  `get_planet_irradiance()` gives up to `MAX_SKY_POINTS` point lights. Each is
+  reflected like the sun's highlight (specular BRDF, the sun's glitter cells),
+  dimmed by the sea-level transmittance and the clouds; skipped while too faint
+  for the exposure. Venus in the dusk lays a glitter path.
 - Stars (`sample_stars()`): with a sky source that has `get_star_cubemap()`,
   `get_star_basis()` and `get_star_radiance_scale()` (SkySystem), the
   reflected sky gets the stars from the cubemap's mip that matches the lobe,

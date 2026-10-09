@@ -102,6 +102,14 @@ uniform bool sky_stars_enabled = false;
 uniform samplerCube sky_star_cubemap : filter_linear_mipmap;
 uniform mat3 sky_star_basis = mat3(1.0);
 uniform float sky_star_radiance_scale = 0.0;
+// Point lights of the night sky from the sky source (get_planet_directions(),
+// get_planet_irradiance()): world directions and irradiance (rgb, scene units,
+// unexposed) above the atmosphere. The water reflects them as glints, like the sun's
+// highlight. Set at runtime by OceanSystem.
+const int MAX_SKY_POINTS = 8;
+uniform int sky_point_count = 0;
+uniform vec3 sky_point_directions[MAX_SKY_POINTS];
+uniform vec3 sky_point_irradiance[MAX_SKY_POINTS];
 // The sky source's atmosphere seen from the sea (get_atmosphere_sky_volumes(): transmittance,
 // in-scatter but the lobe, lobe in-scatter per unit phase, at the cloud base and at the ray's
 // end; get_atmosphere_light(): xyz toward its light, w the lobe's g). With it the sky the
@@ -986,6 +994,34 @@ float glitter_scale(vec3 normal, vec3 view, vec3 light_direction, float roughnes
 }
 
 /*
+ * Glints of the sky's point lights (the planets): each one's irradiance through the
+ * sea-level atmosphere and the clouds, reflected by the specular BRDF with the sun's
+ * glitter, pre-exposed. Skipped while too faint for the exposure (by day).
+ */
+vec3 sky_point_glints(vec3 normal, vec3 view, float roughness) {
+	vec3 glints = vec3(0.0);
+	for (int i = 0; i < min(sky_point_count, MAX_SKY_POINTS); ++i) {
+		vec3 direction = sky_point_directions[i];
+		vec3 irradiance = sky_point_irradiance[i] * scene_exposure;
+		// The GGX peak at the smoothest roughness is ~3.5e5 per unit irradiance.
+		if (direction.y <= 0.0 || max(irradiance.r, max(irradiance.g, irradiance.b)) < 1e-8) {
+			continue;
+		}
+		if (sky_atmosphere_enabled) {
+			vec3 transmittance;
+			vec3 inscatter;
+			atmosphere_sea_lookup(direction, 1.0, transmittance, inscatter);
+			irradiance *= transmittance;
+		}
+		irradiance *= 1.0 - sample_clouds(direction, 0.0).a;
+		float no_l = saturate(dot(normal, direction));
+		float glitter = glitter_cells.x > 0.0 ? glitter_scale(normal, view, direction, roughness) : 1.0;
+		glints += irradiance * (water_specular_brdf(normal, view, direction, roughness) * no_l * glitter);
+	}
+	return glints;
+}
+
+/*
  * Planar reflection texture coordinates of a world point (w = 1) or of a direction at
  * infinity (w = 0); z is 1 inside the image, else 0.
  */
@@ -1330,6 +1366,9 @@ void fragment() {
 			hash_uniform(ivec3(coarse_cell, level_key + 65536 + pattern + 1)));
 		float fine_facets = sun_glitter_density * fine_size * fine_size;
 		glitter_cells = vec4(fine_facets, fine_facets * 4.0, cell_level - fine_level, fract(pattern_time));
+		if (sky_point_count > 0) {
+			EMISSION += sky_point_glints(world_normal, view_direction_world, effective_reflection_roughness) * light_specular_scale / scene_exposure;
+		}
 	}
 }
 

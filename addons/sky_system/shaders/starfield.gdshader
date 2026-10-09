@@ -6,7 +6,10 @@ render_mode unshaded, blend_add, depth_draw_never, cull_disabled, shadows_disabl
 // equatorial direction (MODEL_MATRIX turns it to the world's sky), UV the quad's
 // corner (-1..1), CUSTOM0 rgb its colour (luminance 1) times its illuminance in lux
 // above the atmosphere. A star's light is spread over a small gaussian footprint
-// on screen, so its brightness does not depend on the resolution.
+// on screen, so its brightness does not depend on the resolution. The planets follow
+// as quads whose CUSTOM0 a is their index + 1: their direction and light come from
+// planet_directions / planet_light (they move), and they do not twinkle (their disks
+// average the turbulence out).
 //
 // The output is unlit ALBEDO, which Godot does not expose: it is written pre-exposed
 // (illuminance_scale holds the exposure).
@@ -20,6 +23,13 @@ uniform float footprint_sigma = 0.7;
 // Log-amplitude spread of a star's twinkling at the zenith (CloudPreset.star_scintillation).
 uniform float scintillation = 0.15;
 uniform float time = 0.0;
+// SkySystem's planets (PLANET_NAMES order): J2000 equatorial directions and illuminance
+// (lux, rgb) above the atmosphere.
+uniform vec3 planet_directions[5];
+uniform vec3 planet_light[5];
+// SkySystem.sea_level. Cameras below it (the ocean's mirrored reflection camera) draw no
+// planets: the water reflects them itself, as glints (SkySystem.get_planet_*()).
+uniform float sea_level = 0.0;
 // Clouds hide the stars; set by SkySystem like the sky shader's cloud uniforms.
 uniform bool clouds_enabled = false;
 uniform samplerCube cloud_cubemap : filter_linear;
@@ -53,10 +63,12 @@ float air_mass(float y) {
 }
 
 void vertex() {
-	vec3 direction = normalize(mat3(MODEL_MATRIX) * VERTEX);
-	vec3 radiance = CUSTOM0.rgb * illuminance_scale;
+	int planet = int(CUSTOM0.a + 0.5) - 1;
+	vec3 equatorial = planet >= 0 ? planet_directions[planet] : VERTEX;
+	vec3 direction = normalize(mat3(MODEL_MATRIX) * equatorial);
+	vec3 radiance = (planet >= 0 ? planet_light[planet] : CUSTOM0.rgb) * illuminance_scale;
 	float horizon = atmosphere_enabled ? atmosphere_horizon_mu(atmosphere_observer.w) : 0.0;
-	if (direction.y < horizon) {
+	if (direction.y < horizon || (planet >= 0 && CAMERA_POSITION_WORLD.y < sea_level)) {
 		radiance = vec3(0.0);
 	} else {
 		if (atmosphere_enabled) {
@@ -71,7 +83,7 @@ void vertex() {
 		// Twinkling grows with the air mass (Young 1967: variance ~ X^3) and turns
 		// colourful near the horizon, where dispersion splits the colours' paths.
 		float x = air_mass(direction.y);
-		float spread = min(scintillation * pow(x, 1.5), 0.8);
+		float spread = planet >= 0 ? 0.0 : min(scintillation * pow(x, 1.5), 0.8);
 		vec3 seed = VERTEX * 1000.0;
 		vec3 noise = mix(vec3(twinkle_noise(seed)),
 				vec3(twinkle_noise(seed + 1.1), twinkle_noise(seed + 2.3), twinkle_noise(seed + 3.7)),
@@ -89,7 +101,7 @@ void vertex() {
 	// Irradiance into radiance over a unit gaussian footprint of sigma pixels. Stars
 	// that would burn out widen it (energy kept), as bright stars look bigger to the eye.
 	float peak = dot(radiance, vec3(0.2126, 0.7152, 0.0722)) / (6.2831853 * footprint_sigma * footprint_sigma * pixel_solid_angle);
-	float sigma = footprint_sigma * clamp(pow(max(peak, 1e-6), 0.25), 1.0, 4.0);
+	float sigma = footprint_sigma * clamp(pow(max(peak, 1e-6), 0.25), 1.0, 3.0);
 	star_radiance = radiance / (6.2831853 * sigma * sigma * pixel_solid_angle);
 	// Stars too faint to show collapse their quad.
 	float extent = peak > 1e-4 ? 3.0 : 0.0;

@@ -100,7 +100,7 @@ since J2000 is ignored).
   placed at infinity on the far plane so every surface hides it. The star's
   light is spread over a gaussian of 0.7 px (energy kept, so its brightness
   does not depend on the resolution); a star that would burn out widens it up
-  to 4×, as bright stars look bigger to the eye. Quads of stars too faint to
+  to 3×, as bright stars look bigger to the eye. Quads of stars too faint to
   show collapse in the vertex shader. Cost: about 36 000 vertices and a few
   pixels per star.
 
@@ -135,6 +135,21 @@ brightens from the zenith toward ~15° elevation and darkens and reddens below
 that, the sea reflects it, and the light meter and the radiance map include
 it. Its colour is the line spectrum's (yellow-green, as cameras record it; the
 eye sees a dark sky grey, which is the exposure's business).
+
+**Planets.** Mercury, Venus, Mars, Jupiter and Saturn, placed for `year` and
+`day_of_year` (the day cycle advances `year` when the day wraps; valid 1800–2050)
+from JPL's approximate Keplerian elements (Standish, "Approximate Positions of
+the Planets"): heliocentric orbits, geocentric directions in the J2000
+equatorial frame, so they turn with the stars. Their magnitudes follow their
+distances and phase angles (Meeus, *Astronomical Algorithms* ch. 41; Saturn's
+rings by their tilt toward the earth); for 2000-01-01 12:00 they land within an
+arcminute of the ephemeris (Venus −4.1, Jupiter −2.5). Colours come from their
+B−V indices like the stars'. They are drawn by the starfield as extra quads
+that do not twinkle (their disks average the turbulence out) and are left out
+for cameras below `sea_level`: the water reflects them itself, as glints
+(`get_planet_directions()`, `get_planet_irradiance()`), so the mirrored
+planar-reflection camera must not add a second copy. Venus in the dusk lays a
+glitter path on the sea.
 
 **Reflections.** `get_star_cubemap()` holds the same stars for consumers
 that draw their own sky (the ocean): a cubemap of `star_cubemap_size`² texels
@@ -355,7 +370,8 @@ what Godot's exposure means).
 `get_sun_direction()`, `get_moon_direction()` (unit vectors pointing *toward*
 the body), `get_sun_color()`, `get_sun_visibility()`, `get_moon_visibility()`,
 `get_moon_phase()`, `get_time_of_day()`. Stars: `get_star_cubemap()`,
-`get_star_basis()`, `get_star_radiance_scale()`. Exposure:
+`get_star_basis()`, `get_star_radiance_scale()`. Planets: `get_planet_directions()`
+(world), `get_planet_irradiance()` (rgb scene irradiance above the atmosphere). Exposure:
 `get_scene_illuminance()`, `get_illuminance_unit_lux()`.
 Atmosphere: `get_atmosphere_sky_volumes()` (the sea-level view volumes,
 `[transmittance, inscatter, inscatter_lobe]` as `Texture3D`s, or empty without

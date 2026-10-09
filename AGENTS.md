@@ -102,6 +102,12 @@ before touching its code; this file only records what is easy to get wrong.
     and behind the clouds. Where the planar reflection covers the reflected
     ray, the mirrored camera's own starfield brings them instead (the cubemap
     is weighted by `1 − coverage`), so stars are never counted twice.
+    Optional `get_planet_directions()` (world) and `get_planet_irradiance()`
+    (rgb scene irradiance above the atmosphere, unexposed; same length, at most
+    `OceanSystem.MAX_SKY_POINTS`) are point lights the water reflects as
+    glints (specular BRDF and glitter, like the sun); the starfield leaves the
+    planets out for cameras below `sea_level`, so the planar reflection does not
+    show them a second time.
     Optional `get_atmosphere_sky_volumes()` (`[transmittance, inscatter,
     inscatter_lobe]` `Texture3D`s for an observer on the sea, two slices: at
     the cloud base and at the ray's end; empty = no atmosphere) and

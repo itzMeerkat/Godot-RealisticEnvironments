@@ -9,6 +9,8 @@ const EDITOR_WATER_PREVIEW_MESH := preload('res://addons/ocean_system/editor_wat
 const OCEAN_REFLECTION_RENDERER := preload('res://addons/ocean_system/ocean_reflection_renderer.gd')
 const MAX_CASCADES := 8
 const MAX_NEAR_HULLS := 8
+## Point lights of the sky (the planets) the water reflects as glints; as MAX_SKY_POINTS in water.gdshader.
+const MAX_SKY_POINTS := 8
 ## CDLOD mesh: every node is a LOD_GRID x LOD_GRID quad grid; a level-L node is
 ## (mesh_base_cell_size * LOD_GRID * 2^L) meters wide.
 const LOD_GRID := 16
@@ -928,6 +930,20 @@ func _update_sky_lighting_shader_parameters() -> void:
 	if star_cubemap != null:
 		_set_water_shader_parameter(&'sky_star_basis', sky_source.call(&'get_star_basis'))
 		_set_water_shader_parameter(&'sky_star_radiance_scale', sky_source.call(&'get_star_radiance_scale'))
+	# Optional point lights (the planets), reflected as glints; at most MAX_SKY_POINTS.
+	var point_directions := PackedVector3Array()
+	var point_irradiance := PackedVector3Array()
+	if sky_source != null and sky_source.has_method(&'get_planet_directions') and sky_source.has_method(&'get_planet_irradiance'):
+		point_directions = sky_source.call(&'get_planet_directions')
+		point_irradiance = sky_source.call(&'get_planet_irradiance')
+		if point_directions.size() != point_irradiance.size():
+			push_error("OceanSystem %s: the sky source's planet directions and irradiance differ in length; no planet glints." % get_path())
+			point_directions.clear()
+	var point_count := mini(point_directions.size(), MAX_SKY_POINTS)
+	_set_water_shader_parameter(&'sky_point_count', point_count)
+	if point_count > 0:
+		_set_water_shader_parameter(&'sky_point_directions', point_directions.slice(0, point_count))
+		_set_water_shader_parameter(&'sky_point_irradiance', point_irradiance.slice(0, point_count))
 	# Optional atmosphere between the sea and the reflected sky; a source without one
 	# lacks the method or returns no volumes.
 	var volumes : Array = sky_source.call(&'get_atmosphere_sky_volumes') if sky_source != null and sky_source.has_method(&'get_atmosphere_sky_volumes') else []
