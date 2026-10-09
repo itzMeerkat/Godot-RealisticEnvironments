@@ -5,6 +5,13 @@ extends MeshInstance3D
 ## managing wave generation pipelines.
 
 const WATER_MAT := preload('res://addons/ocean_system/mat_water.tres')
+## The stock water shader's quality variants (shader_quality): Low, Medium, High. All
+## include shaders/spatial/water.gdshaderinc with different compile-time features.
+const WATER_SHADERS : Array[Shader] = [
+	preload('res://addons/ocean_system/shaders/spatial/water_low.gdshader'),
+	preload('res://addons/ocean_system/shaders/spatial/water_medium.gdshader'),
+	preload('res://addons/ocean_system/shaders/spatial/water.gdshader'),
+]
 const EDITOR_WATER_PREVIEW_MESH := preload('res://addons/ocean_system/editor_water_preview_mesh.tres')
 const OCEAN_REFLECTION_RENDERER := preload('res://addons/ocean_system/ocean_reflection_renderer.gd')
 const MAX_CASCADES := 8
@@ -387,6 +394,18 @@ const WATER_DEBUG_VIEW_NORMAL := 0
 		_update_scales_uniform()
 
 @export_group('Performance Parameters')
+## Water shader tier. High has every feature; Medium shortens the refraction search,
+## the crest light march and the planar reflection search; Low shortens them further
+## and compiles out caustics, glints (sun glitter) and planet glints. Only applies when
+## water_material uses the stock water shader (one of WATER_SHADERS).
+@export_enum('Low:0', 'Medium:1', 'High:2') var shader_quality := 2 :
+	set(value):
+		shader_quality = clampi(value, 0, WATER_SHADERS.size() - 1)
+		_material = null
+		_parameter_cache.clear()
+		if is_node_ready():
+			_apply_water_material()
+			_push_all_shader_parameters()
 ## Resolution for each displacement/normal texture layer and FFT simulation.
 ## Cost scales roughly with resolution squared; 512 is much cheaper than 1024.
 @export_enum('128x128:128', '256x256:256', '512x512:512', '1024x1024:1024') var simulation_map_size := 512 :
@@ -723,6 +742,9 @@ func get_sky_source() -> Node:
 func get_water_material() -> ShaderMaterial:
 	if _material == null:
 		_material = water_material.duplicate()
+		# A custom water shader keeps its own code; the stock one gets the chosen tier.
+		if _material.shader in WATER_SHADERS:
+			_material.shader = WATER_SHADERS[shader_quality]
 	return _material
 
 func _apply_water_material() -> void:

@@ -184,6 +184,11 @@ before touching its code; this file only records what is easy to get wrong.
   planar reflections, the simulation) stay flat. In the editor the ocean
   shows the shared `editor_water_preview_mesh.tres` instead. Never save a
   generated mesh into a scene, and don't rotate or scale the ocean node.
+- The water shader's code lives in `shaders/spatial/water.gdshaderinc`; the
+  quality variants `water.gdshader` (High), `water_medium.gdshader` and
+  `water_low.gdshader` only set compile-time defines and include it
+  (`OceanSystem.shader_quality`). Edit the include; keep every variant's
+  uniforms identical (features are compiled out, never their uniforms).
 - `OceanSystem` renders with a private duplicate of `water_material`, applied
   via `RenderingServer.instance_geometry_set_material_override` (not the
   `material_override` property), in the editor too. Never set

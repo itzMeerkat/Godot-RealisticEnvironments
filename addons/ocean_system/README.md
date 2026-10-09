@@ -126,7 +126,8 @@ Heights match the rendered mesh:
   resolution, strength, and clipping of submerged pixels.
 - **External Wind** — `use_external_wind`, `wind_source_path`.
 - **`parameters`** — the ordered `Array[WaveCascadeParameters]` (at most 8).
-- **Performance** — `simulation_map_size` (128–1024, default 512),
+- **Performance** — `shader_quality` (Low / Medium / High water shader, see
+  Water shader below), `simulation_map_size` (128–1024, default 512),
   `max_wave_phase_step` (default 0.1: how far, as a share of its shortest
   wavelength, a cascade's waves may travel between FFT updates; sets each
   cascade's update rate).
@@ -485,7 +486,16 @@ the drawing curves: `water_world_position`, surface queries, buoyancy,
 hull cutouts, planar reflections and the interaction simulation stay flat,
 so objects far away float slightly above the drawn sea (0.3 m at 2 km).
 
-### Water shader (`shaders/spatial/water.gdshader`)
+### Water shader (`shaders/spatial/water.gdshaderinc`)
+
+The shader's code is `water.gdshaderinc`; `water.gdshader` (High),
+`water_medium.gdshader` and `water_low.gdshader` include it with different
+compile-time settings, and `OceanSystem.shader_quality` puts one of them on the
+private material (only when `water_material` uses a stock variant). Medium
+shortens the refraction search (16 + 4 steps instead of 32 + 6), the crest light
+march (5 instead of 7) and the planar reflection search (2 instead of 3); Low
+shortens them further (8 + 3, 4, 1) and compiles out caustics, the sun's glitter
+and planet glints. Every variant has the same uniforms.
 
 Uses `world_vertex_coords`. The fragment stage discards water inside near
 hulls, then samples normals/foam for up to `fragment_cascade_limit` cascades
@@ -766,5 +776,5 @@ Godot doesn't track include dependencies: reimport `surface_query.glsl` and
 | `shaders/compute/iwave_*.glsl`, `iwave_common.glslinc` | Interaction passes: scroll, impulse, pressure, FFT, operator, step |
 | `shaders/compute/*.glsl` | Spectrum, FFT, unpack, normal mip chain, transpose, surface query |
 | `shaders/compute/ocean_sampling.glslinc` | Shared displacement sampling for compute shaders |
-| `shaders/spatial/water.gdshader`, `mat_water.tres` | Water shader and default material template (no runtime values stored) |
+| `shaders/spatial/water.gdshaderinc`, `water.gdshader`, `water_medium.gdshader`, `water_low.gdshader`, `mat_water.tres` | Water shader (body and its High / Medium / Low variants) and default material template (no runtime values stored) |
 | `editor_water_preview_mesh.tres` | Plane shown in the editor instead of the generated mesh |
