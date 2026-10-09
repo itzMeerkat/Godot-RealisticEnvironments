@@ -88,8 +88,9 @@ Every frame, when enabled and controlled:
 4. Moves a ring marker, coloured by reachability, to the aim point (an
    internal node; its mesh is rebuilt only when the marker shape changes).
 
-On `fire_action` (default `fire_projectile`) in `_unhandled_input` it calls
-`fire()`: every launcher fires along `get_launch_direction_for_launcher()` (this
+On `fire_action` (default `fire_projectile`, which enabling the plugin adds
+on Space; a missing action is reported once and fire input is ignored) in
+`_unhandled_input` it calls `fire()`: every launcher fires along `get_launch_direction_for_launcher()` (this
 frame's solution, else the last one, else the muzzle's −Z), then it waits
 `cooldown`. A boat with low guns needs a negative `min_pitch_degrees` to hit
 water close by (the rowboat uses −10°).

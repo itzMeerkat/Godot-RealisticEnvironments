@@ -41,6 +41,18 @@ caravel (`Caravel`) you can shoot and sink, a buoy that shows its distance to th
 player, a compass HUD (ship heading + wind), and a hidden debug panel exposing
 most ocean, sky, wind, buoyancy and cascade parameters live.
 
+## Using the addons in your own project
+
+1. Copy `addons/core` and the addons you want into your project's `addons/`
+   folder (see the dependencies below and in each addon's README).
+2. Enable them in **Project Settings > Plugins**. Enabling sets up the project
+   for them and prints what it added: the sky's global shader uniforms and
+   debanding, and the boat's and weapons' default input actions. Nothing that
+   is already set is changed.
+3. Use the Forward+ renderer and keep physical light units off.
+4. Instance the addon's scene (`sky_system.tscn`, `ocean_system.tscn`, ...) and
+   follow its README's quick start.
+
 ## Repository layout
 
 ```

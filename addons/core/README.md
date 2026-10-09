@@ -66,6 +66,14 @@ resources and disable their feature.
 horizontal planes, for hull profile baking (`ocean_system`) and probe
 generation (`buoyancy_system`).
 
+## Project setup
+
+`ProjectSetup` is what the addons' editor plugins use to add the project
+settings they need when enabled (global shader uniforms, registered with the
+editor's RenderingServer at once; input actions; rendering options). It only
+adds what is missing, never changes or removes a value, then saves
+`project.godot` once and prints what it added.
+
 ## Files
 
 | File | Role |
@@ -74,3 +82,4 @@ generation (`buoyancy_system`).
 | `water_surface_query_result.gd`, `water_surface_sample.gd` | Query result types |
 | `rendering_context.gd` | `RenderingContext` RenderingDevice helper |
 | `hull_slicer.gd` | `HullSlicer` mesh slicing |
+| `project_setup.gd` | `ProjectSetup` project settings for the plugins |

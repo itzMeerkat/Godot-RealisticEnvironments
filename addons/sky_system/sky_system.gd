@@ -109,14 +109,6 @@ const ATMOSPHERE_TRANSMITTANCE_STEPS := 40
 ## The sky's radiance map (ambient light and reflections) is refreshed when the
 ## camera's altitude changes by more than this share (or 2 m), see _process_atmosphere().
 const RADIANCE_ALTITUDE_TOLERANCE := 0.1
-## Global shader uniforms the atmosphere publishes (project.godot [shader_globals];
-## read through shaders/atmosphere.gdshaderinc).
-const GLOBAL_ENABLED := &"atmosphere_enabled"
-const GLOBAL_VIEW_TEXTURES : Array[StringName] = [&"atmosphere_view_transmittance", &"atmosphere_view_inscatter", &"atmosphere_view_inscatter_lobe"]
-const GLOBAL_OBSERVER := &"atmosphere_observer"
-const GLOBAL_LIGHT := &"atmosphere_light"
-const GLOBAL_MAX_DISTANCE := &"atmosphere_max_distance"
-const GLOBAL_EXPOSURE := &"atmosphere_exposure"
 ## A light whose irradiance is below this share of the other's is hidden (the moon by
 ## day, the sun deep in twilight): it would cost a shadowed light for nothing.
 const NEGLIGIBLE_LIGHT_SHARE := 0.001
@@ -397,6 +389,7 @@ func _init() -> void:
 
 
 func _ready() -> void:
+	_check_project_settings()
 	if not Engine.is_editor_hint():
 		_ensure_unique_runtime_resources()
 	_setup_starfield()
@@ -405,6 +398,19 @@ func _ready() -> void:
 	_resolve_cloud_wind_source()
 	_setup_atmosphere()
 	_setup_clouds()
+
+
+## Reports the project settings the sky cannot work without. The Sky System plugin
+## adds them when it is enabled.
+func _check_project_settings() -> void:
+	var missing := PackedStringArray()
+	for declaration : Array in AtmosphereGlobals.DECLARATIONS:
+		if not ProjectSettings.has_setting("shader_globals/" + declaration[0]):
+			missing.push_back(declaration[0])
+	if not missing.is_empty():
+		push_error("SkySystem %s: the project lacks the global shader uniforms %s, so the sky's shaders do not compile. Enable the Sky System plugin (Project Settings > Plugins), which adds them." % [get_path(), ", ".join(missing)])
+	if ProjectSettings.get_setting("rendering/lights_and_shadows/use_physical_light_units"):
+		push_error("SkySystem %s: rendering/lights_and_shadows/use_physical_light_units is on; the sky's lights and exposure are wrong with it. Turn it off." % get_path())
 
 
 func _enter_tree() -> void:
@@ -816,7 +822,7 @@ func _push_atmosphere_parameters() -> void:
 		_atmosphere_renderer.cloud_top_altitude = _cloud_state.base_altitude + _cloud_state.thickness
 		_atmosphere_renderer.cloud_ambient_altitude = _cloud_state.base_altitude + 0.5 * _cloud_state.thickness
 	if _global_atmosphere_owner == self:
-		RenderingServer.global_shader_parameter_set(GLOBAL_LIGHT, get_atmosphere_light())
+		RenderingServer.global_shader_parameter_set(AtmosphereGlobals.LIGHT, get_atmosphere_light())
 	var effect := _get_aerial_perspective_effect()
 	if effect:
 		effect.active = _haze_density > 0.0
@@ -1357,11 +1363,11 @@ func _setup_atmosphere() -> void:
 		return
 	_global_atmosphere_owner = self
 	_update_exposure()
-	RenderingServer.global_shader_parameter_set(GLOBAL_MAX_DISTANCE, AtmosphereRenderer.MAX_DISTANCE)
+	RenderingServer.global_shader_parameter_set(AtmosphereGlobals.MAX_DISTANCE, AtmosphereRenderer.MAX_DISTANCE)
 	var volumes : Array[Texture3DRD] = [_atmosphere_renderer.view_transmittance, _atmosphere_renderer.view_inscatter, _atmosphere_renderer.view_inscatter_lobe]
 	var volume_rids : Array[RID] = []
 	for i in volumes.size():
-		RenderingServer.global_shader_parameter_set(GLOBAL_VIEW_TEXTURES[i], volumes[i])
+		RenderingServer.global_shader_parameter_set(AtmosphereGlobals.VIEW_TEXTURES[i], volumes[i])
 		volume_rids.push_back(volumes[i].texture_rd_rid)
 	var effect := _get_aerial_perspective_effect()
 	if effect:
@@ -1370,7 +1376,7 @@ func _setup_atmosphere() -> void:
 	_update_sky()
 	# Consumers start reading once the volumes hold this frame's atmosphere.
 	_process_atmosphere()
-	RenderingServer.global_shader_parameter_set(GLOBAL_ENABLED, true)
+	RenderingServer.global_shader_parameter_set(AtmosphereGlobals.ENABLED, true)
 
 
 ## Unbinds the atmosphere's textures from every consumer, then frees them.
@@ -1379,13 +1385,13 @@ func _release_atmosphere() -> void:
 		return
 	if _global_atmosphere_owner == self:
 		_global_atmosphere_owner = null
-		RenderingServer.global_shader_parameter_set(GLOBAL_ENABLED, false)
+		RenderingServer.global_shader_parameter_set(AtmosphereGlobals.ENABLED, false)
 		if _placeholder_volume == null:
 			var image := Image.create_empty(1, 1, false, Image.FORMAT_RGBAH)
 			image.fill(Color.WHITE)
 			_placeholder_volume = ImageTexture3D.new()
 			_placeholder_volume.create(Image.FORMAT_RGBAH, 1, 1, 1, false, [image])
-		for global in GLOBAL_VIEW_TEXTURES:
+		for global in AtmosphereGlobals.VIEW_TEXTURES:
 			RenderingServer.global_shader_parameter_set(global, _placeholder_volume)
 	var effect := _get_aerial_perspective_effect()
 	if effect:
@@ -1409,7 +1415,7 @@ func _process_atmosphere() -> void:
 	_read_camera_sky_light()
 	_atmosphere_observer = Vector4(camera_position.x, camera_position.y, camera_position.z, observer_altitude)
 	if _global_atmosphere_owner == self:
-		RenderingServer.global_shader_parameter_set(GLOBAL_OBSERVER, _atmosphere_observer)
+		RenderingServer.global_shader_parameter_set(AtmosphereGlobals.OBSERVER, _atmosphere_observer)
 	var effect := _get_aerial_perspective_effect()
 	if effect:
 		effect.observer_position = camera_position
@@ -1450,7 +1456,7 @@ func _update_exposure() -> void:
 	var attributes : CameraAttributes = camera.attributes if camera and camera.attributes else get_world_3d().camera_attributes
 	_exposure = attributes.exposure_multiplier if attributes else 1.0
 	if _global_atmosphere_owner == self:
-		RenderingServer.global_shader_parameter_set(GLOBAL_EXPOSURE, _exposure)
+		RenderingServer.global_shader_parameter_set(AtmosphereGlobals.EXPOSURE, _exposure)
 
 
 ## The camera altitude the atmosphere's camera volume is built for (0 without one).

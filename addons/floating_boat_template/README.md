@@ -122,8 +122,9 @@ the one place allowed to use both).
   `max_forward_speed` / `max_reverse_speed`, yaw torque scaled down at low
   speed (`low_speed_turn_factor`), and extra side-slip damping. All forces scale
   with mass. Reads the `boat_forward`, `boat_back`, `boat_turn_left` and
-  `boat_turn_right` actions by default (`*_action` exports); add them to your
-  project's Input Map. A missing action is reported once and the boat ignores
+  `boat_turn_right` actions by default (`*_action` exports). Enabling the
+  plugin adds them (W, S, A, D) and `fire_projectile` (Space) to the Input
+  Map unless the project has them. A missing action is reported once and the boat ignores
   drive input.
 - **Stability** — per-axis local angular damping (`local_angular_damping`, X =
   pitch, Y = yaw, Z = roll) and a roll-righting spring with dead zone and

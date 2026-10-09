@@ -33,6 +33,10 @@ window/quality/msaa_2d=0
 window/quality/msaa_3d=1
 window/show_image=false
 
+[editor_plugins]
+
+enabled=PackedStringArray("res://addons/core/plugin.cfg", "res://addons/ocean_system/plugin.cfg", "res://addons/sky_system/plugin.cfg", "res://addons/wind_system/plugin.cfg", "res://addons/exposure_system/plugin.cfg", "res://addons/buoyancy_system/plugin.cfg", "res://addons/hitbox_damage_system/plugin.cfg", "res://addons/projectile_launcher_system/plugin.cfg", "res://addons/floating_boat_template/plugin.cfg")
+
 [input]
 
 toggle_debug_ui={

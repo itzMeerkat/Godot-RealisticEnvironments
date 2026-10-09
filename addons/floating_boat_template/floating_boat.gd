@@ -74,7 +74,7 @@ func _ready() -> void:
 	_create_history_node()
 	for action in [move_forward_action, move_back_action, turn_left_action, turn_right_action]:
 		if not InputMap.has_action(action):
-			push_error("FloatingBoat %s: InputMap has no action \"%s\" (add it in Project Settings > Input Map, or set the *_action exports); the boat ignores drive input." % [get_path(), action])
+			push_error("FloatingBoat %s: InputMap has no action \"%s\" (enable the Floating Boat Template plugin, add it in Project Settings > Input Map, or set the *_action exports); the boat ignores drive input." % [get_path(), action])
 			_drive_enabled = false
 	if autoplay_animation != &"":
 		_play_model_animation()

@@ -48,13 +48,18 @@ Requires the `core` addon (`addons/core`).
 
 ## Quick start
 
+Enable **Sky System** (and **Core**) in Project Settings > Plugins. Enabling it
+declares the atmosphere's global shader uniforms in `project.godot` (the sky's
+shaders do not compile without them; see [Atmosphere](#atmosphere)) and turns
+on debanding (night skies band into contours without it). It only adds what is
+missing.
+
 Instance `sky_system.tscn`. It contains a `WorldEnvironment` with the sky
 material and a compositor holding the aerial perspective (`AerialPerspectiveEffect`),
 `SunLight` / `MoonLight` (`DirectionalLight3D`), optional
 `SunVisual` / `MoonVisual` meshes; the stars are an internal child built at
 startup (see [Stars](#stars)). Remove any other
-`WorldEnvironment` or directional light from the scene. The project must
-declare the atmosphere's global shader uniforms (see [Atmosphere](#atmosphere)).
+`WorldEnvironment` or directional light from the scene.
 
 To drive the ocean, set `OceanSystem.sky_source_path` to this node.
 
@@ -343,9 +348,10 @@ new media (multiple scattering, the air's own glow) are added there only.
   `atmosphere_observer` (`vec4`: world position of the camera the volume is
   built for, w its altitude as used), `atmosphere_light` (`vec4`: toward the
   light, w the lobe's g), `atmosphere_max_distance` (`float`) and
-  `atmosphere_exposure` (`float`, see [Exposure](#exposure)). A project
-  using the sky system declares them in `project.godot` `[shader_globals]`
-  (this project does). The last SkySystem set up owns them.
+  `atmosphere_exposure` (`float`, see [Exposure](#exposure)), listed in
+  `AtmosphereGlobals`. The project declares them in `project.godot`
+  `[shader_globals]`: the plugin adds them, and SkySystem reports any that are
+  missing. The last SkySystem set up owns them.
 - Transparent materials: Godot draws them after the aerial perspective, so
   they haze themselves. Include `shaders/atmosphere.gdshaderinc` and write
   `FOG = atmosphere_fog(world_position);` (e.g. `BowSpray`'s
@@ -512,7 +518,8 @@ the runtime texture is never stored in `materials/*.tres`.
 
 ## Files
 
-`sky_system.gd` / `.tscn`, `star_catalog.gd` (`StarCatalog`),
+`sky_system.gd` / `.tscn`, `atmosphere_globals.gd` (`AtmosphereGlobals`),
+`sky_system_plugin.gd` (project setup), `star_catalog.gd` (`StarCatalog`),
 `stars/bright_star_catalog.tres` (baked by `tools/bake_star_catalog.py`),
 `cloud_preset.gd` (`CloudPreset`), `cloud_presets/*.tres`,
 `cloud_renderer.gd` (`CloudRenderer`), `shaders/compute/cloud_*.glsl` and

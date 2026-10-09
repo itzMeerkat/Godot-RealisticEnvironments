@@ -37,8 +37,16 @@ before touching its code; this file only records what is easy to get wrong.
   warnings and errors of every script through a headless editor's language
   server.
 - Reusable code lives in `addons/*`; demo glue in `systems/` and `demo/`.
-  `*_plugin.gd` files are empty `EditorPlugin` stubs — all runtime types are
-  registered through `class_name`.
+  All runtime types are registered through `class_name`; the `*_plugin.gd`
+  files only set up the project. Through core's `ProjectSetup` they add what an
+  addon needs to `project.godot` and never change or remove existing values:
+  sky_system declares its global shader uniforms on every editor load and turns
+  on debanding when enabled; projectile_launcher_system and
+  floating_boat_template add their default input actions when enabled. A new
+  project requirement goes into the plugin, plus a runtime check that reports
+  it (`SkySystem._check_project_settings()`, the boat's and weapon
+  controller's InputMap checks). `plugin.cfg` `script` paths are relative
+  (4.8 fails to load `res://` ones).
 - `.godot/`, `.import/`, `build/`, `export.cfg`, `export_presets.cfg`,
   `fft_wave.md` and `todo.md` are git-ignored local state; never treat them as
   sources of truth.
@@ -405,7 +413,8 @@ before touching its code; this file only records what is easy to get wrong.
   aerial perspective and `FOG` use the volumes as they are.
   `SkySystem._sky_irradiance` (the light meter's sky part, read back with
   `buffer_get_data_async`) divides by the exposure of its frame.
-- The global uniforms' list (`SkySystem.GLOBAL_*`, `atmosphere.gdshaderinc`,
+- The global uniforms' list (`AtmosphereGlobals`, which the plugin declares
+  from; `atmosphere.gdshaderinc`;
   `project.godot` `[shader_globals]`) changes in all three places together.
   Only the owning SkySystem (`_global_atmosphere_owner`) writes them.
 - `AerialPerspectiveEffect` sits in `sky_system.tscn`'s WorldEnvironment

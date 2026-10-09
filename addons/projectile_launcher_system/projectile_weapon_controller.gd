@@ -110,6 +110,8 @@ var aim_point := Vector3.ZERO
 var has_aim_point := false
 var has_reachable_solution := false
 var _cooldown_remaining := 0.0
+## False when fire_action is missing from the InputMap: fire input is then ignored.
+var _fire_input_enabled := true
 var _gravity := 9.8
 var _marker_instance: MeshInstance3D
 var _marker_mesh := ImmediateMesh.new()
@@ -124,6 +126,9 @@ func _ready() -> void:
 	body = get_node(body_path) as RigidBody3D if not body_path.is_empty() else _find_ancestor_rigid_body()
 	assert(body_path.is_empty() or body != null, "ProjectileWeaponController %s: body_path does not point to a RigidBody3D." % get_path())
 	_gravity = float(ProjectSettings.get_setting("physics/3d/default_gravity"))
+	if not InputMap.has_action(fire_action):
+		push_error("ProjectileWeaponController %s: InputMap has no action \"%s\" (enable the Projectile Launcher System plugin, add it in Project Settings > Input Map, or set fire_action); fire input is ignored." % [get_path(), fire_action])
+		_fire_input_enabled = false
 	_create_marker()
 	refresh_launchers()
 
@@ -156,7 +161,7 @@ func _process(delta: float) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if not enabled or _cooldown_remaining > 0.0 or launchers.is_empty():
+	if not enabled or not _fire_input_enabled or _cooldown_remaining > 0.0 or launchers.is_empty():
 		return
 	if not event.is_action_pressed(fire_action) or not _is_controlled():
 		return
