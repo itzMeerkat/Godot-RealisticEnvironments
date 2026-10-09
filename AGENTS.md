@@ -32,7 +32,9 @@ before touching its code; this file only records what is easy to get wrong.
   `debug/gdscript/warnings/directory_rules`). Keep every script warning-free:
   rename locals that shadow members or base-class properties (`basis`,
   `position`, `scale`, `owner`, ...) and mark intended integer division with
-  `@warning_ignore("integer_division")`. `tools/gd_lint.py` lists the
+  `@warning_ignore("integer_division")`. Type nodes by assignment
+  (`@onready var x : Camera3D = $Camera3D`), not `as` (4.8 warns: `as` hides a
+  wrong node as null). `tools/gd_lint.py` lists the
   warnings and errors of every script through a headless editor's language
   server.
 - Reusable code lives in `addons/*`; demo glue in `systems/` and `demo/`.

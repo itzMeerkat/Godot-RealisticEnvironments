@@ -57,10 +57,10 @@ enum CameraMode {
 @export var speed_fov_reference := 18.0
 @export_range(0.0, 30.0, 0.01) var fov_smoothing := 6.0
 
-@onready var _yaw_pivot := $YawPivot as Node3D
-@onready var _pitch_pivot := $YawPivot/PitchPivot as Node3D
-@onready var _spring_arm := $YawPivot/PitchPivot/SpringArm3D as SpringArm3D
-@onready var _camera := $YawPivot/PitchPivot/SpringArm3D/Camera3D as Camera3D
+@onready var _yaw_pivot : Node3D = $YawPivot
+@onready var _pitch_pivot : Node3D = $YawPivot/PitchPivot
+@onready var _spring_arm : SpringArm3D = $YawPivot/PitchPivot/SpringArm3D
+@onready var _camera : Camera3D = $YawPivot/PitchPivot/SpringArm3D/Camera3D
 
 var _follow_target: Node3D
 var _first_person_anchor: Node3D

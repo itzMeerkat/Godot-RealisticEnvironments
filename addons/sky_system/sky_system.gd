@@ -249,11 +249,11 @@ const NEGLIGIBLE_LIGHT_SHARE := 0.001
 ## Clouds farther than this (m) are not drawn.
 @export_range(10000.0, 400000.0, 1000.0, "or_greater") var cloud_max_distance := 120000.0
 
-@onready var _world_environment := $WorldEnvironment as WorldEnvironment
-@onready var _sun_light := $SunLight as DirectionalLight3D
-@onready var _moon_light := $MoonLight as DirectionalLight3D
-@onready var _sun_visual := $SunVisual as MeshInstance3D
-@onready var _moon_visual := $MoonVisual as MeshInstance3D
+@onready var _world_environment : WorldEnvironment = $WorldEnvironment
+@onready var _sun_light : DirectionalLight3D = $SunLight
+@onready var _moon_light : DirectionalLight3D = $MoonLight
+@onready var _sun_visual : MeshInstance3D = $SunVisual
+@onready var _moon_visual : MeshInstance3D = $MoonVisual
 
 var _elapsed_time := 0.0
 var _sun_hour_angle := 0.0
