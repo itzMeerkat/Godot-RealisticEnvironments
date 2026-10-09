@@ -37,6 +37,12 @@
  * Below the cloud layer the clouds also light the air and the sea: the cloud base, seen
  * as a dome of its mean radiance overhead (cloud_dome), scatters isotropically. Under an
  * overcast deck that is nearly all the light there is.
+ *
+ * Airglow: the upper atmosphere's own light (O, Na and OH emission at 85-100 km), the
+ * main light of a moonless sky. A thin shell at AIRGLOW_ALTITUDE of zenith radiance
+ * pc.airglow; a ray that reaches space sees it times the van Rhijn factor (its slant path
+ * through the shell, up to ~6x at the horizon), dimmed by the air below like the
+ * in-scatter. It goes into the ray's end only.
  */
 
 #include "atmosphere_common.glslinc"
@@ -48,6 +54,8 @@
 // the observer, and the distance (m) beyond which the mean cover overhead shades it instead.
 #define CLOUD_SHADE_ANGLE 0.04
 #define CLOUD_SHADE_LOCAL_DISTANCE 5000.0
+// Altitude (m) of the airglow shell (the 557.7 nm oxygen layer lies at ~97 km, OH at ~87 km).
+#define AIRGLOW_ALTITUDE 90000.0
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
@@ -71,11 +79,11 @@ layout(push_constant, std430) restrict readonly uniform PushConstants {
 	float cloud_altitude;    // m, the cloud layer's base: where a two-slice volume stores its first slice
 	float cloud_top_altitude; // m, the cloud layer's top: above it the clouds shade nothing
 	float haze_anisotropy;   // the lobe's g
-	float pad_2;
+	float airglow_red;       // the airglow's zenith radiance (rgb, in the padding of the vec3s)
 	vec3 secondary_direction; // world, toward the other body
-	float pad_3;
+	float airglow_green;
 	vec3 secondary_color;    // its irradiance above the atmosphere: pi * energy (white)
-	float pad_4;
+	float airglow_blue;
 } pc;
 
 vec3 transmittance;
@@ -190,6 +198,19 @@ void march(float mu, float cos_light, vec3 key_light, float t_start, float t_end
 	}
 }
 
+/*
+ * van Rhijn factor: an observer at altitude h looking along mu crosses the airglow shell
+ * on a path 1 / cos(zenith angle at the shell) times its thickness. 0 when the observer
+ * is above the shell.
+ */
+float airglow_van_rhijn(float h, float mu) {
+	if (h >= AIRGLOW_ALTITUDE) {
+		return 0.0;
+	}
+	float ratio = (ATMOSPHERE_EARTH_RADIUS + h) / (ATMOSPHERE_EARTH_RADIUS + AIRGLOW_ALTITUDE);
+	return inversesqrt(max(1.0 - ratio * ratio * (1.0 - mu * mu), 1e-4));
+}
+
 void store(ivec3 texel) {
 	imageStore(transmittance_image, texel, vec4(transmittance, 1.0));
 	imageStore(inscatter_image, texel, vec4(inscatter, 1.0));
@@ -248,6 +269,9 @@ void main() {
 	}
 	if (t_end > t) {
 		march(mu, cos_light, key_light, t, t_end, TAIL_STEPS, true);
+	}
+	if (t_sea < 0.0) {
+		inscatter += transport * vec3(pc.airglow_red, pc.airglow_green, pc.airglow_blue) * airglow_van_rhijn(h0, mu);
 	}
 	if (t_sea >= 0.0) {
 		float mu_light_sea = clamp((ATMOSPHERE_EARTH_RADIUS + h0) * pc.light_direction.y / ATMOSPHERE_EARTH_RADIUS

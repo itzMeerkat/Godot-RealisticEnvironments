@@ -38,6 +38,14 @@ uniform bool clouds_enabled = false;
 uniform float cloud_base_altitude = 1500.0;
 uniform samplerCube cloud_cubemap : filter_linear_mipmap;
 
+// The Milky Way (stars/milky_way.exr: rgb in ucd/m2, plate carree in J2000 right
+// ascension and declination), part of space: milky_way_basis turns world directions into
+// the equatorial frame (it follows the sidereal time), milky_way_scale turns its values
+// into scene radiance. Set by SkySystem.
+uniform sampler2D milky_way : filter_linear_mipmap, repeat_enable;
+uniform mat3 milky_way_basis = mat3(1.0);
+uniform float milky_way_scale = 0.0;
+
 float body_disk(vec3 view_direction, vec3 body_direction, float disk_size) {
 	float alignment = dot(normalize(view_direction), normalize(body_direction));
 	float angular_distance = acos(clamp(alignment, -1.0, 1.0));
@@ -77,6 +85,13 @@ float moon_lighting(vec3 view_direction, vec3 body_direction, vec3 light_directi
 	return lit;
 }
 
+vec3 milky_way_radiance(vec3 direction, float lod) {
+	vec3 equatorial = milky_way_basis * direction;
+	vec2 uv = vec2(fract(atan(equatorial.y, equatorial.x) / (2.0 * PI)), 0.5 - asin(clamp(equatorial.z, -1.0, 1.0)) / PI);
+	// Explicit LOD: the longitude wraps at the texture's edge.
+	return textureLod(milky_way, uv, lod).rgb * milky_way_scale;
+}
+
 void sky() {
 	float sun_disk = body_disk(EYEDIR, sun_direction, sun_disk_size);
 	float sun_halo = body_halo(EYEDIR, sun_direction, sun_halo_size) * 0.32;
@@ -102,6 +117,10 @@ void sky() {
 	}
 	vec3 space = (sun_disk_color * sun_disk + sun_halo_color * sun_halo) * sun_visibility
 			+ (moon_disk_color * moon_disk * moon_lit + moon_halo_color * moon_halo) * moon_visibility;
+	if (milky_way_scale > 0.0) {
+		// The radiance map's faces are coarser than the texture: read a blurred mip.
+		space += milky_way_radiance(EYEDIR, AT_CUBEMAP_PASS ? 2.0 : 0.0);
+	}
 
 	vec4 cloud = clouds_enabled ? textureLod(cloud_cubemap, EYEDIR, 0.0) : vec4(0.0);
 	if (atmosphere_enabled) {

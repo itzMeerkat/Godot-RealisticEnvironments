@@ -110,11 +110,38 @@ colours). `stars/bright_star_catalog.tres` is baked by
 (Hoffleit & Warren 1991; CDS catalogue V/50); any other catalog baked to the
 same format works.
 
+**The Milky Way** is the light of the stars too faint for the catalog: NASA SVS's
+Deep Star Maps 2020 "Milky Way background" (Gaia DR2, Hipparcos and Tycho-2 stars
+fainter than V = 8; https://svs.gsfc.nasa.gov/4851), baked by
+`tools/bake_milky_way.py` into `stars/milky_way.exr` (2048 × 1024 plate carrée in
+J2000 right ascension and declination, rgb in µcd/m², imported as BC6H with
+mips, 2.8 MB). Its units are not published, so the bake calibrates it: its mean
+over the sky is the integrated starlight the catalog lacks (~100 S10(V) for all
+stars, Benn & Ellison 1998, less the catalog's 23), which reproduces their
+latitude profile (about 270 S10 in the plane, 13 at high latitudes). The sky
+shader adds it to space (`milky_way_radiance()`), so the atmosphere dims it
+and the clouds hide it like the sun and the moon; `star_brightness` scales it
+with the stars. Credit: NASA/Goddard Space Flight Center Scientific
+Visualization Studio. Gaia DR2: ESA/Gaia/DPAC.
+
+**Airglow** is the upper atmosphere's own light (oxygen, sodium and OH
+emission at 85–100 km), the main light of a moonless sky. The atmosphere's view
+pass treats it as a thin shell at 90 km of zenith luminance 1.3·10⁻⁴ cd/m²
+(22.3 V mag/arcsec², `SkySystem.AIRGLOW_ZENITH_LUMINANCE`) times
+`airglow_brightness` (the solar cycle: ~0.5 at minimum, 2 at maximum): a ray
+that reaches space sees it times the van Rhijn factor (its slant path through
+the shell, up to ~6× near the horizon), dimmed by the air below. So the sky
+brightens from the zenith toward ~15° elevation and darkens and reddens below
+that, the sea reflects it, and the light meter and the radiance map include
+it. Its colour is the line spectrum's (yellow-green, as cameras record it; the
+eye sees a dark sky grey, which is the exposure's business).
+
 **Reflections.** `get_star_cubemap()` holds the same stars for consumers
 that draw their own sky (the ocean): a cubemap of `star_cubemap_size`² texels
 per face (256: about 4 MB with mips), radiance in cd/m² above the atmosphere in
 the catalog's frame, each star spread bilinearly over the four texels around
-it (energy kept), mips box-filtered. `get_star_basis()` turns world directions
+it (energy kept), plus the Milky Way (sampled at 64² per face, scaled up),
+mips box-filtered. `get_star_basis()` turns world directions
 into its frame and `get_star_radiance_scale()` its values into scene radiance
 (`star_brightness` included). It is built once; only the basis turns with the
 sky. The starfield itself is also drawn by other cameras (the ocean's mirrored

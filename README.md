@@ -207,4 +207,10 @@ the work that turns a sandbox into a product.
 
 - Wave simulation origin: Ethan Truong (2Retr0), MIT — `LICENSE_original`.
 - Ship and buoy models under `demo/assets/` are third-party Sketchfab assets.
+- Stars: the Bright Star Catalogue, 5th Revised Ed. (Hoffleit & Warren 1991;
+  CDS catalogue V/50), baked by `tools/bake_star_catalog.py`.
+- Milky Way: NASA/Goddard Space Flight Center Scientific Visualization Studio,
+  Deep Star Maps 2020 (https://svs.gsfc.nasa.gov/4851). Gaia DR2: ESA/Gaia/DPAC.
+  Baked by `tools/bake_milky_way.py`; redistribution terms to be confirmed
+  before a commercial release.
 - This project: MIT — `LICENSE`.

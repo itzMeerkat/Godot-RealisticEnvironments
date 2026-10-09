@@ -4,6 +4,16 @@ extends Node3D
 
 const StarfieldMaterial := preload("res://addons/sky_system/materials/starfield.tres")
 const DefaultStarCatalog := preload("res://addons/sky_system/stars/bright_star_catalog.tres")
+## The Milky Way: the light of the stars too faint for the catalog (V > 8), rgb in
+## ucd/m2, plate carree in J2000 right ascension (0h at the left, increasing to the right)
+## and declination. Baked by tools/bake_milky_way.py from NASA SVS Deep Star Maps 2020
+## (NASA/Goddard Space Flight Center Scientific Visualization Studio. Gaia DR2: ESA/Gaia/DPAC).
+const MilkyWayTexture := preload("res://addons/sky_system/stars/milky_way.exr")
+## Candela per square meter of one unit of MilkyWayTexture.
+const MILKY_WAY_UNIT := 1e-6
+## Edge (texels) of the cube faces the Milky Way is sampled at for the star cubemap;
+## then scaled up to star_cubemap_size.
+const MILKY_WAY_CUBE_SIZE := 64
 
 signal time_of_day_changed(time_of_day : float)
 signal lighting_changed
@@ -30,6 +40,12 @@ const MOON_ENERGY := SOLAR_ENERGY * FULL_MOON_ILLUMINANCE_LUX / SOLAR_ILLUMINANC
 ## The sun's visual magnitude: a star of magnitude m gives SOLAR_ILLUMINANCE_LUX *
 ## 10^(-0.4 (m - SUN_MAGNITUDE)) lux above the atmosphere (2.5e-6 lux at magnitude 0).
 const SUN_MAGNITUDE := -26.74
+## Luminance (cd/m2) of the airglow at the zenith above the air: 22.3 V magnitudes per
+## square arcsecond, the bulk of a dark natural night sky (Leinert et al. 1998).
+const AIRGLOW_ZENITH_LUMINANCE := 1.3e-4
+## Linear Rec. 709 colour of the airglow, luminance 1: the 557.7 nm oxygen line with the
+## sodium and red oxygen lines and its faint continuum.
+const AIRGLOW_COLOR := Color(0.929, 1.119, 0.032)
 ## Stars' twinkling without a cloud_preset (as CloudPreset.star_scintillation).
 const DEFAULT_STAR_SCINTILLATION := 0.15
 ## The starfield's twinkling clock wraps after this many seconds (float precision).
@@ -117,6 +133,12 @@ const NEGLIGIBLE_LIGHT_SHARE := 0.001
 @export_range(0.0, 8.0, 0.01, "or_greater") var star_brightness := 1.0 :
 	set(value):
 		star_brightness = value
+		_update_sky()
+## Multiplies the airglow, the upper atmosphere's faint own light that fills a moonless
+## sky: it follows the sun's 11-year cycle, about 0.5 at its minimum and 2 at its maximum.
+@export_range(0.0, 4.0, 0.01, "or_greater") var airglow_brightness := 1.0 :
+	set(value):
+		airglow_brightness = value
 		_update_sky()
 ## The stars drawn in the sky (default: the Yale Bright Star Catalogue, every star
 ## the naked eye can see).
@@ -425,8 +447,8 @@ func get_cloud_cubemap() -> Texture:
 
 ## The stars for consumers that draw their own sky (the ocean's reflection): a cubemap
 ## of their radiance in cd/m2 (lux per steradian) above the atmosphere, each star
-## spread over the texels around it, with a mip chain (box-filtered), in the frame of
-## get_star_basis(); or null without stars. The object changes when the stars are
+## spread over the texels around it, and the Milky Way, with a mip chain (box-filtered),
+## in the frame of get_star_basis(); or null without stars. The object changes when the stars are
 ## rebuilt; lighting_changed fires then.
 func get_star_cubemap() -> Cubemap:
 	return _star_cubemap
@@ -714,6 +736,7 @@ func _push_atmosphere_parameters() -> void:
 	_atmosphere_renderer.secondary_direction = _haze_secondary_direction
 	_atmosphere_renderer.secondary_color = _haze_secondary_color
 	_atmosphere_renderer.cloud_shadow_strength = cloud_haze_shadow_strength
+	_atmosphere_renderer.airglow_radiance = AIRGLOW_COLOR * (AIRGLOW_ZENITH_LUMINANCE * airglow_brightness / get_illuminance_unit_lux())
 	if _cloud_state:
 		_atmosphere_renderer.cloud_altitude = _cloud_state.base_altitude
 		_atmosphere_renderer.cloud_top_altitude = _cloud_state.base_altitude + _cloud_state.thickness
@@ -767,6 +790,8 @@ func _update_environment(sun_direction : Vector3, moon_direction : Vector3, sun_
 	shader_material.set_shader_parameter(&"moon_irradiance", Vector3(_moon_irradiance.r, _moon_irradiance.g, _moon_irradiance.b))
 	shader_material.set_shader_parameter(&"moon_visibility", moon_visibility if render_bodies_in_sky else 0.0)
 	shader_material.set_shader_parameter(&"moon_phase", _moon_phase)
+	shader_material.set_shader_parameter(&"milky_way_basis", get_star_basis())
+	shader_material.set_shader_parameter(&"milky_way_scale", MILKY_WAY_UNIT * get_star_radiance_scale())
 	_radiance_observer_altitude = _get_atmosphere_observer_altitude()
 
 
@@ -836,8 +861,7 @@ func _build_starfield_mesh(catalog : StarCatalog) -> ArrayMesh:
 ## each star's illuminance spread bilinearly over the four texels around its direction,
 ## divided by their solid angles, so the light is kept. GL / Vulkan cube face layout.
 func _build_star_cubemap(catalog : StarCatalog, size : int) -> Cubemap:
-	var data := PackedFloat32Array()
-	data.resize(6 * size * size * 4)
+	var data := _build_milky_way_cube_data(size)
 	var texel_solid_angle := 4.0 / float(size * size)
 	for star in catalog.get_star_count():
 		var lux := SOLAR_ILLUMINANCE_LUX * pow(10.0, -0.4 * (catalog.magnitudes[star] - SUN_MAGNITUDE))
@@ -872,6 +896,48 @@ func _build_star_cubemap(catalog : StarCatalog, size : int) -> Cubemap:
 		push_error("SkySystem %s: building the star cubemap failed (%s); the water reflects no stars." % [get_path(), error_string(error)])
 		return null
 	return cubemap
+
+
+## The Milky Way as star cubemap data (cd/m2, four floats per texel, faces in order):
+## sampled at MILKY_WAY_CUBE_SIZE per face, then scaled up. Zeros if the texture cannot be read.
+func _build_milky_way_cube_data(size : int) -> PackedFloat32Array:
+	var data := PackedFloat32Array()
+	var source : Image = MilkyWayTexture.get_image() if MilkyWayTexture else null
+	if source == null or (source.is_compressed() and source.decompress() != OK):
+		push_error("SkySystem %s: the Milky Way texture cannot be read; the water reflects no Milky Way." % get_path())
+		data.resize(6 * size * size * 4)
+		return data
+	# About one texel of the faces each: a filtered downscale, then nearest lookups.
+	var face_size := mini(size, MILKY_WAY_CUBE_SIZE)
+	source.clear_mipmaps()
+	source.resize(face_size * 4, face_size * 2, Image.INTERPOLATE_LANCZOS)
+	source.convert(Image.FORMAT_RGBAF)
+	var width := source.get_width()
+	var height := source.get_height()
+	for face in 6:
+		var face_image := Image.create_empty(face_size, face_size, false, Image.FORMAT_RGBAF)
+		for y in face_size:
+			for x in face_size:
+				var direction := _cubemap_texel_direction(face, (x + 0.5) / face_size * 2.0 - 1.0, (y + 0.5) / face_size * 2.0 - 1.0)
+				var u := fposmod(atan2(direction.y, direction.x) / TAU, 1.0)
+				var v := 0.5 - asin(clampf(direction.z, -1.0, 1.0)) / PI
+				var color := source.get_pixel(mini(int(u * width), width - 1), mini(int(v * height), height - 1))
+				face_image.set_pixel(x, y, Color(color.r * MILKY_WAY_UNIT, color.g * MILKY_WAY_UNIT, color.b * MILKY_WAY_UNIT, 0.0))
+		face_image.resize(size, size, Image.INTERPOLATE_BILINEAR)
+		data.append_array(face_image.get_data().to_float32_array())
+	return data
+
+
+## Direction of a cube face's point (a right, b down, both -1..1): the inverse of
+## _cubemap_face_coords().
+static func _cubemap_texel_direction(face : int, a : float, b : float) -> Vector3:
+	match face:
+		0: return Vector3(1.0, -b, -a).normalized()
+		1: return Vector3(-1.0, -b, a).normalized()
+		2: return Vector3(a, 1.0, b).normalized()
+		3: return Vector3(a, -1.0, -b).normalized()
+		4: return Vector3(a, -b, 1.0).normalized()
+	return Vector3(-a, -b, -1.0).normalized()
 
 
 ## Cube face (x: 0-5 for +X, -X, +Y, -Y, +Z, -Z) and coordinates on it (y, z in -1..1,

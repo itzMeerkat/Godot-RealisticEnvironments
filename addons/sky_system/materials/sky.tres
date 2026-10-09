@@ -1,9 +1,11 @@
 [gd_resource type="ShaderMaterial" format=3 uid="uid://dn2e5gtbc2jx4"]
 
 [ext_resource type="Shader" uid="uid://bfqtnobg1ay72" path="res://addons/sky_system/shaders/sky.gdshader" id="1_sky"]
+[ext_resource type="Texture2D" uid="uid://cok5lqicacam1" path="res://addons/sky_system/stars/milky_way.exr" id="2_milky_way"]
 
 [resource]
 shader = ExtResource("1_sky")
+shader_parameter/milky_way = ExtResource("2_milky_way")
 shader_parameter/sun_direction = Vector3(0.8305959, 0.4561658, 0.31941074)
 shader_parameter/sun_color = Color(1, 0.96, 0.82, 1)
 shader_parameter/sun_visibility = 1.0

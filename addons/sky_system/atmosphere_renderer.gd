@@ -68,6 +68,9 @@ var light_color := Color.BLACK
 ## The other body, the same way: it lights the atmosphere too, without the haze's lobe.
 var secondary_direction := Vector3.DOWN
 var secondary_color := Color.BLACK
+## Zenith radiance of the airglow (scene units, unexposed): the upper atmosphere's own
+## light, a thin shell at 90 km (atmosphere_view.glsl).
+var airglow_radiance := Color.BLACK
 ## Multiplies the cloud opacity toward the light where it shades the atmosphere.
 var cloud_shadow_strength := 1.0
 ## Altitudes (m) of the cloud layer's base (where the sea volume's first slice lies)
@@ -203,9 +206,9 @@ func render(camera_altitude : float, cloud_cubemap : RID, exposure : float) -> v
 			volume[0], haze_density, haze_scale_height, top,
 			light_direction.x, light_direction.y, light_direction.z, MAX_DISTANCE,
 			light_color.r * exposure, light_color.g * exposure, light_color.b * exposure, cloud_shadow_strength,
-			cloud_altitude, cloud_top_altitude, haze_anisotropy, 0.0,
-			secondary_direction.x, secondary_direction.y, secondary_direction.z, 0.0,
-			secondary_color.r * exposure, secondary_color.g * exposure, secondary_color.b * exposure, 0.0,
+			cloud_altitude, cloud_top_altitude, haze_anisotropy, airglow_radiance.r * exposure,
+			secondary_direction.x, secondary_direction.y, secondary_direction.z, airglow_radiance.g * exposure,
+			secondary_color.r * exposure, secondary_color.g * exposure, secondary_color.b * exposure, airglow_radiance.b * exposure,
 		])
 		_device.compute_list_set_push_constant(compute_list, view_push, view_push.size())
 		_device.compute_list_dispatch(compute_list, ceili(VIEW_SIZE.x / 8.0), ceili(VIEW_SIZE.y / 8.0), 1)
