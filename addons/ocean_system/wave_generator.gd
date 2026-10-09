@@ -9,6 +9,10 @@ class_name WaveGenerator extends Node
 ## (cascade_newest_output).
 
 const G := 9.81
+## Every wave's phase repeats after this many seconds (spectrum_modulate.glsl rounds the
+## frequencies to multiples of 2 pi / it), so the clock reaches the GPU modulo it and
+## keeps its float32 precision in long sessions.
+const WAVE_REPEAT_SECONDS := 1000.0
 const SPECTRUM_SLOT_COUNT := WaveCascadeParameters.SPECTRUM_SLOT_COUNT
 
 var map_size : int
@@ -161,7 +165,7 @@ func _update_spectrum_slot(compute_list : int, cascade_index : int, slot : int, 
 		pipelines[&'spectrum_compute'].call(context, compute_list, RenderingContext.create_push_constant([params.spectrum_seed.x, params.spectrum_seed.y, params.tile_length.x, params.tile_length.y, alpha, omega, inputs.wind_speed, deg_to_rad(inputs.wind_direction), inputs.water_depth_meters, inputs.swell, inputs.detail, inputs.spread, spectrum_layer]))
 		params.mark_spectrum_slot_clean(slot)
 		context.compute_list_add_barrier(compute_list)
-	pipelines[&'spectrum_modulate'].call(context, compute_list, RenderingContext.create_push_constant([params.tile_length.x, params.tile_length.y, inputs.water_depth_meters, params.time, spectrum_layer, slot]))
+	pipelines[&'spectrum_modulate'].call(context, compute_list, RenderingContext.create_push_constant([params.tile_length.x, params.tile_length.y, inputs.water_depth_meters, fposmod(params.time, WAVE_REPEAT_SECONDS), spectrum_layer, slot]))
 	context.compute_list_add_barrier(compute_list)
 
 	## --- WAVE SPECTRA INVERSE FOURIER TRANSFORM ---

@@ -201,7 +201,7 @@ A footprint without a profile contributes nothing: it shows a configuration
 warning in the editor and reports an error at runtime.
 
 **`HullProfile`** stores the hull's inside in the footprint's local space as a
-small `64 × 32` RGB16F image, treating the hull as mirror-symmetric about
+small `64 × 32` RGBA16F image, treating the hull as mirror-symmetric about
 `center_x`:
 
 - **R:** inner half-width over (length station, height).
@@ -360,6 +360,12 @@ load only take effect in `_ready`, so the mesh and GPU resources are built
 once.
 
 ### Compute pipeline (`wave_generator.gd`, `shaders/compute/`)
+
+Long sessions: every wave's angular frequency is rounded to a multiple of
+`2π / WaveGenerator.WAVE_REPEAT_SECONDS` (1000 s; Tessendorf's repeat time, an
+error under 0.0032 rad/s), so the sea repeats exactly every 1000 s and the clock
+reaches the GPU modulo that period, keeping float32 precision however long the
+game runs (`OceanSystem.time` itself is a double).
 
 Per cascade, per spectrum slot:
 
@@ -552,7 +558,9 @@ Lighting:
   the light's disk (share from the GGX distribution), and the highlight is
   scaled by count / mean: the same mean, broken into glints. Two cell levels
   blend with the footprint, and patterns change `sun_glitter_rate` times a
-  second with a crossfade, so glints twinkle.
+  second with a crossfade, so glints twinkle. Their clock is `OceanSystem`'s
+  (double precision; `glitter_pattern`, `glitter_pattern_blend`), not `TIME`,
+  which wraps every hour.
 - `SPECULAR` is 0, which turns off the engine's sky reflection; the shader
   adds its own as `EMISSION`: procedural sky reflection (Fresnel, blurred by
   the same roughness: the clear sky averaged over the reflection lobe, angular

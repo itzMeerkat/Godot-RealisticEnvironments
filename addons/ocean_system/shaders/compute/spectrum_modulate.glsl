@@ -24,7 +24,7 @@ layout(std430, set = 1, binding = 0) restrict writeonly buffer FFTBuffer {
 layout(push_constant) restrict readonly uniform PushConstants {
 	vec2 tile_length;
 	float depth;
-	float time;
+	float time;          // the wave clock modulo WAVE_REPEAT_SECONDS
 	uint spectrum_layer; // layer of the spectrum texture
 	uint buffer_slot;    // region of the FFT buffer (the spectrum slot)
 };
@@ -45,9 +45,17 @@ vec2 conj_complex(in vec2 x) {
 	return x;
 }
 
+// Wave phases repeat every WAVE_REPEAT_SECONDS (WaveGenerator.WAVE_REPEAT_SECONDS): each
+// angular frequency is rounded to a multiple of 2 pi / WAVE_REPEAT_SECONDS (Tessendorf,
+// "Simulating Ocean Water", 3.4), so the clock can be passed modulo that period and keeps
+// its float precision however long the game runs. The rounding (< 0.0032 rad/s) does not show.
+#define WAVE_REPEAT_SECONDS 1000.0
+
 // Jerry Tessendorf - Source: Simulating Ocean Water
 float dispersion_relation(in float k) {
-	return sqrt(max(G*k*tanh(k*depth), 0.f));
+	float omega = sqrt(max(G*k*tanh(k*depth), 0.f));
+	float omega_step = 2.0*PI / WAVE_REPEAT_SECONDS;
+	return round(omega / omega_step) * omega_step;
 }
 
 #define FFT_DATA(id, layer) (data[(id.z)*map_size*map_size*NUM_SPECTRA*2 + (layer)*map_size*map_size + (id.y)*map_size + (id.x)])

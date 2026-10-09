@@ -17,13 +17,13 @@ const DEBUG_HISTORY_COLOR := Color(0.2, 1.0, 0.45, 1.0)
 
 @export_group("Drive")
 ## InputMap action used for forward throttle.
-@export var move_forward_action: StringName = &"camera_move_forward"
+@export var move_forward_action: StringName = &"boat_forward"
 ## InputMap action used for reverse throttle.
-@export var move_back_action: StringName = &"camera_move_back"
+@export var move_back_action: StringName = &"boat_back"
 ## InputMap action used for left yaw torque.
-@export var turn_left_action: StringName = &"camera_move_left"
+@export var turn_left_action: StringName = &"boat_turn_left"
 ## InputMap action used for right yaw torque.
-@export var turn_right_action: StringName = &"camera_move_right"
+@export var turn_right_action: StringName = &"boat_turn_right"
 ## Forward speed above which forward throttle stops adding force.
 @export_range(0.0, 20.0, 0.01, "or_greater") var max_forward_speed := 5.0
 ## Reverse speed above which reverse throttle stops adding force.
@@ -66,16 +66,22 @@ const DEBUG_HISTORY_COLOR := Color(0.2, 1.0, 0.45, 1.0)
 var _history_points := PackedVector3Array()
 var _history_mesh_instance : MeshInstance3D
 var _history_mesh := ImmediateMesh.new()
+## False when a drive action is missing from the InputMap: the boat then ignores input.
+var _drive_enabled := true
 
 
 func _ready() -> void:
 	_create_history_node()
+	for action in [move_forward_action, move_back_action, turn_left_action, turn_right_action]:
+		if not InputMap.has_action(action):
+			push_error("FloatingBoat %s: InputMap has no action \"%s\" (add it in Project Settings > Input Map, or set the *_action exports); the boat ignores drive input." % [get_path(), action])
+			_drive_enabled = false
 	if autoplay_animation != &"":
 		_play_model_animation()
 
 
 func _physics_process(_delta: float) -> void:
-	if player_controlled:
+	if player_controlled and _drive_enabled:
 		_apply_drive()
 	_apply_roll_righting_torque()
 	_apply_local_angular_damping()

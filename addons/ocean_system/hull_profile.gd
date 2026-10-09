@@ -5,7 +5,8 @@ extends Resource
 ## HullWaterFootprint that baked it. The hull is treated as mirror-symmetric
 ## about x = center_x. Created by HullWaterFootprint.bake_profile().
 ##
-## image is LENGTH_SAMPLES x PROFILE_SAMPLES, FORMAT_RGBH. Column i is the length
+## image is LENGTH_SAMPLES x PROFILE_SAMPLES, FORMAT_RGBAH (a unused, 1: GPUs sample
+## four-channel half floats directly). Column i is the length
 ## station z = min_z + (i + 0.5) / LENGTH_SAMPLES * (max_z - min_z).
 ## - R, row j: inner half-width at height y = min_y + (j + 0.5) / PROFILE_SAMPLES
 ##   * (max_y - min_y). 0 above the hull or below the keel.
@@ -64,7 +65,7 @@ static func build(triangles : PackedVector3Array, inset : float) -> HullProfile:
 		push_error("Hull profile is empty after the inset; reduce bake_inset.")
 		return null
 
-	profile.image = Image.create_empty(LENGTH_SAMPLES, PROFILE_SAMPLES, false, Image.FORMAT_RGBH)
+	profile.image = Image.create_empty(LENGTH_SAMPLES, PROFILE_SAMPLES, false, Image.FORMAT_RGBAH)
 	for column in LENGTH_SAMPLES:
 		var top := 0.0
 		for row in PROFILE_SAMPLES:

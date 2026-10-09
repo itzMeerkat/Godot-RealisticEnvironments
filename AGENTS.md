@@ -282,9 +282,10 @@ before touching its code; this file only records what is easy to get wrong.
   physics tick (`OceanSystem._physics_process`). Its operator is an exact FFT
   of `g·|k|`; `interaction_grid_size` must stay a power of two (the FFT pass
   holds one 1024-wide line in shared memory).
-- `HullProfile` images are RGB16F (half-width, keel, station top). Changing the
-  channels means re-baking every profile: all layers of the profile texture
-  array must share one format.
+- `HullProfile` images are RGBA16F (half-width, keel, station top; a unused):
+  GPUs sample four-channel half floats directly, three-channel ones get padded
+  on the CPU at every load. Changing the channels means re-baking every
+  profile: all layers of the profile texture array must share one format.
 - Planar reflections force the water mesh onto render layer 20
   (`reflection_water_layer`); keep that layer reserved for water. The water
   samples `PlanarReflectionCaptureEffect.texture` (linear HDR, premultiplied,

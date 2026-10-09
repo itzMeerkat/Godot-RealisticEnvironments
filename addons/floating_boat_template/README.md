@@ -111,7 +111,10 @@ the one place allowed to use both).
 - **Drive** — throttle force along the flattened forward axis until
   `max_forward_speed` / `max_reverse_speed`, yaw torque scaled down at low
   speed (`low_speed_turn_factor`), and extra side-slip damping. All forces scale
-  with mass. Uses the `camera_move_*` actions by default.
+  with mass. Reads the `boat_forward`, `boat_back`, `boat_turn_left` and
+  `boat_turn_right` actions by default (`*_action` exports); add them to your
+  project's Input Map. A missing action is reported once and the boat ignores
+  drive input.
 - **Stability** — per-axis local angular damping (`local_angular_damping`, X =
   pitch, Y = yaw, Z = roll) and a roll-righting spring with dead zone and
   torque cap. Zero values disable them.

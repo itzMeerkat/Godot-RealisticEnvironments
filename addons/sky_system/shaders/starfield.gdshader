@@ -46,11 +46,13 @@ float hash13(vec3 p) {
 }
 
 // Unit-variance noise in time: three sines at hashed frequencies (1.5-7 Hz) and phases.
+// The frequencies are whole cycles per SkySystem.STAR_TIME_PERIOD, so the clock wraps
+// without a jump.
 float twinkle_noise(vec3 seed) {
 	float sum = 0.0;
 	for (int i = 0; i < 3; i++) {
 		vec3 s = seed + float(i) * 17.31;
-		float frequency = mix(1.5, 7.0, hash13(s));
+		float frequency = round(mix(1.5, 7.0, hash13(s)) * 3600.0) / 3600.0;
 		sum += sin(6.2831853 * (frequency * time + hash13(s.zxy + 4.7)));
 	}
 	return sum * 0.8164966;

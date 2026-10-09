@@ -11,6 +11,8 @@ const MAX_CASCADES := 8
 const MAX_NEAR_HULLS := 8
 ## Point lights of the sky (the planets) the water reflects as glints; as MAX_SKY_POINTS in water.gdshader.
 const MAX_SKY_POINTS := 8
+## The glint pattern index wraps after this many patterns (about two weeks at 12 a second).
+const GLITTER_PATTERN_PERIOD := 1 << 24
 ## CDLOD mesh: every node is a LOD_GRID x LOD_GRID quad grid; a level-L node is
 ## (mesh_base_cell_size * LOD_GRID * 2^L) meters wide.
 const LOD_GRID := 16
@@ -549,6 +551,9 @@ func _process(delta : float) -> void:
 		_set_water_shader_parameter(&'aerial_observer', sky_source.call(&'get_atmosphere_view_observer'))
 	_update_scene_exposure()
 	time += delta
+	var pattern_time := time * sun_glitter_rate
+	_set_water_shader_parameter(&'glitter_pattern', posmod(int(pattern_time), GLITTER_PATTERN_PERIOD))
+	_set_water_shader_parameter(&'glitter_pattern_blend', pattern_time - floorf(pattern_time))
 	_surface_queries.advance_clock(time, get_physics_process_delta_time())
 	# No generator means no cascades: a flat ocean.
 	if wave_generator != null:

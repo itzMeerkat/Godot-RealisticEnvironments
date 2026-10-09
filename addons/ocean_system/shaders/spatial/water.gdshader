@@ -137,6 +137,10 @@ uniform float sun_specular_strength : hint_range(0.0, 4.0) = 1.0;
 // Stochastic glints (see glitter_scale()): facets per square meter of water, 0 = smooth highlight.
 uniform float sun_glitter_density : hint_range(0.0, 10000000.0) = 1000000.0;
 uniform float sun_glitter_rate : hint_range(0.0, 60.0) = 12.0; // glint patterns per second
+// The glint patterns' clock, kept by OceanSystem in double precision (TIME wraps every
+// hour): the current pattern's index and the crossfade toward the next one (0-1).
+uniform int glitter_pattern = 0;
+uniform float glitter_pattern_blend = 0.0;
 uniform int water_debug_view : hint_range(0, 15) = 0;
 // The camera's exposure (CameraAttributes.exposure_multiplier, or the world's), set
 // every frame by OceanSystem. The reflections are summed pre-exposed, as the sky source's
@@ -1356,8 +1360,7 @@ void fragment() {
 		float fine_size = exp2(fine_level);
 		ivec2 fine_cell = ivec2(floor(UV / fine_size));
 		ivec2 coarse_cell = ivec2(floor(UV / (2.0 * fine_size)));
-		float pattern_time = TIME * sun_glitter_rate;
-		int pattern = int(floor(pattern_time));
+		int pattern = glitter_pattern;
 		int level_key = int(fine_level) * 65536;
 		glitter_random = vec4(
 			hash_uniform(ivec3(fine_cell, level_key + pattern)),
@@ -1365,7 +1368,7 @@ void fragment() {
 			hash_uniform(ivec3(coarse_cell, level_key + 65536 + pattern)),
 			hash_uniform(ivec3(coarse_cell, level_key + 65536 + pattern + 1)));
 		float fine_facets = sun_glitter_density * fine_size * fine_size;
-		glitter_cells = vec4(fine_facets, fine_facets * 4.0, cell_level - fine_level, fract(pattern_time));
+		glitter_cells = vec4(fine_facets, fine_facets * 4.0, cell_level - fine_level, glitter_pattern_blend);
 		if (sky_point_count > 0) {
 			EMISSION += sky_point_glints(world_normal, view_direction_world, effective_reflection_roughness) * light_specular_scale / scene_exposure;
 		}
