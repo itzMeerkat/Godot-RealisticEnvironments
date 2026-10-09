@@ -13,6 +13,8 @@ const MAX_PARTICLES := 2500
 ## Hazes itself through the sky system's atmosphere: transparent surfaces are drawn
 ## after its aerial perspective.
 const SPRAY_SHADER := preload("res://addons/floating_boat_template/bow_spray.gdshader")
+## Gravity (m/s^2) of the slam's stagnation head.
+const SLAM_GRAVITY := 9.81
 ## Elevation range (radians) of slam jets, measured from the side direction.
 const SLAM_JET_ELEVATION_MIN := 0.6
 const SLAM_JET_ELEVATION_MAX := 1.4
@@ -47,8 +49,12 @@ const SLAM_JET_ELEVATION_MAX := 1.4
 @export_range(0.0, 5.0, 0.01, "or_greater") var slam_rearm_time := 0.25
 ## Radius (m) of the splash ring added to the interaction simulation.
 @export_range(0.0, 20.0, 0.01, "or_greater") var slam_ring_radius := 1.5
-## Ring amplitude (m) per m/s of impact speed. 0 adds no ring.
-@export_range(0.0, 1.0, 0.001, "or_greater") var slam_ring_amplitude := 0.04
+## Stagnation coefficient C of the splash: the slam raises the water at the stem
+## by C * v^2 / 2g for impact speed v (as HullWaterFootprint.bow_wave_strength),
+## which then spreads as a ring. 0 adds no ring.
+@export_range(0.0, 2.0, 0.01, "or_greater") var slam_ring_strength := 0.5
+## Cap (m) on that rise.
+@export_range(0.0, 10.0, 0.01, "or_greater") var slam_ring_max_rise := 1.5
 
 @export_group("Look")
 ## Particle lifetime in seconds.
@@ -143,8 +149,9 @@ func _slam(point: Vector3, impact_speed: float) -> void:
 		var elevation := randf_range(SLAM_JET_ELEVATION_MIN, SLAM_JET_ELEVATION_MAX)
 		var direction := (side * cos(elevation) + Vector3.UP * sin(elevation) + forward * randf_range(-0.1, 0.5)).normalized()
 		_emit(point + side * randf_range(0.0, emission_half_width), inherited + direction * jet_speed * randf_range(0.35, 1.0))
-	if slam_ring_amplitude > 0.0 and water.can_add_impulses():
-		water.add_impulse(point, slam_ring_radius, slam_ring_amplitude * impact_speed)
+	if slam_ring_strength > 0.0 and water.can_add_impulses():
+		var rise := minf(slam_ring_strength * impact_speed * impact_speed / (2.0 * SLAM_GRAVITY), slam_ring_max_rise)
+		water.add_impulse(point, slam_ring_radius, rise)
 	slammed.emit(impact_speed, point)
 
 

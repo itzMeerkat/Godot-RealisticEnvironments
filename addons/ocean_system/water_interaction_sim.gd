@@ -129,8 +129,8 @@ func _init(device : RenderingDevice, size : int, meters_per_cell : float) -> voi
 	_operator_set = _create_set('iwave_operator', [RenderingContext.image_uniform(0, _spectrum)])
 
 
-## Queues a splash: a Gaussian bump of the given radius and amplitude (m) added
-## to the wave state on the next step.
+## Queues a splash: a Gaussian displacement of the given radius and amplitude (m),
+## at rest, added to the wave state on the next step (iwave_impulse.glsl).
 ## At most MAX_IMPULSES per step; more are dropped (dropped_impulse_count).
 func add_impulse(position : Vector3, radius : float, amplitude : float) -> void:
 	if radius <= 0.0:

@@ -29,7 +29,7 @@ water.release_query(self)
 | `get_query_age(result) -> float` | Seconds from the result's dispatch to now (the start of the current physics tick inside one), for `WaterSurfaceSample.extrapolated_height()`. |
 | `release_query(owner)` | Forget an owner. |
 | `get_clock() -> float` | The clock `dispatch_time` is measured on. |
-| `can_add_impulses()`, `add_impulse(position, radius, amplitude)` | Splashes in the simulation's dynamic waves, when it runs them. |
+| `can_add_impulses()`, `add_impulse(position, radius, amplitude)` | Splashes in the simulation's dynamic waves, when it runs them: the surface is raised by a Gaussian of `amplitude` meters at rest and spreads as a ring, independent of the tick rate. |
 
 `WaterSurfaceQueryResult` holds `points`, `samples` (`samples[i]` answers
 `points[i]`) and `dispatch_time`. `WaterSurfaceSample` holds the surface

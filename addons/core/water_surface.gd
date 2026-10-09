@@ -67,6 +67,8 @@ static func find(node : Node) -> WaterSurface:
 ## camera is running).
 @abstract func can_add_impulses() -> bool
 
-## Queues a splash: a Gaussian bump of radius meters and amplitude meters at
-## world_position. Ignored when can_add_impulses() is false.
+## Queues a splash: raises the surface at world_position by a Gaussian of radius
+## meters and amplitude meters (negative lowers it), at rest; it then spreads as
+## a ring of waves. Independent of the simulation's step length. Ignored when
+## can_add_impulses() is false.
 @abstract func add_impulse(world_position : Vector3, radius : float, amplitude : float) -> void

@@ -255,7 +255,9 @@ textures; the bow-wave height is the same.
 What it produces:
 - Hulls with a `HullWaterFootprint` push water, and moving, heaving or rolling
   hulls radiate Kelvin wakes and bow waves.
-- `WaterSurface.add_impulse(position, radius, amplitude)` queues a splash.
+- `WaterSurface.add_impulse(position, radius, amplitude)` queues a splash: a
+  Gaussian displacement added to both `η_n` and `η_{n−1}` (raised at rest, so
+  the result does not depend on the tick length), which spreads as a ring.
 - The water shader adds the simulated height, slope and foam.
 - Surface queries include it outside hulls for bodies that make no waves
   themselves, so floating debris rides wakes and splashes.

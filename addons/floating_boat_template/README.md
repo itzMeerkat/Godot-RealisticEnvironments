@@ -93,7 +93,10 @@ Spray at the stem. Every physics tick it queries the water at its own position
   `slam_jet_ratio` (2.5) × the impact speed (capped at `slam_max_jet_speed`),
   up and out to both sides of the bow, `slam_particles_per_speed` particles
   per m/s, and a splash ring in the interaction simulation
-  (`WaterSurface.add_impulse`). Jets rise up to `jet² / 2g`: a 4 m/s nose-dive
+  (`WaterSurface.add_impulse`): the water at the stem is raised by the
+  stagnation head `slam_ring_strength × v² / 2g` (capped at
+  `slam_ring_max_rise`; 0.4 m for a 4 m/s slam at the default 0.5) over
+  `slam_ring_radius`, and spreads as a ring. Jets rise up to `jet² / 2g`: a 4 m/s nose-dive
   throws spray ~5 m up, a 6 m/s one ~10 m, well above the caravel's 3 m deck.
   Emits `slammed(impact_speed, position)`.
 

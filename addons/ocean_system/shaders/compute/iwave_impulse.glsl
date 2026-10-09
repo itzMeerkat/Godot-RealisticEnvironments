@@ -1,8 +1,11 @@
 #[compute]
 #version 460
 /**
- * Adds queued point impulses (splashes) to the wave state. Each impulse adds a
- * Gaussian to eta_n only, which acts as an instant vertical velocity kick.
+ * Adds queued point impulses (splashes) to the wave state. Each impulse raises
+ * the surface by a Gaussian at rest: it is added to eta_n and eta_{n-1} alike,
+ * so the step sees a displacement with no velocity, which then relaxes into a
+ * ring of waves. Independent of the step length (adding it to eta_n alone
+ * would be a velocity kick of amplitude / dt, stronger at higher tick rates).
  */
 
 #include "iwave_common.glslinc"
@@ -38,6 +41,6 @@ void main() {
 		return;
 	}
 	vec4 value = imageLoad(state, texel);
-	value.x += added;
+	value.xy += vec2(added);
 	imageStore(state, texel, value);
 }
