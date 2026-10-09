@@ -163,12 +163,12 @@ uniform sampler2D scene_depth : hint_depth_texture, filter_nearest, repeat_disab
 uniform sampler2D scene_normal_roughness : hint_normal_roughness_texture, filter_nearest, repeat_disable;
 uniform bool use_bicubic_normals = true;
 uniform int fragment_cascade_limit : hint_range(1, 8) = 3;
-// CDLOD mesh (OceanSystem._update_lod_grid). Off for the editor's preview plane.
+// CDLOD mesh (OceanLodGrid). Off for the editor's preview plane.
 uniform bool lod_grid_enabled = false;
 uniform float lod_ranges[MAX_LOD_LEVELS];       // beyond range(L), level-L vertices sit on the level L + 1 lattice
 uniform float lod_morph_starts[MAX_LOD_LEVELS]; // level-L vertices morph between this and range(L)
 uniform int lod_top_level = 0;
-// Hulls near the camera (see OceanSystem._update_hull_cutouts and HullProfile).
+// Hulls near the camera (see OceanHulls.update() and HullProfile).
 uniform int near_hull_count = 0;
 uniform vec4 near_hull_world_to_local_x[MAX_NEAR_HULLS]; // rows of the world-to-hull affine transform: xyz basis row, w origin
 uniform vec4 near_hull_world_to_local_y[MAX_NEAR_HULLS];
@@ -334,7 +334,7 @@ void vertex() {
 		// neighbours, i.e. onto the next level's lattice, and on through coarser
 		// levels. Positions then depend only on the world position, so nodes of
 		// different levels meet without cracks. Nodes never reach more than two
-		// levels beyond their own (OceanSystem.LOD_RANGE_FACTOR).
+		// levels beyond their own (OceanLodGrid.LOD_RANGE_FACTOR).
 		for (int k = level; k < min(level + 2, lod_top_level); ++k) {
 			float morph = clamp((camera_distance - lod_morph_starts[k]) / (lod_ranges[k] - lod_morph_starts[k]), 0.0, 1.0);
 			if (morph <= 0.0)

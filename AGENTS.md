@@ -174,8 +174,8 @@ before touching its code; this file only records what is easy to get wrong.
 ## Ocean system invariants
 - `OceanSystem` renders a CDLOD quadtree at runtime: one multimesh of 16 × 16
   grid nodes set as the instance base through the RenderingServer, selected
-  every frame around the active camera (`_update_lod_grid`). The vertex shader
-  morphs vertices onto coarser lattices; `LOD_RANGE_FACTOR` must stay above
+  every frame around the active camera (`OceanLodGrid.update()`). The vertex shader
+  morphs vertices onto coarser lattices; `OceanLodGrid.LOD_RANGE_FACTOR` must stay above
   ~2.8 or nodes two levels apart touch and crack. The water is drawn on the
   earth's curve (`EARTH_RADIUS`, vertex drop `d²/2R`, normal tilted by `d/R`)
   out to the horizon, capped by the camera's far plane; keep the cameras' far

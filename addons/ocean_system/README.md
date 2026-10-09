@@ -439,7 +439,7 @@ first with the context), and exact-size push-constant packing.
 CDLOD (Strugar, *Continuous Distance-Dependent Level of Detail*, 2010). The
 ocean is a quadtree of nodes on a fixed world grid; every node is the same
 16 × 16 quad grid, `mesh_base_cell_size × 16 × 2^level` meters wide. Each frame
-`_update_lod_grid()` selects nodes around the active camera:
+`OceanLodGrid.update()` (`ocean_lod_grid.gd`) selects nodes around the active camera:
 
 - start from top-level nodes covering the radius out to the horizon (below),
   capped by the camera's far plane;
@@ -746,6 +746,8 @@ Godot doesn't track include dependencies: reimport `surface_query.glsl` and
 | File | Role |
 | --- | --- |
 | `ocean_system.gd` / `.tscn` | `OceanSystem` node and default setup |
+| `ocean_lod_grid.gd` | `OceanLodGrid`: the runtime CDLOD multimesh and its node selection |
+| `ocean_hulls.gd` | `OceanHulls`: hull profile texture array, near-hull cutouts, SimHull records |
 | `wave_generator.gd` | `WaveGenerator` compute pipeline |
 | `wave_cascade_parameters.gd` | `WaveCascadeParameters` resource |
 | `ocean_surface_queries.gd` | `OceanSurfaceQueries`: the ocean's `WaterSurface`, async query batching and readback |

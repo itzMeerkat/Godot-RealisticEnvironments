@@ -8,28 +8,10 @@ const WATER_MAT := preload('res://addons/ocean_system/mat_water.tres')
 const EDITOR_WATER_PREVIEW_MESH := preload('res://addons/ocean_system/editor_water_preview_mesh.tres')
 const OCEAN_REFLECTION_RENDERER := preload('res://addons/ocean_system/ocean_reflection_renderer.gd')
 const MAX_CASCADES := 8
-const MAX_NEAR_HULLS := 8
 ## Point lights of the sky (the planets) the water reflects as glints; as MAX_SKY_POINTS in water.gdshader.
 const MAX_SKY_POINTS := 8
 ## The glint pattern index wraps after this many patterns (about two weeks at 12 a second).
 const GLITTER_PATTERN_PERIOD := 1 << 24
-## CDLOD mesh: every node is a LOD_GRID x LOD_GRID quad grid; a level-L node is
-## (mesh_base_cell_size * LOD_GRID * 2^L) meters wide.
-const LOD_GRID := 16
-## range(L) = LOD_RANGE_FACTOR * node size(L): level-L vertices morph onto the
-## level L + 1 lattice up to that camera distance. Above ~2.8 a node never
-## borders one two levels coarser, which the shader's morph relies on.
-const LOD_RANGE_FACTOR := 3.0
-## Morphing toward the next level starts this far between range(L - 1) and range(L).
-const LOD_MORPH_START := 0.66
-const MAX_LOD_LEVELS := 16
-const MAX_LOD_NODES := 1024
-## 3x4 transform + custom data per multimesh instance.
-const LOD_INSTANCE_FLOATS := 16
-## Room for displaced waves around a node, for frustum culling (m).
-const LOD_WAVE_MARGIN := 12.0
-## Frustum planes the node selection tests (all but the far plane).
-const LOD_FRUSTUM_PLANES := 5
 ## The water is drawn on a sphere of this radius (meters) touching the camera's
 ## sea-level point (water.gdshader, EARTH_RADIUS), so it ends at a real horizon.
 ## Only the drawing: surface queries, buoyancy and the simulation stay flat.
@@ -475,43 +457,13 @@ var _cascade_frame_times := PackedFloat64Array()
 var _cascade_previous_frame_times := PackedFloat64Array()
 var _cascade_frame_counts := PackedInt32Array()
 var _reflection_renderer : OceanReflectionRenderer
-var _hull_profiles : Texture2DArray
-## Instance ids of the profiles in _hull_profiles, in layer order.
-var _hull_profile_ids := PackedInt64Array()
+## The CDLOD mesh (runtime only; in the editor it only sends the uniforms) and the
+## hull footprints' cutouts and simulation records.
+var _lod_grid := OceanLodGrid.new(_set_water_shader_parameter)
+var _hulls := OceanHulls.new(_set_water_shader_parameter)
 ## Null while interaction_enabled is off, in the editor, or before _ready.
 var _interaction : WaterInteractionSim
 var _interaction_texture := Texture2DRD.new()
-## Runtime mesh (see _setup_water_mesh); unused in the editor.
-var _lod_grid_mesh : ArrayMesh
-var _lod_multimesh : RID
-var _lod_buffer := PackedFloat32Array()
-var _lod_uploaded_buffer := PackedFloat32Array()
-var _lod_node_count := 0
-## range(L) per level, and where morphing toward level L + 1 starts.
-var _lod_ranges := PackedFloat32Array()
-var _lod_morph_starts := PackedFloat32Array()
-var _lod_top_level := 0
-## mesh_base_cell_size the ranges were built for.
-var _lod_ranges_key := 0.0
-## Radius of the water drawn this frame (see _update_lod_grid()).
-var _lod_radius := 0.0
-var _lod_camera_position := Vector3.ZERO
-## The inputs of the last selection (_update_lod_grid()).
-var _lod_selection_key := []
-## Set once the node budget was exceeded, so it is reported once.
-var _lod_budget_reported := false
-## This frame's selection inputs as plain floats (_select_lod_node() reads them
-## a few thousand times a frame).
-var _lod_camera_x := 0.0
-var _lod_camera_z := 0.0
-var _lod_water_y := 0.0
-## Camera height above the water, squared.
-var _lod_height_squared := 0.0
-var _lod_radius_squared := 0.0
-## The camera's frustum planes except the far one (nothing within _lod_radius
-## reaches it): normal xyz, d (outward).
-var _lod_planes := PackedFloat32Array()
-
 func _init() -> void:
 	rng.set_seed(1234) # This seed gives big waves!
 
@@ -543,8 +495,8 @@ func _ready() -> void:
 
 func _process(delta : float) -> void:
 	if not Engine.is_editor_hint():
-		_update_lod_grid()
-	_update_hull_cutouts()
+		_lod_grid.update(get_viewport().get_camera_3d(), global_position, mesh_base_cell_size, get_path())
+	_hulls.update(get_tree(), get_viewport().get_camera_3d(), hull_cutout_distance)
 	if _sky_source_polled or _sky_lighting_dirty:
 		_update_sky_lighting_shader_parameters()
 	if _aerial_perspective_enabled:
@@ -582,13 +534,12 @@ func _push_all_shader_parameters() -> void:
 	_set_water_shader_parameter(&'foam_detail_tile_size', foam_detail_tile_size)
 	_update_sky_shading_static_parameters()
 	_update_sky_lighting_shader_parameters()
-	_lod_ranges_key = 0.0
-	_update_lod_ranges()
+	_lod_grid.set_cell_size(mesh_base_cell_size, true)
 	_update_scales_uniform()
 	_bind_wave_textures()
 	_update_frame_blend_uniform()
-	_hull_profile_ids = PackedInt64Array()
-	_update_hull_cutouts()
+	_hulls.reset()
+	_hulls.update(get_tree(), get_viewport().get_camera_3d(), hull_cutout_distance)
 	_update_planar_reflection_settings()
 	_push_interaction_shader_parameters()
 
@@ -811,8 +762,8 @@ func _step_interaction(delta : float) -> void:
 	# The window follows the active camera; without one there is nothing to center on.
 	if camera == null:
 		return
-	var hull_data := _pack_interaction_hulls(camera.global_position)
-	var hull_profiles_rd := RenderingServer.texture_get_rd_texture(_hull_profiles.get_rid()) if _hull_profiles != null else RID()
+	var hull_data := _hulls.pack_interaction_hulls(get_tree(), camera.global_position, _interaction.get_half_extent() * sqrt(2.0))
+	var hull_profiles_rd := RenderingServer.texture_get_rd_texture(_hulls.profiles_texture.get_rid()) if _hulls.profiles_texture != null else RID()
 	@warning_ignore("integer_division")
 	_interaction.step(
 		delta,
@@ -828,43 +779,6 @@ func _step_interaction(delta : float) -> void:
 	)
 	_set_water_shader_parameter(&'interaction_window', _get_interaction_window())
 
-## SimHull records (see iwave_pressure.glsl) for up to WaterInteractionSim.MAX_HULLS
-## wake-enabled hulls that reach into the simulation window, nearest first.
-func _pack_interaction_hulls(camera_position : Vector3) -> PackedFloat32Array:
-	var reach := _interaction.get_half_extent() * sqrt(2.0)
-	var candidates : Array[Dictionary] = []
-	for node in get_tree().get_nodes_in_group(&"ocean_hull"):
-		var footprint := node as HullWaterFootprint
-		if not _pushes_water(footprint):
-			continue
-		var sphere := footprint.get_world_bounding_sphere()
-		var distance := Vector2(sphere.x - camera_position.x, sphere.z - camera_position.z).length() - sphere.w
-		if distance <= reach:
-			candidates.push_back({"distance": distance, "footprint": footprint, "sphere": sphere})
-	candidates.sort_custom(func(a : Dictionary, b : Dictionary) -> bool: return a["distance"] < b["distance"])
-
-	var data := PackedFloat32Array()
-	for i in mini(candidates.size(), WaterInteractionSim.MAX_HULLS):
-		var footprint : HullWaterFootprint = candidates[i]["footprint"]
-		var sphere : Vector4 = candidates[i]["sphere"]
-		var profile := footprint.profile
-		var center := Vector3(sphere.x, sphere.y, sphere.z)
-		var center_velocity := footprint.get_point_velocity(center)
-		for row in _get_world_to_local_rows(footprint):
-			_append_vector4(data, row)
-		_append_vector4(data, Vector4(sphere.x, sphere.z, sphere.w, sphere.y))
-		_append_vector4(data, Vector4(profile.min_z, profile.min_y, 1.0 / (profile.max_z - profile.min_z), 1.0 / (profile.max_y - profile.min_y)))
-		_append_vector4(data, Vector4(float(_hull_profile_ids.find(profile.get_instance_id())), profile.center_x, 1.0 / profile.max_half_width, 0.0))
-		_append_vector4(data, Vector4(footprint.wake_strength, footprint.wake_edge_softness, footprint.bow_wave_strength, footprint.bow_wave_max_rise))
-		_append_vector4(data, Vector4(center_velocity.x, center_velocity.y, center_velocity.z, 0.0))
-		_append_vector4(data, Vector4(footprint.angular_velocity.x, footprint.angular_velocity.y, footprint.angular_velocity.z, 0.0))
-	return data
-
-## Whether a footprint forces the interaction simulation (when near enough).
-## Footprints without a baked profile report their own error and contribute nothing.
-func _pushes_water(footprint : HullWaterFootprint) -> bool:
-	return footprint.profile != null and footprint.wake_enabled and footprint.is_visible_in_tree()
-
 ## Whether body carries a footprint that pushes water. Every query owner asks every
 ## tick, so the bodies are collected once per physics tick (or frame, outside physics).
 func _makes_waves(body : PhysicsBody3D) -> bool:
@@ -877,26 +791,9 @@ func _makes_waves(body : PhysicsBody3D) -> bool:
 		for node in get_tree().get_nodes_in_group(&"ocean_hull"):
 			var footprint := node as HullWaterFootprint
 			var footprint_body := OceanSurfaceQueries.find_physics_body(footprint)
-			if _pushes_water(footprint) and footprint_body != null:
+			if OceanHulls.pushes_water(footprint) and footprint_body != null:
 				_wave_making_bodies[footprint_body.get_instance_id()] = true
 	return _wave_making_bodies.has(body.get_instance_id())
-
-## Rows of the footprint's world-to-local affine transform: xyz = basis row, w = origin.
-func _get_world_to_local_rows(footprint : HullWaterFootprint) -> Array[Vector4]:
-	var world_to_local := footprint.global_transform.affine_inverse()
-	var inverse_basis := world_to_local.basis
-	var origin := world_to_local.origin
-	return [
-		Vector4(inverse_basis.x.x, inverse_basis.y.x, inverse_basis.z.x, origin.x),
-		Vector4(inverse_basis.x.y, inverse_basis.y.y, inverse_basis.z.y, origin.y),
-		Vector4(inverse_basis.x.z, inverse_basis.y.z, inverse_basis.z.z, origin.z),
-	]
-
-func _append_vector4(data : PackedFloat32Array, value : Vector4) -> void:
-	data.push_back(value.x)
-	data.push_back(value.y)
-	data.push_back(value.z)
-	data.push_back(value.w)
 
 func _update_sky_shading_static_parameters() -> void:
 	_set_water_shader_parameter(&'water_absorption', water_absorption)
@@ -1024,209 +921,14 @@ func _on_sky_lighting_changed() -> void:
 	_sky_lighting_dirty = true
 
 ## The editor shows the shared preview plane. At runtime the ocean is a CDLOD
-## quadtree of grid nodes drawn as one multimesh, set directly as this instance's
-## base through the RenderingServer, so no generated mesh is ever saved.
+## quadtree of grid nodes (OceanLodGrid) drawn as one multimesh, set directly as this
+## instance's base through the RenderingServer, so no generated mesh is ever saved.
 func _setup_water_mesh() -> void:
 	if Engine.is_editor_hint():
 		mesh = EDITOR_WATER_PREVIEW_MESH
 		extra_cull_margin = maxf(256.0, EDITOR_WATER_PREVIEW_MESH.size.length() * 0.5)
 		return
-	_lod_grid_mesh = _create_lod_grid_mesh()
-	_lod_multimesh = RenderingServer.multimesh_create()
-	RenderingServer.multimesh_set_mesh(_lod_multimesh, _lod_grid_mesh.get_rid())
-	RenderingServer.multimesh_allocate_data(_lod_multimesh, MAX_LOD_NODES, RenderingServer.MULTIMESH_TRANSFORM_3D, false, true)
-	RenderingServer.multimesh_set_visible_instances(_lod_multimesh, 0)
-	RenderingServer.instance_set_base(get_instance(), _lod_multimesh)
-	_lod_buffer.resize(MAX_LOD_NODES * LOD_INSTANCE_FLOATS)
-	# Identity instance transforms (the shader places the vertices): 3x4 rows.
-	for i in MAX_LOD_NODES:
-		_lod_buffer[i * LOD_INSTANCE_FLOATS] = 1.0
-		_lod_buffer[i * LOD_INSTANCE_FLOATS + 5] = 1.0
-		_lod_buffer[i * LOD_INSTANCE_FLOATS + 10] = 1.0
-
-## LOD_GRID x LOD_GRID quads; UV holds the lattice coordinates (0..LOD_GRID).
-func _create_lod_grid_mesh() -> ArrayMesh:
-	var vertices := PackedVector3Array()
-	var normals := PackedVector3Array()
-	var uvs := PackedVector2Array()
-	var indices := PackedInt32Array()
-	for z in LOD_GRID + 1:
-		for x in LOD_GRID + 1:
-			vertices.push_back(Vector3(x, 0.0, z))
-			normals.push_back(Vector3.UP)
-			uvs.push_back(Vector2(x, z))
-	for z in LOD_GRID:
-		for x in LOD_GRID:
-			var a := z * (LOD_GRID + 1) + x
-			var b := a + 1
-			var c := a + LOD_GRID + 1
-			var d := c + 1
-			indices.append_array([a, b, c, b, d, c])
-	var arrays := []
-	arrays.resize(Mesh.ARRAY_MAX)
-	arrays[Mesh.ARRAY_VERTEX] = vertices
-	arrays[Mesh.ARRAY_NORMAL] = normals
-	arrays[Mesh.ARRAY_TEX_UV] = uvs
-	arrays[Mesh.ARRAY_INDEX] = indices
-	var grid_mesh := ArrayMesh.new()
-	grid_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-	return grid_mesh
-
-## Selects the CDLOD nodes around the active camera and uploads them as multimesh
-## instances (custom data: node origin x, z, vertex spacing, level).
-func _update_lod_grid() -> void:
-	var camera := get_viewport().get_camera_3d()
-	# No active camera yet (e.g. while a scene is loading): draw nothing.
-	if camera == null:
-		RenderingServer.multimesh_set_visible_instances(_lod_multimesh, 0)
-		_lod_selection_key = []
-		return
-	_update_lod_ranges()
-	# Camera.get_frustum() order: near, far, left, top, right, bottom.
-	var frustum := camera.get_frustum()
-	# Same view and water as last frame: the selection would be the same.
-	var selection_key := [frustum, camera.global_position, global_position.y, mesh_base_cell_size]
-	if selection_key == _lod_selection_key:
-		return
-	_lod_selection_key = selection_key
-	_lod_camera_position = camera.global_position
-	_lod_camera_x = _lod_camera_position.x
-	_lod_camera_z = _lod_camera_position.z
-	_lod_water_y = global_position.y
-	_lod_height_squared = (_lod_camera_position.y - _lod_water_y) * (_lod_camera_position.y - _lod_water_y)
-	frustum = frustum.duplicate()
-	frustum.remove_at(1)
-	_lod_planes.resize(LOD_FRUSTUM_PLANES * 4)
-	for i in LOD_FRUSTUM_PLANES:
-		var plane := frustum[i]
-		_lod_planes[i * 4] = plane.normal.x
-		_lod_planes[i * 4 + 1] = plane.normal.y
-		_lod_planes[i * 4 + 2] = plane.normal.z
-		_lod_planes[i * 4 + 3] = plane.d
-	_lod_node_count = 0
-	# Out to the horizon: the farthest point of the sphere visible from the camera's
-	# height, plus how far beyond it a wave crest LOD_WAVE_MARGIN high still shows.
-	# Nothing past the far plane is drawn anyway.
-	var height := maxf(_lod_camera_position.y - _lod_water_y, 0.0)
-	_lod_radius = minf(sqrt(2.0 * EARTH_RADIUS * height) + sqrt(2.0 * EARTH_RADIUS * LOD_WAVE_MARGIN), camera.far)
-	_lod_radius_squared = _lod_radius * _lod_radius
-	var new_top_level := _get_lod_top_level(_lod_radius)
-	if new_top_level != _lod_top_level:
-		_lod_top_level = new_top_level
-		_set_water_shader_parameter(&'lod_top_level', _lod_top_level)
-	var top_size := mesh_base_cell_size * LOD_GRID * float(1 << _lod_top_level)
-	var first := ((Vector2(_lod_camera_position.x, _lod_camera_position.z) - Vector2.ONE * _lod_radius) / top_size).floor()
-	var root_count := int(ceil(2.0 * _lod_radius / top_size)) + 1
-	for iz in root_count:
-		for ix in root_count:
-			_select_lod_node((first.x + ix) * top_size, (first.y + iz) * top_size, top_size, _lod_top_level, (1 << LOD_FRUSTUM_PLANES) - 1)
-	if _lod_buffer != _lod_uploaded_buffer:
-		RenderingServer.multimesh_set_buffer(_lod_multimesh, _lod_buffer)
-		_lod_uploaded_buffer = _lod_buffer.duplicate()
-	RenderingServer.multimesh_set_visible_instances(_lod_multimesh, _lod_node_count)
-	# Instance transforms are identity, so culling needs explicit bounds (local space).
-	var center := to_local(_lod_camera_position)
-	var drop := _get_curvature_drop(_lod_radius)
-	RenderingServer.multimesh_set_custom_aabb(_lod_multimesh, AABB(Vector3(center.x - _lod_radius, -LOD_WAVE_MARGIN - drop, center.z - _lod_radius), Vector3(2.0 * _lod_radius, 2.0 * LOD_WAVE_MARGIN + drop, 2.0 * _lod_radius)))
-
-## Splits a node while it comes within the next finer level's range. A node may
-## end up drawn at a finer level than its distance needs; its vertices are then
-## fully morphed, which matches the coarser neighbours exactly.
-##
-## Runs for a few hundred nodes every frame, so it works on plain floats.
-## plane_mask holds the frustum planes the node's bounds may still cross: a
-## child's bounds lie inside its parent's, so planes the parent is fully inside
-## are skipped for all its descendants.
-func _select_lod_node(origin_x : float, origin_z : float, size : float, level : int, plane_mask : int) -> void:
-	var nearest_dx := clampf(_lod_camera_x, origin_x, origin_x + size) - _lod_camera_x
-	var nearest_dz := clampf(_lod_camera_z, origin_z, origin_z + size) - _lod_camera_z
-	var nearest_horizontal_squared := nearest_dx * nearest_dx + nearest_dz * nearest_dz
-	if nearest_horizontal_squared > _lod_radius_squared:
-		return
-	if plane_mask != 0:
-		# Bounds lowered by the curvature between the node's nearest and farthest
-		# points (_get_curvature_drop(), inlined).
-		var farthest_x := maxf(absf(_lod_camera_x - origin_x), absf(_lod_camera_x - origin_x - size))
-		var farthest_z := maxf(absf(_lod_camera_z - origin_z), absf(_lod_camera_z - origin_z - size))
-		var min_x := origin_x - LOD_WAVE_MARGIN
-		var max_x := origin_x + size + LOD_WAVE_MARGIN
-		var min_y := _lod_water_y - LOD_WAVE_MARGIN - (farthest_x * farthest_x + farthest_z * farthest_z) * 0.5 / EARTH_RADIUS
-		var max_y := _lod_water_y + LOD_WAVE_MARGIN - nearest_horizontal_squared * 0.5 / EARTH_RADIUS
-		var min_z := origin_z - LOD_WAVE_MARGIN
-		var max_z := origin_z + size + LOD_WAVE_MARGIN
-		for plane in LOD_FRUSTUM_PLANES:
-			if plane_mask & (1 << plane) == 0:
-				continue
-			var i := plane * 4
-			var normal_x := _lod_planes[i]
-			var normal_y := _lod_planes[i + 1]
-			var normal_z := _lod_planes[i + 2]
-			var d := _lod_planes[i + 3]
-			# Planes point outward: the corner least along the normal is the
-			# innermost, the one most along it the outermost.
-			var innermost := normal_x * (max_x if normal_x < 0.0 else min_x) + normal_y * (max_y if normal_y < 0.0 else min_y) + normal_z * (max_z if normal_z < 0.0 else min_z)
-			if innermost > d:
-				return
-			var outermost := normal_x * (min_x if normal_x < 0.0 else max_x) + normal_y * (min_y if normal_y < 0.0 else max_y) + normal_z * (min_z if normal_z < 0.0 else max_z)
-			if outermost <= d:
-				plane_mask &= ~(1 << plane)
-	# The shader measures morph distances to the undisplaced vertex; this is the
-	# nearest such point of the node, so it never overestimates them.
-	if level > 0:
-		var finer_range := _lod_ranges[level - 1]
-		if nearest_horizontal_squared + _lod_height_squared < finer_range * finer_range:
-			var half := size * 0.5
-			_select_lod_node(origin_x, origin_z, half, level - 1, plane_mask)
-			_select_lod_node(origin_x + half, origin_z, half, level - 1, plane_mask)
-			_select_lod_node(origin_x, origin_z + half, half, level - 1, plane_mask)
-			_select_lod_node(origin_x + half, origin_z + half, half, level - 1, plane_mask)
-			return
-	if _lod_node_count >= MAX_LOD_NODES:
-		# The rest of the frame's nodes are dropped (holes in the far water).
-		if not _lod_budget_reported:
-			_lod_budget_reported = true
-			push_error("OceanSystem %s: more than %d LOD nodes needed; raise mesh_base_cell_size or lower the camera's far plane." % [get_path(), MAX_LOD_NODES])
-		return
-	var offset := _lod_node_count * LOD_INSTANCE_FLOATS + 12
-	_lod_buffer[offset] = origin_x
-	_lod_buffer[offset + 1] = origin_z
-	_lod_buffer[offset + 2] = size / LOD_GRID
-	_lod_buffer[offset + 3] = level
-	_lod_node_count += 1
-
-## How far below the camera's tangent plane the drawn water is at a horizontal
-## distance (meters), as the shader's earth_curvature_drop().
-func _get_curvature_drop(distance : float) -> float:
-	return distance * distance * 0.5 / EARTH_RADIUS
-
-## The coarsest level whose range covers the radius.
-func _get_lod_top_level(radius : float) -> int:
-	var base_range := LOD_RANGE_FACTOR * mesh_base_cell_size * LOD_GRID
-	var level := 0
-	while base_range * float(1 << level) < radius and level < MAX_LOD_LEVELS - 1:
-		level += 1
-	return level
-
-## Rebuilds the level ranges when mesh_base_cell_size changed.
-func _update_lod_ranges() -> void:
-	if mesh_base_cell_size == _lod_ranges_key:
-		return
-	_lod_ranges_key = mesh_base_cell_size
-	var base_range := LOD_RANGE_FACTOR * mesh_base_cell_size * LOD_GRID
-	_lod_ranges.resize(MAX_LOD_LEVELS)
-	_lod_morph_starts.resize(MAX_LOD_LEVELS)
-	for level in MAX_LOD_LEVELS:
-		var level_range := base_range * float(1 << level)
-		var previous_range := 0.0 if level == 0 else _lod_ranges[level - 1]
-		_lod_ranges[level] = level_range
-		_lod_morph_starts[level] = lerpf(previous_range, level_range, LOD_MORPH_START)
-	_push_lod_grid_shader_parameters()
-
-func _push_lod_grid_shader_parameters() -> void:
-	_set_water_shader_parameter(&'lod_grid_enabled', not Engine.is_editor_hint())
-	_set_water_shader_parameter(&'lod_ranges', _lod_ranges)
-	_set_water_shader_parameter(&'lod_morph_starts', _lod_morph_starts)
-	_set_water_shader_parameter(&'lod_top_level', _lod_top_level)
+	_lod_grid.attach(get_instance())
 
 func _update_planar_reflection_settings() -> void:
 	# Reflections never render in the editor, and the renderer is only created once enabled.
@@ -1247,98 +949,6 @@ func _update_planar_reflection_settings() -> void:
 	_reflection_renderer.clip_below_water = reflection_clip_below_water
 	_reflection_renderer.clip_bias = reflection_clip_bias
 	_reflection_renderer.apply(self, water_level)
-
-
-func _update_hull_cutouts() -> void:
-	var footprints : Array[HullWaterFootprint] = []
-	for node in get_tree().get_nodes_in_group(&"ocean_hull"):
-		var footprint := node as HullWaterFootprint
-		# Footprints without a baked profile report their own error and contribute nothing.
-		if footprint.profile != null:
-			footprints.push_back(footprint)
-	_update_hull_profile_array(footprints)
-
-	var near : Array[Dictionary] = []
-	var camera := get_viewport().get_camera_3d()
-	# Without an active camera there is no "near"; nothing is cut out.
-	if camera != null:
-		for footprint in footprints:
-			if not footprint.cutout_enabled or not footprint.is_visible_in_tree():
-				continue
-			var sphere := footprint.get_world_bounding_sphere()
-			var distance := maxf(camera.global_position.distance_to(Vector3(sphere.x, sphere.y, sphere.z)) - sphere.w, 0.0)
-			if distance <= hull_cutout_distance:
-				near.push_back({"distance": distance, "footprint": footprint, "sphere": sphere})
-		near.sort_custom(func(a : Dictionary, b : Dictionary) -> bool: return a["distance"] < b["distance"])
-
-	var count := mini(near.size(), MAX_NEAR_HULLS)
-	_set_water_shader_parameter(&'near_hull_count', count)
-	# The shader reads no hull data while the count is 0: keep the last arrays.
-	if count == 0:
-		return
-	# Rows of each hull's world-to-local affine transform (xyz = basis row, w = origin).
-	var rows_x := PackedVector4Array()
-	var rows_y := PackedVector4Array()
-	var rows_z := PackedVector4Array()
-	var spheres := PackedVector4Array()
-	var rects := PackedVector4Array()
-	var params := PackedVector4Array()
-	var top_offsets := PackedFloat32Array()
-	rows_x.resize(MAX_NEAR_HULLS)
-	rows_y.resize(MAX_NEAR_HULLS)
-	rows_z.resize(MAX_NEAR_HULLS)
-	spheres.resize(MAX_NEAR_HULLS)
-	rects.resize(MAX_NEAR_HULLS)
-	params.resize(MAX_NEAR_HULLS)
-	top_offsets.resize(MAX_NEAR_HULLS)
-	for i in count:
-		var footprint : HullWaterFootprint = near[i]["footprint"]
-		var sphere : Vector4 = near[i]["sphere"]
-		var profile := footprint.profile
-		var feather := footprint.cutout_feather
-		var rows := _get_world_to_local_rows(footprint)
-		rows_x[i] = rows[0]
-		rows_y[i] = rows[1]
-		rows_z[i] = rows[2]
-		# Grow the sphere by the feather so the edge-foam band is not culled.
-		spheres[i] = Vector4(sphere.x, sphere.y, sphere.z, (sphere.w + feather) * (sphere.w + feather))
-		rects[i] = Vector4(profile.min_z, profile.min_y, 1.0 / (profile.max_z - profile.min_z), 1.0 / (profile.max_y - profile.min_y))
-		params[i] = Vector4(float(_hull_profile_ids.find(profile.get_instance_id())), profile.center_x, feather, footprint.cutout_edge_foam)
-		top_offsets[i] = footprint.cutout_height_offset / (profile.max_y - profile.min_y)
-	_set_water_shader_parameter(&'near_hull_world_to_local_x', rows_x)
-	_set_water_shader_parameter(&'near_hull_world_to_local_y', rows_y)
-	_set_water_shader_parameter(&'near_hull_world_to_local_z', rows_z)
-	_set_water_shader_parameter(&'near_hull_spheres', spheres)
-	_set_water_shader_parameter(&'near_hull_rects', rects)
-	_set_water_shader_parameter(&'near_hull_params', params)
-	_set_water_shader_parameter(&'near_hull_top_offsets', top_offsets)
-
-
-## Keeps one texture-array layer per distinct HullProfile in use. Rebuilt only
-## when the set of profiles changes (a re-bake creates a new profile resource).
-func _update_hull_profile_array(footprints : Array[HullWaterFootprint]) -> void:
-	var profiles : Array[HullProfile] = []
-	var ids := PackedInt64Array()
-	for footprint in footprints:
-		if not ids.has(footprint.profile.get_instance_id()):
-			profiles.push_back(footprint.profile)
-			ids.push_back(footprint.profile.get_instance_id())
-	if ids == _hull_profile_ids:
-		return
-	_hull_profile_ids = ids
-	if profiles.is_empty():
-		_hull_profiles = null
-	else:
-		var images : Array[Image] = []
-		for profile in profiles:
-			images.push_back(profile.image)
-		_hull_profiles = Texture2DArray.new()
-		var error := _hull_profiles.create_from_images(images)
-		if error != OK:
-			# Cutouts and wakes read layer 0 of an empty array: nothing is cut out.
-			push_error("OceanSystem: building the hull profile texture array failed (%s); re-bake the profiles." % error_string(error))
-			_hull_profiles = null
-	_set_water_shader_parameter(&'hull_profiles', _hull_profiles)
 
 
 ## The water sums its reflections pre-exposed (the sky source's textures and the planar
@@ -1442,6 +1052,5 @@ func _notification(what: int) -> void:
 		# Null when the ocean was disabled for lack of a RenderingDevice.
 		if _surface_queries != null:
 			_surface_queries.retire()
-		# Only created at runtime.
-		if _lod_multimesh.is_valid():
-			RenderingServer.free_rid(_lod_multimesh)
+		# The multimesh exists at runtime only.
+		_lod_grid.release()
