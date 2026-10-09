@@ -8,6 +8,44 @@ read for lighting.
 
 Requires the `core` addon (`addons/core`).
 
+## Visual effects
+
+- **Sun and moon:** placed astronomically for latitude, date and time, with the
+  moon's phase. The lights are coloured and dimmed only by the atmosphere: pale
+  yellow at noon, about 3000 K low down, red at the horizon. Sun and moon disks
+  are drawn at their real radiance.
+- **Physical atmosphere:**
+  - air (Rayleigh), ozone and sea haze (Mie forward lobe), with multiple
+    scattering and light reflected from the sea;
+  - blue sky, twilight and the earth's shadow;
+  - a hazed curved horizon;
+  - moonlit skies handed over smoothly from twilight.
+- **Weather haze and sea fog:** visibility, height and glow size, blended with
+  the weather presets.
+- **Aerial perspective:** distance haze on every opaque pixel. Transparent
+  materials haze themselves.
+- **Cloud light on the air:** clouds shade the haze (a sun behind a cloud loses
+  its glow). Under an overcast deck, the cloud base lights the air and the sea.
+- **Volumetric clouds:**
+  - raymarched on a curved shell; they drift with the wind and grow and
+    dissipate;
+  - seven blended weather presets, from `clear` to `storm` and `sea_fog`;
+  - single and multiple scattering, a forward-scattering glow (silver lining),
+    the earth's shadow in twilight, and clouds lit after sunset.
+- **Stars:** the 9,096 naked-eye stars at their true positions, turning with
+  sidereal time.
+  - Brightness is physical, so the exposure decides which stars show.
+  - Blackbody colours; extinction and reddening toward the horizon.
+  - Twinkling that depends on air mass, and bright stars that bloom wider.
+- **Milky Way:** the light of stars fainter than the catalog's, from NASA's
+  Deep Star Maps.
+- **Airglow:** the upper atmosphere's own light, brightening toward the
+  horizon.
+- **Planets:** Mercury to Saturn from orbital elements, with physical
+  magnitudes and colours.
+- **Scene lighting:** ambient light and reflections from the sky's radiance
+  map, plus a light meter that drives the exposure.
+
 ## Quick start
 
 Instance `sky_system.tscn`. It contains a `WorldEnvironment` with the sky

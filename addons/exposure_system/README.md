@@ -7,6 +7,18 @@ the way an eye does. It meters the light, not the rendered image, so looking at
 the sun, the sea or a dark hull does not change it. It has no dependencies on
 other addons.
 
+## Visual effects
+
+- **Auto exposure:** from an incident-light meter, so bright or dark subjects
+  in view never pump the image.
+- **Eye adaptation:** separate time constants for brightening and darkening.
+- **Perceptual darkness:** sunset, twilight and night render progressively
+  darker, as the eye sees them (Krawczyk et al.), not metered to grey.
+- **Night vision:**
+  - rod vision below about 3 cd/m²: per-pixel desaturation and a blue shift,
+    blended across the mesopic range;
+  - the moon keeps its colour while the moonlit scene goes blue-grey.
+
 ## Usage
 
 Add an `ExposureController` node (`exposure_controller.gd`) and set:

@@ -4,6 +4,11 @@
 grouped health (e.g. `hull`, `mast`) and emits signals, a smoke hit effect, and
 an optional debug health panel. No dependency on the launcher or buoyancy addons.
 
+## Visual effects
+
+- **Hit smoke:** a smoke puff at each impact point, facing back along the
+  shot.
+
 ## Setup
 
 ```

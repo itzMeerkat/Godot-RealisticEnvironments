@@ -18,7 +18,6 @@ before touching its code; this file only records what is easy to get wrong.
 - `docs/water-interaction-plan.md` and `docs/bow-wave-plan.md` are completed
   design records (their *Deferred verification* list is still open). The
   sections below describe the code as it is *today*.
-- `README.md` → *Road to a commercial release* is the product roadmap.
 
 ## Project basics
 - Godot 4.8, Forward+ (`project.godot` → `config/features`). Main scene:

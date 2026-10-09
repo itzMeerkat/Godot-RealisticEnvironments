@@ -7,6 +7,46 @@ the GPU.
 
 Requires the `core` addon (`addons/core`).
 
+## Visual effects
+
+- **Waves:** up to 8 FFT cascades of a depth-limited JONSWAP spectrum (swell to
+  centimetre chop) with choppy, crest-sharpening displacement. They follow the
+  wind: they turn toward its direction and crossfade to a new spectrum when it
+  changes, at constant wave height. Each cascade updates at its own rate, and
+  the sea repeats only every 1000 s.
+- **Sea to the horizon:** a CDLOD mesh on the earth's curve, out to a real
+  horizon. Distant waves are prefiltered by mips instead of fading.
+- **Foam:** whitecaps on the crests that look sharp (the rendered surface's
+  Jacobian), staying with the water and decaying. Patches dissolve into bubble
+  lace as they thin, and thin foam is translucent. Wake, bow and hull-edge foam
+  come from the interaction simulation.
+- **Wakes and splashes:** an iWave simulation around the camera. Hulls radiate
+  Kelvin wakes and bow waves, and splashes spread as rings.
+- **Hull cutouts:** no water inside the hulls of up to 8 nearby ships.
+- **Water colour:** the body colour comes from absorption and scattering
+  (deep-ocean blue to coastal green). Light glows through steep and breaking
+  crests (single scattering along the light's path through the wave).
+- **Transparency:** refraction through each wave, with absorption over the
+  path and the depth. Shallow water shows the bottom and fades to the
+  deep-water colour.
+- **Caustics:** the sun's light focused by the waves onto everything under the
+  surface. They are sharp under calm water and broad under rough seas.
+- **Reflections:** one rough-surface Fresnel for every reflection, so distant
+  water never turns into a mirror. The reflections include:
+  - the sky, its atmosphere and clouds, blurred by the roughness;
+  - the stars (glints on glassy water);
+  - the planets, as glints (Venus lays a path at dusk);
+  - the scene, in screen space or from a planar mirrored camera
+    (`reflection_mode`).
+- **Sun highlight and glitter:** a GGX highlight broken into twinkling glints
+  by individual facets.
+- **Wind roughness:** the roughness of waves too short to draw follows the wind
+  (Cox and Munk): glassy at calm, a broad sparkling sun path in a breeze.
+- **Aerial perspective:** the water hazes itself with the sky system's
+  atmosphere, out to the horizon.
+- **Quality tiers:** Low, Medium and High water shaders (`shader_quality`), and
+  15 shading debug views.
+
 ## Quick start
 
 1. Instance `ocean_system.tscn` (an `OceanSystem`, which is a `MeshInstance3D`).

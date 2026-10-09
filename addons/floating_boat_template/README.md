@@ -12,6 +12,16 @@ collision, probes, hitboxes and launchers. Two examples:
 Depends on `buoyancy_system`, `hitbox_damage_system`,
 `projectile_launcher_system` and `ocean_system`.
 
+## Visual effects
+
+- **Bow spray:** sheets of velocity-aligned droplet streaks at the stem while it
+  cuts the water.
+- **Bow slams:** jets of spray, and a splash ring in the water, when the bow
+  re-enters the sea fast. Their height follows the impact speed.
+- **Hull wake and cutout:** wakes, bow waves and no water inside the hull,
+  through the ocean (`HullWaterFootprint`).
+- **Hazed spray:** the spray is hazed by the sky system's atmosphere.
+
 ## Template tree
 
 ```

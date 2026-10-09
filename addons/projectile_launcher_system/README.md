@@ -4,6 +4,12 @@ Launch physical projectiles from a muzzle, inherit the platform's velocity,
 aim with a ballistic solver, apply recoil, and show muzzle-flash / water-splash
 effects. No dependency on other addons.
 
+## Visual effects
+
+- **Muzzle flash:** particles and a short-lived orange light.
+- **Water splash:** where a projectile meets the waterline plane.
+- **Cannon recoil:** a spring-damper slide of the barrel or carriage.
+
 ## Pieces
 
 | Class | Role |
