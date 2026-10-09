@@ -2,7 +2,8 @@
 class_name SkySystem
 extends Node3D
 
-const SkyProfileResource := preload("res://addons/sky_system/sky_profile.gd")
+const StarfieldMaterial := preload("res://addons/sky_system/materials/starfield.tres")
+const DefaultStarCatalog := preload("res://addons/sky_system/stars/bright_star_catalog.tres")
 
 signal time_of_day_changed(time_of_day : float)
 signal lighting_changed
@@ -26,6 +27,13 @@ const FULL_MOON_ILLUMINANCE_LUX := 0.27
 ## physical, about 1/470000 of the sun's. An exposure controller (get_scene_illuminance())
 ## makes the night visible. moon_energy_multiplier scales it.
 const MOON_ENERGY := SOLAR_ENERGY * FULL_MOON_ILLUMINANCE_LUX / SOLAR_ILLUMINANCE_LUX
+## The sun's visual magnitude: a star of magnitude m gives SOLAR_ILLUMINANCE_LUX *
+## 10^(-0.4 (m - SUN_MAGNITUDE)) lux above the atmosphere (2.5e-6 lux at magnitude 0).
+const SUN_MAGNITUDE := -26.74
+## Stars' twinkling without a cloud_preset (as CloudPreset.star_scintillation).
+const DEFAULT_STAR_SCINTILLATION := 0.15
+## The starfield's twinkling clock wraps after this many seconds (float precision).
+const STAR_TIME_PERIOD := 3600.0
 ## Rec. 709 luminance of linear rgb.
 const LUMINANCE_WEIGHTS := Vector3(0.2126, 0.7152, 0.0722)
 ## Angular radii (rad) of the sun's and the moon's disks, as the sky material's
@@ -104,16 +112,16 @@ const NEGLIGIBLE_LIGHT_SHARE := 0.001
 	set(value):
 		moon_energy_multiplier = value
 		_update_sky()
-## Multiplies starfield visibility from the active SkyProfile.
-@export_range(0.0, 8.0, 0.01) var star_brightness := 1.0 :
+## Multiplies the stars' light. 1 is physical: the exposure decides which stars show
+## (none by day, the brightest first at dusk, fewer under a bright moon).
+@export_range(0.0, 8.0, 0.01, "or_greater") var star_brightness := 1.0
+## The stars drawn in the sky (default: the Yale Bright Star Catalogue, every star
+## the naked eye can see).
+@export var star_catalog : StarCatalog = DefaultStarCatalog :
 	set(value):
-		star_brightness = value
-		_update_sky()
-## The stars' visibility curve (SkyProfile).
-@export var profile : Resource :
-	set(value):
-		profile = value
-		_update_sky()
+		star_catalog = value
+		if is_node_ready():
+			_setup_starfield()
 
 @export_group("Visuals")
 ## World height of the sea surface. The sea's horizon lies below eye level by
@@ -123,7 +131,7 @@ const NEGLIGIBLE_LIGHT_SHARE := 0.001
 	set(value):
 		sea_level = value
 		_update_sky()
-## Keeps starfield and optional body meshes centered around the active camera.
+## Keeps the optional sun and moon meshes centered around the active camera.
 @export var follow_active_camera := true
 ## Renders sun/moon disks directly in the sky shader instead of using mesh billboards.
 @export var render_bodies_in_sky := true :
@@ -134,11 +142,6 @@ const NEGLIGIBLE_LIGHT_SHARE := 0.001
 @export_range(100.0, 10000.0, 1.0, "or_greater") var celestial_visual_distance := 900.0 :
 	set(value):
 		celestial_visual_distance = value
-		_update_visual_positions()
-## Radius of the starfield sphere.
-@export_range(100.0, 10000.0, 1.0, "or_greater") var starfield_radius := 1200.0 :
-	set(value):
-		starfield_radius = value
 		_update_visual_positions()
 ## Strength of the sun disk drawn into the radiance sky material.
 @export_range(0.0, 3.0, 0.01) var radiance_sun_disk_strength := 0.16 :
@@ -219,7 +222,6 @@ const NEGLIGIBLE_LIGHT_SHARE := 0.001
 @onready var _moon_light := $MoonLight as DirectionalLight3D
 @onready var _sun_visual := $SunVisual as MeshInstance3D
 @onready var _moon_visual := $MoonVisual as MeshInstance3D
-@onready var _starfield := $Starfield as MeshInstance3D
 
 var _elapsed_time := 0.0
 var _sun_hour_angle := 0.0
@@ -234,7 +236,6 @@ var _moon_direction := Vector3.DOWN
 var _sun_visibility := 1.0
 var _moon_visibility := 0.0
 var _moon_phase := 1.0
-var _star_visibility := 0.0
 ## Colours of the sun's and the moon's light at the sea (brightest channel 1): white
 ## light coloured by the atmosphere along their direction.
 var _sun_color := Color.WHITE
@@ -301,6 +302,10 @@ var _cloud_wind_offset := Vector2.ZERO
 var _cloud_evolution_time := 0.0
 var _cloud_frames_until_material_push := 0
 
+## Internal child drawing star_catalog; not saved with the scene.
+var _starfield : MeshInstance3D
+var _starfield_material : ShaderMaterial
+
 
 func _init() -> void:
 	_update_lighting_state()
@@ -309,8 +314,7 @@ func _init() -> void:
 func _ready() -> void:
 	if not Engine.is_editor_hint():
 		_ensure_unique_runtime_resources()
-	if profile == null:
-		profile = SkyProfileResource.new()
+	_setup_starfield()
 	if cloud_preset:
 		_cloud_state = cloud_preset.duplicate()
 	_resolve_cloud_wind_source()
@@ -342,7 +346,7 @@ func _process(delta : float) -> void:
 		_update_sky()
 	_elapsed_time += delta
 	_update_visual_positions()
-	_update_starfield_time()
+	_update_starfield()
 	if _cloud_transition_duration > 0.0:
 		_process_weather_transition(delta)
 	if _cloud_renderer:
@@ -361,7 +365,6 @@ func _ensure_unique_runtime_resources() -> void:
 				environment.sky.sky_material = environment.sky.sky_material.duplicate()
 	_duplicate_material_override(_sun_visual)
 	_duplicate_material_override(_moon_visual)
-	_duplicate_material_override(_starfield)
 
 
 func _duplicate_material_override(visual : MeshInstance3D) -> void:
@@ -399,10 +402,6 @@ func get_moon_visibility() -> float:
 
 func get_moon_phase() -> float:
 	return _moon_phase
-
-
-func get_star_visibility() -> float:
-	return _star_visibility
 
 
 ## The cloud cubemap (rgb: premultiplied cloud radiance, a: opacity, upper
@@ -496,7 +495,6 @@ func _update_lighting_state() -> void:
 	_moon_phase = float(moon_state["phase"])
 	_sun_visibility = _disk_above_horizon(_sun_direction.y, SUN_ANGULAR_RADIUS)
 	_moon_visibility = _disk_above_horizon(_moon_direction.y, MOON_ANGULAR_RADIUS)
-	_star_visibility = _calculate_star_visibility(_sun_direction.y, _moon_visibility, _moon_phase)
 	_update_haze_medium()
 	_sun_transmittance = _get_body_transmittance(_sun_direction, SUN_ANGULAR_RADIUS, true)
 	_moon_transmittance = _get_body_transmittance(_moon_direction, MOON_ANGULAR_RADIUS, true)
@@ -513,7 +511,6 @@ func _update_sky() -> void:
 	_update_lighting_state()
 	if not is_inside_tree():
 		return
-	var active_profile = _get_profile()
 	var cloud_light_scale := _get_cloud_sun_light_scale()
 	var sun_energy := _get_sun_energy() * cloud_light_scale
 	var moon_energy := _get_moon_energy() * cloud_light_scale
@@ -533,7 +530,6 @@ func _update_sky() -> void:
 		_update_haze_lighting(_moon_direction, moon_energy, _sun_direction, sun_energy)
 	_update_environment(_sun_direction, _moon_direction, _sun_visibility, _moon_visibility)
 	_push_atmosphere_parameters()
-	_update_starfield_visibility(active_profile.sample_star_visibility(_star_visibility) * star_brightness)
 	_update_visual_colors(_sun_visibility, _moon_visibility)
 	_update_visual_positions()
 	lighting_changed.emit()
@@ -741,23 +737,76 @@ func _update_environment(sun_direction : Vector3, moon_direction : Vector3, sun_
 	_radiance_observer_altitude = _get_atmosphere_observer_altitude()
 
 
-func _update_starfield_visibility(visibility : float) -> void:
+## Creates the starfield child once and (re)builds its mesh from star_catalog.
+func _setup_starfield() -> void:
 	if _starfield == null:
-		return
-	_starfield.visible = visibility > 0.001
-	var material := _starfield.material_override as ShaderMaterial
-	if material:
-		material.set_shader_parameter(&"star_visibility", visibility)
-		material.set_shader_parameter(&"star_brightness", star_brightness)
-		material.set_shader_parameter(&"horizon_softness", 0.08)
+		_starfield_material = StarfieldMaterial.duplicate()
+		_starfield = MeshInstance3D.new()
+		_starfield.name = &"Starfield"
+		_starfield.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		_starfield.material_override = _starfield_material
+		# The stars are drawn at infinity around the camera: never cull them.
+		_starfield.custom_aabb = AABB(Vector3.ONE * -1e6, Vector3.ONE * 2e6)
+		add_child(_starfield, false, INTERNAL_MODE_FRONT)
+	_starfield.mesh = _build_starfield_mesh(star_catalog)
+	_update_starfield()
 
 
-func _update_starfield_time() -> void:
+## One quad per star (see shaders/starfield.gdshader): its four corners hold the star's
+## equatorial direction, the corner (UV) and its colour times its illuminance in lux
+## above the atmosphere (CUSTOM0). Null for no catalog or an invalid one.
+func _build_starfield_mesh(catalog : StarCatalog) -> ArrayMesh:
+	if catalog == null:
+		return null
+	if not catalog.is_valid():
+		push_error("SkySystem %s: star_catalog's arrays differ in length; no stars are drawn." % get_path())
+		return null
+	var count := catalog.get_star_count()
+	if count == 0:
+		return null
+	var corners : Array[Vector2] = [Vector2(-1.0, -1.0), Vector2(1.0, -1.0), Vector2(1.0, 1.0), Vector2(-1.0, 1.0)]
+	var corner_indices : Array[int] = [0, 1, 2, 0, 2, 3]
+	var vertices := PackedVector3Array()
+	var uvs := PackedVector2Array()
+	var lights := PackedFloat32Array()
+	var indices := PackedInt32Array()
+	vertices.resize(count * 4)
+	uvs.resize(count * 4)
+	lights.resize(count * 16)
+	indices.resize(count * 6)
+	for star in count:
+		var lux := SOLAR_ILLUMINANCE_LUX * pow(10.0, -0.4 * (catalog.magnitudes[star] - SUN_MAGNITUDE))
+		var color := catalog.colors[star]
+		for corner in 4:
+			var vertex := star * 4 + corner
+			vertices[vertex] = catalog.directions[star]
+			uvs[vertex] = corners[corner]
+			lights[vertex * 4] = color.r * lux
+			lights[vertex * 4 + 1] = color.g * lux
+			lights[vertex * 4 + 2] = color.b * lux
+		for i in 6:
+			indices[star * 6 + i] = star * 4 + corner_indices[i]
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = vertices
+	arrays[Mesh.ARRAY_TEX_UV] = uvs
+	arrays[Mesh.ARRAY_CUSTOM0] = lights
+	arrays[Mesh.ARRAY_INDEX] = indices
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays, [], {}, Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT)
+	return mesh
+
+
+## Turns the starfield to the sky of this moment and passes it this frame's exposure.
+func _update_starfield() -> void:
 	if _starfield == null:
 		return
-	var material := _starfield.material_override as ShaderMaterial
-	if material:
-		material.set_shader_parameter(&"time", _elapsed_time)
+	var camera := _get_render_camera()
+	var origin := camera.global_position if camera else global_position
+	_starfield.global_transform = Transform3D(_get_equatorial_to_world_basis(), origin)
+	_starfield_material.set_shader_parameter(&"illuminance_scale", star_brightness * _exposure / get_illuminance_unit_lux())
+	_starfield_material.set_shader_parameter(&"scintillation", _cloud_state.star_scintillation if _cloud_state else DEFAULT_STAR_SCINTILLATION)
+	_starfield_material.set_shader_parameter(&"time", fposmod(_elapsed_time, STAR_TIME_PERIOD))
 
 
 func _update_visual_colors(sun_visibility : float, moon_visibility : float) -> void:
@@ -795,11 +844,6 @@ func _update_visual_positions() -> void:
 	if not render_bodies_in_sky:
 		_position_body_visual(_sun_visual, origin, get_sun_direction())
 		_position_body_visual(_moon_visual, origin, get_moon_direction())
-	if _starfield:
-		_starfield.global_position = origin
-		var star_axis := _get_celestial_north_axis()
-		var sidereal_angle := _get_local_sidereal_time()
-		_starfield.global_transform = Transform3D(Basis(star_axis, sidereal_angle).scaled(Vector3.ONE * starfield_radius), origin)
 
 
 func _position_body_visual(visual : MeshInstance3D, origin : Vector3, direction : Vector3) -> void:
@@ -857,15 +901,13 @@ func _horizontal_to_world(local_direction : Vector3) -> Vector3:
 	return Basis(Vector3.UP, deg_to_rad(north_offset_degrees)) * local_direction
 
 
-func _get_celestial_north_axis() -> Vector3:
-	var latitude := deg_to_rad(latitude_degrees)
-	return _horizontal_to_world(Vector3(0.0, sin(latitude), -cos(latitude))).normalized()
-
-
-func _calculate_star_visibility(sun_height : float, moon_visibility : float, moon_phase : float) -> float:
-	var twilight_visibility := 1.0 - smoothstep(-0.30, -0.10, sun_height)
-	var moon_washout := moon_visibility * moon_phase * 0.45
-	return clampf(twilight_visibility * (1.0 - moon_washout), 0.0, 1.0)
+## Turns J2000 equatorial directions (StarCatalog) into world directions at the
+## current local sidereal time (precession since 2000 is ignored).
+func _get_equatorial_to_world_basis() -> Basis:
+	var sidereal_time := _get_local_sidereal_time()
+	return Basis(_equatorial_to_horizontal_direction(0.0, sidereal_time),
+		_equatorial_to_horizontal_direction(0.0, sidereal_time - 0.5 * PI),
+		_equatorial_to_horizontal_direction(0.5 * PI, 0.0))
 
 
 func _wrap_pi(value : float) -> float:
@@ -881,12 +923,6 @@ func _get_active_camera() -> Camera3D:
 	if viewport == null:
 		return null
 	return viewport.get_camera_3d()
-
-
-func _get_profile():
-	if profile == null:
-		profile = SkyProfileResource.new()
-	return profile
 
 
 func _setup_clouds() -> void:
@@ -987,7 +1023,7 @@ func _process_clouds(delta : float) -> void:
 func _push_cloud_material_parameters() -> void:
 	var enabled := _cloud_renderer != null
 	var texture_rid := _cloud_renderer.cubemap.get_rid() if enabled else RID()
-	for material : Material in [_world_environment.environment.sky.sky_material, _starfield.material_override]:
+	for material : Material in [_world_environment.environment.sky.sky_material, _starfield_material]:
 		RenderingServer.material_set_param(material.get_rid(), &"clouds_enabled", enabled)
 		RenderingServer.material_set_param(material.get_rid(), &"cloud_cubemap", texture_rid)
 	if enabled:

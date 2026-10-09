@@ -1,21 +1,10 @@
 [gd_scene format=3 uid="uid://ckdc57htjsaad"]
 
 [ext_resource type="Script" uid="uid://dp6mb8myrguk3" path="res://addons/sky_system/sky_system.gd" id="1_sky_system"]
-[ext_resource type="Script" uid="uid://bw2332cbm64tv" path="res://addons/sky_system/sky_profile.gd" id="2_ckf4a"]
 [ext_resource type="Material" uid="uid://dn2e5gtbc2jx4" path="res://addons/sky_system/materials/sky.tres" id="2_sky"]
 [ext_resource type="Shader" uid="uid://c06rajf110qna" path="res://addons/sky_system/shaders/celestial_disk.gdshader" id="3_disk_shader"]
-[ext_resource type="Material" uid="uid://cps0x2tjsw4qc" path="res://addons/sky_system/materials/starfield.tres" id="4_starfield"]
 [ext_resource type="Resource" uid="uid://cslcbjx6mnkne" path="res://addons/sky_system/cloud_presets/fair.tres" id="5_cloud_preset"]
 [ext_resource type="Script" uid="uid://fi3uxaroikar" path="res://addons/sky_system/aerial_perspective_effect.gd" id="6_aerial_perspective"]
-
-[sub_resource type="Curve" id="Curve_yya8t"]
-_limits = [0.0, 2.0, 0.0, 1.0]
-_data = [Vector2(0, 0), 0.0, 0.0, 0, 0, Vector2(0.35, 0), 0.0, 0.0, 0, 0, Vector2(0.7, 0.85), 0.0, 0.0, 0, 0, Vector2(1, 1), 0.0, 0.0, 0, 0]
-point_count = 4
-
-[sub_resource type="Resource" id="Resource_oebik"]
-script = ExtResource("2_ckf4a")
-star_visibility_curve = SubResource("Curve_yya8t")
 
 [sub_resource type="Sky" id="Sky_dynamic"]
 sky_material = ExtResource("2_sky")
@@ -66,15 +55,8 @@ shader_parameter/halo_strength = 0.35
 [sub_resource type="QuadMesh" id="QuadMesh_moon"]
 size = Vector2(9.3, 9.3)
 
-[sub_resource type="SphereMesh" id="SphereMesh_starfield"]
-radius = 1.0
-height = 2.0
-radial_segments = 96
-rings = 48
-
 [node name="SkySystem" type="Node3D" unique_id=356109582]
 script = ExtResource("1_sky_system")
-profile = SubResource("Resource_oebik")
 cloud_preset = ExtResource("5_cloud_preset")
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=1481807339]
@@ -108,9 +90,3 @@ visible = false
 material_override = SubResource("ShaderMaterial_moon_disk")
 cast_shadow = 0
 mesh = SubResource("QuadMesh_moon")
-
-[node name="Starfield" type="MeshInstance3D" parent="." unique_id=1100405788]
-visible = false
-material_override = ExtResource("4_starfield")
-cast_shadow = 0
-mesh = SubResource("SphereMesh_starfield")

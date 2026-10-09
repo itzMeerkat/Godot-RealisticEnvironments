@@ -13,7 +13,8 @@ Requires the `core` addon (`addons/core`).
 Instance `sky_system.tscn`. It contains a `WorldEnvironment` with the sky
 material and a compositor holding the aerial perspective (`AerialPerspectiveEffect`),
 `SunLight` / `MoonLight` (`DirectionalLight3D`), optional
-`SunVisual` / `MoonVisual` meshes and a `Starfield` sphere. Remove any other
+`SunVisual` / `MoonVisual` meshes; the stars are an internal child built at
+startup (see [Stars](#stars)). Remove any other
 `WorldEnvironment` or directional light from the scene. The project must
 declare the atmosphere's global shader uniforms (see [Atmosphere](#atmosphere)).
 
@@ -35,10 +36,10 @@ Without one, nights and heavy overcast render near black.
   (0 new, ~14.77 full), `north_offset_degrees` (rotate celestial north around
   world up; default north is −Z), `axis_tilt_degrees`,
   `sun_energy_multiplier` / `moon_energy_multiplier` (scale the lights'
-  energy above the atmosphere), `star_brightness`.
-- `profile` — a `SkyProfile` resource holding the stars' visibility curve
-  (filled with a built-in default when missing). The sky's colours, the lights
-  and the ambient light all come from the atmosphere, not from it.
+  energy above the atmosphere).
+- **Stars** — `star_catalog`, `star_brightness` (see [Stars](#stars)).
+  The sky's colours, the lights and the ambient light all come from the
+  atmosphere.
 - **Sun and moon light** — both are white
   above the atmosphere (`SkySystem.SOLAR_ENERGY` 1.3 for the sun's 128 000 lux,
   `MOON_ENERGY` for the full moon's 0.27 lux, about 1/470 000 of it, times the
@@ -60,8 +61,8 @@ Without one, nights and heavy overcast render near black.
   map that lights and reflects the scene keeps faint disks and halos
   (`radiance_sun_disk_strength`, `radiance_sun_halo_strength`, times the
   radiance of a white diffuser in the body's light), as a disk that bright
-  would sparkle in glossy reflections; `follow_active_camera` keeps the
-  starfield and meshes centred on the camera. `sea_level`: world height of the
+  would sparkle in glossy reflections; `follow_active_camera` keeps those
+  meshes centred on the camera. `sea_level`: world height of the
   sea. The sea's horizon is `√(2h/R)` below eye level for a camera `h` above it,
   and the sky reaches down to there; the haze is densest at it. The sky reads the
   camera's altitude from the atmosphere instead of `POSITION`: a sky shader that
@@ -69,6 +70,48 @@ Without one, nights and heavy overcast render near black.
   (in REALTIME mode). The `Sky` uses INCREMENTAL mode, and SkySystem refreshes
   the radiance map when the lighting, the clouds (once per full refresh) or the
   camera's altitude (by more than 10 % or 2 m) change.
+
+## Stars
+
+The real night sky: the 9,096 stars of the Yale Bright Star Catalogue (every
+star the naked eye can see, to magnitude ~6.5) at their true positions, turning
+with the local sidereal time for `latitude_degrees`, `day_of_year` and
+`time_of_day` (Polaris stands at the latitude's altitude due north; precession
+since J2000 is ignored).
+
+- **Brightness is physical.** A star of magnitude m gives
+  `128 000 · 10^(−0.4 (m + 26.74))` lux above the atmosphere (the sun's
+  magnitude ties it to `SOLAR_ILLUMINANCE_LUX`), in the scene's light units and
+  pre-exposed. So the exposure decides what shows, with no visibility curve:
+  nothing by day, the brightest stars first at dusk, the faint ones washed out
+  by a bright moon. `star_brightness` multiplies it (1 = physical).
+- **Colour** is the blackbody colour of the star's B−V index (Ballesteros 2012),
+  luminance 1: blue-white Rigel, orange Betelgeuse.
+- **Atmosphere:** each star is dimmed and reddened per channel by the
+  atmosphere's transmittance along its direction (from the camera's view
+  volume), so stars fade and turn orange toward the horizon and vanish below
+  the sea's horizon; clouds hide them by their opacity.
+- **Twinkling** (`CloudPreset.star_scintillation`, weather): a log-normal flicker
+  whose spread grows with the air mass to the power 1.5 (Young 1967), so stars
+  near the horizon flicker strongly and flash in colour while those overhead
+  stay nearly steady.
+- **Drawing:** one camera-facing quad per star (`shaders/starfield.gdshader`),
+  placed at infinity on the far plane so every surface hides it. The star's
+  light is spread over a gaussian of 0.7 px (energy kept, so its brightness
+  does not depend on the resolution); a star that would burn out widens it up
+  to 4×, as bright stars look bigger to the eye. Quads of stars too faint to
+  show collapse in the vertex shader. Cost: about 36 000 vertices and a few
+  pixels per star.
+
+`star_catalog` is a `StarCatalog` resource (J2000 directions, V magnitudes,
+colours). `stars/bright_star_catalog.tres` is baked by
+`tools/bake_star_catalog.py` from the Bright Star Catalogue, 5th Revised Ed.
+(Hoffleit & Warren 1991; CDS catalogue V/50); any other catalog baked to the
+same format works.
+
+The starfield is an internal child created at startup (in the editor too) and
+never saved with the scene; its material is a private copy of
+`materials/starfield.tres`.
 
 ## Clouds
 
@@ -240,9 +283,9 @@ moonlight keeps its precision in 16-bit textures:
   unexposed (moonlit ambient light loses precision there);
 - the ocean sums its reflections pre-exposed and divides its `EMISSION`.
 
-The starfield is unlit `ALBEDO`, which Godot does not expose: its brightness is
-set for the screen (`star_brightness`, the profile's curve). Physical light
-units must stay off (they change what Godot's exposure means).
+The starfield is unlit `ALBEDO`, which Godot does not expose: it multiplies its
+light by the exposure itself. Physical light units must stay off (they change
+what Godot's exposure means).
 
 ### Limits
 
@@ -272,7 +315,7 @@ units must stay off (they change what Godot's exposure means).
 
 `get_sun_direction()`, `get_moon_direction()` (unit vectors pointing *toward*
 the body), `get_sun_color()`, `get_sun_visibility()`, `get_moon_visibility()`,
-`get_moon_phase()`, `get_star_visibility()`, `get_time_of_day()`. Exposure:
+`get_moon_phase()`, `get_time_of_day()`. Exposure:
 `get_scene_illuminance()`, `get_illuminance_unit_lux()`.
 Atmosphere: `get_atmosphere_sky_volumes()` (the sea-level view volumes,
 `[transmittance, inscatter, inscatter_lobe]` as `Texture3D`s, or empty without
@@ -299,8 +342,8 @@ then. When the day cycle advances `time_of_day`, `day_of_year` and
 - Every change updates the lights (colour, energy, direction) and the sky
   shader uniforms. The environment's ambient light is the sky's radiance map
   at energy 1.
-  Starfield visibility fades with twilight and is washed out by a bright moon;
-  the starfield rotates with local sidereal time.
+  The stars turn with the local sidereal time (the sun's hour angle plus its
+  right ascension).
 - At runtime the environment, sky, sky material and visual materials are
   duplicated so several instances don't share state.
 
@@ -368,7 +411,8 @@ the runtime texture is never stored in `materials/*.tres`.
 
 ## Files
 
-`sky_system.gd` / `.tscn`, `sky_profile.gd` (`SkyProfile`),
+`sky_system.gd` / `.tscn`, `star_catalog.gd` (`StarCatalog`),
+`stars/bright_star_catalog.tres` (baked by `tools/bake_star_catalog.py`),
 `cloud_preset.gd` (`CloudPreset`), `cloud_presets/*.tres`,
 `cloud_renderer.gd` (`CloudRenderer`), `shaders/compute/cloud_*.glsl` and
 `cloud_noise.glslinc`, `atmosphere_renderer.gd` (`AtmosphereRenderer`),

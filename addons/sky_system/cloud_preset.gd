@@ -14,6 +14,7 @@ const BLENDED_PROPERTIES : Array[StringName] = [
 	&"density", &"density_variation", &"scattering_albedo",
 	&"evolution_speed", &"sun_light_scale",
 	&"haze_visibility", &"haze_scale_height", &"haze_anisotropy",
+	&"star_scintillation",
 ]
 ## Blended fields interpolated geometrically: haze_visibility, so that the haze
 ## thickens evenly through a transition from clear air to fog.
@@ -80,6 +81,13 @@ const GEOMETRIC_BLENDED_PROPERTIES : Array[StringName] = [&"haze_visibility"]
 ## mean g is 0.75 times this; about 0.97 for marine haze (coarse sea salt), 0.98
 ## for fog droplets. Higher makes the glow around the sun smaller.
 @export_range(0.0, 0.99, 0.01) var haze_anisotropy := 0.97
+
+@export_group("Stars")
+## How much the stars twinkle (the air's turbulence): the spread of the log of a
+## star's brightness at the zenith. It grows toward the horizon with the air
+## mass to the power 1.5, where stars also flash in colour. About 0.1 in calm air,
+## 0.3 in turbulent air (a strong jet stream, a cold front passing).
+@export_range(0.0, 1.0, 0.01) var star_scintillation := 0.15
 
 
 ## Sets every blended field to the interpolation between two presets.

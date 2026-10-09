@@ -414,7 +414,7 @@ func _add_sky_controls(parent : VBoxContainer) -> void:
 			sky_system.moon_energy_multiplier = value
 	)
 
-	var star_brightness := _add_float_row(parent, "Star Brightness", "Multiplier applied to visible stars at night.", 0.0, 8.0, 0.01, false)
+	var star_brightness := _add_float_row(parent, "Star Brightness", "Multiplies the stars' light (1 = physical; the exposure decides which show).", 0.0, 8.0, 0.01, false)
 	star_brightness.name = "SkyStarBrightness"
 	star_brightness.value_changed.connect(func(value : float) -> void:
 		if not _is_syncing and sky_system:
