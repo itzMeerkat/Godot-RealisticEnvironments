@@ -79,7 +79,7 @@ void main() {
 			float foam = imageLoad(previous_normal_map, id).a * exp(-foam_decay);
 			foam += max(whitecap - chop_jacobian, 0.0) * foam_grow;
 			foam = clamp(foam, 0.0, 1.0);
-			// z: squared slope, the second moment the mip chain averages (mip_downsample.glsl).
+			// z: squared slope, the second moment the mip chain averages (mip_chain.glsl).
 			imageStore(normal_map, id, vec4(gradient, dot(gradient, gradient), foam));
 			break;
 	}

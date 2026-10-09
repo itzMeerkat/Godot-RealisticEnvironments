@@ -387,9 +387,12 @@ Per cascade, per spectrum slot:
    per unit below) and fades over `foam_lifetime`, reading the previous
    normal map across updates. The map is indexed by rest position, so foam
    stays with the water while its crest moves on.
-5. `mip_downsample` — builds the displacement and normal maps' mip chains
-   (2×2 box filter per level). All channels average linearly, so at any level
-   `z − |xy|²` of the normal map is the slope variance inside the texel.
+5. `mip_chain` — builds the displacement and normal maps' mip chains (2×2 box
+   filter per level), up to five levels per dispatch for both maps together:
+   each 16 × 16 workgroup halves a 32 × 32 tile in shared memory (two
+   dispatches and two barriers for a 512² map instead of 18 and 9). All
+   channels average linearly, so at any level `z − |xy|²` of the normal map is
+   the slope variance inside the texel.
 
 Each pass reads what the previous one wrote, and dispatches inside one compute
 list are not ordered, so every pass is followed by `compute_list_add_barrier`.

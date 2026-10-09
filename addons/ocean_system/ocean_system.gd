@@ -443,6 +443,8 @@ var displacement_maps_b := Texture2DArrayRD.new()
 var normal_maps_a := Texture2DArrayRD.new()
 var normal_maps_b := Texture2DArrayRD.new()
 var _material : ShaderMaterial
+## Bound instead of the wave maps while there is no generator (_get_flat_wave_maps()).
+var _flat_wave_maps : Texture2DArray
 ## Last value sent per shader parameter (_set_water_shader_parameter()).
 var _parameter_cache := {}
 var _surface_queries : OceanSurfaceQueries
@@ -585,11 +587,24 @@ func _clear_wave_generator() -> void:
 
 func _bind_wave_textures() -> void:
 	_set_water_shader_parameter(&'num_cascades', parameters.size() if wave_generator != null else 0)
+	# Without a generator the material samples a flat placeholder array (an empty
+	# Texture2DArrayRD falls back to a 2D texture, which the shader's arrays reject).
+	var maps : Array[TextureLayered] = [displacement_maps_a, displacement_maps_b, normal_maps_a, normal_maps_b]
+	if wave_generator == null:
+		maps.fill(_get_flat_wave_maps())
 	# Forced: the textures may hold new RenderingServer RIDs (_set_texture_rid()).
-	_set_water_shader_parameter(&'displacements_a', displacement_maps_a, true)
-	_set_water_shader_parameter(&'displacements_b', displacement_maps_b, true)
-	_set_water_shader_parameter(&'normals_a', normal_maps_a, true)
-	_set_water_shader_parameter(&'normals_b', normal_maps_b, true)
+	_set_water_shader_parameter(&'displacements_a', maps[0], true)
+	_set_water_shader_parameter(&'displacements_b', maps[1], true)
+	_set_water_shader_parameter(&'normals_a', maps[2], true)
+	_set_water_shader_parameter(&'normals_b', maps[3], true)
+
+## A 1x1, one-layer texture array of zeros: flat water, no slopes, no foam.
+func _get_flat_wave_maps() -> Texture2DArray:
+	if _flat_wave_maps == null:
+		var image := Image.create_empty(1, 1, false, Image.FORMAT_RGBAH)
+		_flat_wave_maps = Texture2DArray.new()
+		_flat_wave_maps.create_from_images([image])
+	return _flat_wave_maps
 
 func _update_scales_uniform() -> void:
 	var map_scales : PackedVector4Array; map_scales.resize(parameters.size())

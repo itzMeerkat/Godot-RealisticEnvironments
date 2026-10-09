@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://c87cnqah3od0y"
+path="res://.godot/imported/mip_chain.glsl-1b50560f227a7921615b053ed3870419.res"
+
+[deps]
+
+source_file="res://addons/ocean_system/shaders/compute/mip_chain.glsl"
+dest_files=["res://.godot/imported/mip_chain.glsl-1b50560f227a7921615b053ed3870419.res"]
+
+[params]
+

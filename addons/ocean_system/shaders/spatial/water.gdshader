@@ -195,7 +195,7 @@ uniform int num_cascades = 0;
 // Displacement maps carry mip chains: coarse vertices read prefiltered waves.
 uniform sampler2DArray displacements_a : filter_linear_mipmap, repeat_enable; // Each layer represents one wave cascade.
 uniform sampler2DArray displacements_b : filter_linear_mipmap, repeat_enable;
-// Normal maps: xy mean slope, z mean squared slope, w foam; full mip chain (mip_downsample.glsl).
+// Normal maps: xy mean slope, z mean squared slope, w foam; full mip chain (mip_chain.glsl).
 uniform sampler2DArray normals_a : hint_normal, filter_linear_mipmap, repeat_enable;
 uniform sampler2DArray normals_b : hint_normal, filter_linear_mipmap, repeat_enable;
 uniform vec4 wave_frame_blends[MAX_CASCADES]; // x: weight of map B (OceanSystem._get_cascade_frame_blend())
@@ -424,7 +424,7 @@ vec4 sample_normal_layer(vec3 coords, float lod, float bilinear_weight, float b_
 		sample_a = mix(texture_bicubic(normals_a, coords), sample_a, bilinear_weight);
 		sample_b = mix(texture_bicubic(normals_b, coords), sample_b, bilinear_weight);
 	}
-	// Slopes the filter averaged away: E|g|^2 - |E g|^2 (mip_downsample.glsl), per frame, as
+	// Slopes the filter averaged away: E|g|^2 - |E g|^2 (mip_chain.glsl), per frame, as
 	// blending two frames' slopes is not roughness. Interpolating texels with different slopes
 	// also raises it, but while a pixel covers less than a texel that spread is drawn (the
 	// interpolated slope varies across pixels), not missed: count it from one texel up.

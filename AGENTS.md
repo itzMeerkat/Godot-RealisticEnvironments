@@ -208,7 +208,7 @@ before touching its code; this file only records what is easy to get wrong.
   them (`wave_generator.gd`, `water_interaction_sim.gd`). Every pass must set
   its push constant: a barrier re-applies the last one to the bound pipeline.
 - Displacement and normal maps have full mip chains built by
-  `mip_downsample.glsl` after each unpack. Normal maps are `(slope x, slope z,
+  `mip_chain.glsl` (up to five levels per dispatch, both maps) after each unpack. Normal maps are `(slope x, slope z,
   squared slope, foam)`; the water shader reads `z − |xy|²` as the unresolved
   slope variance and turns it into roughness. Keep every channel linearly
   averageable. Storage bindings use per-layer, single-mip 2D views
