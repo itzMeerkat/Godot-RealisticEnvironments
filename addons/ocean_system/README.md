@@ -483,7 +483,15 @@ slope along a grazing footprint as round blur and turn the water milky.
 Filtering averages small waves away, and the slopes it removed come back as
 roughness: per cascade, `z − |xy|²` of the filtered sample is the unresolved
 slope variance, scaled by `normal_scale²`, and the GGX alpha is
-`sqrt(clear_roughness⁴ + Σ variance)` (Toksvig/LEAN). Up close the water is
+`sqrt(micro⁴ + Σ variance)` (Toksvig/LEAN), where the micro-roughness `micro`
+covers what no cascade draws: `clear_roughness` (calm water) plus the short
+capillary and gravity-capillary waves the wind raises, whose slope variance
+is Cox and Munk's (1954) clean sea less their slick sea (an oil film damps
+exactly those waves), `0.00356 U − 0.005` for wind `U` m/s, none below
+~1.4 m/s, times `short_wave_slope_scale` (`OceanSystem._update_micro_roughness()`,
+from `get_surface_wind_speed()`). Calm water is glassy (sharp reflections, star
+glints); a fresh breeze gives the broad, sparkling sun path Cox and Munk
+photographed. Up close the water is
 smooth and every resolved wave makes its own sharp glint; in the distance the
 waves merge into a rough surface with a broad sun path. Two things raise
 `z − |xy|²` without being unresolved slopes, and are left out: blending the
@@ -560,7 +568,8 @@ Lighting:
   (weight `1 − coverage`). By day (scene radiance scale times exposure below
   1e-4) the lookup is skipped. The reflection keeps the stars' light; on
   rough water it is spread over the reflection lobe and too faint to see,
-  and only nearly glassy water (low `clear_roughness`) shows star glints.
+  and only calm, glassy water (little wind, see the micro-roughness above)
+  shows star glints.
 - Atmosphere (`atmosphere_sea_lookup()`): with a sky source that has
   `get_atmosphere_sky_volumes()` and `get_atmosphere_light()` (SkySystem), the
   reflected clear sky is the atmosphere's, seen from the sea surface: a lookup

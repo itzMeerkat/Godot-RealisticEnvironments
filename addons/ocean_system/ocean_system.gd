@@ -79,13 +79,24 @@ const WATER_DEBUG_VIEW_NORMAL := 0
 		_set_water_shader_parameter(&'foam_color', foam_color)
 
 @export_group('Surface Shading')
-## Roughness of ripples shorter than the smallest cascade. The shader widens it
-## by the wave slopes a pixel cannot resolve, so distant water gets rougher on
-## its own; this only sets how sharp the closest sun glints and reflections are.
-@export_range(0.0, 1.0, 0.01) var clear_roughness := 0.10 :
+## Roughness (perceptual) of water shorter than the smallest cascade in calm air.
+## The wind adds the short waves' slopes on top (short_wave_slope_scale), and the
+## shader widens it by the wave slopes a pixel cannot resolve, so distant water gets
+## rougher on its own; this only sets how sharp the closest glints and reflections
+## of a calm sea are.
+@export_range(0.0, 1.0, 0.01) var clear_roughness := 0.03 :
 	set(value):
 		clear_roughness = value
-		_set_water_shader_parameter(&'clear_roughness', clear_roughness)
+		_update_micro_roughness()
+## Scales the slope variance of the short (capillary and gravity-capillary) waves
+## the wind raises, which the cascades do not draw: Cox and Munk's (1954) clean sea
+## less their slick sea (whose oil film damps them), 0.00356 U - 0.005 for wind
+## U (m/s), none below about 1.4 m/s. 1 is measured; 0 keeps clear_roughness at
+## every wind.
+@export_range(0.0, 2.0, 0.01, "or_greater") var short_wave_slope_scale := 1.0 :
+	set(value):
+		short_wave_slope_scale = value
+		_update_micro_roughness()
 ## PBR roughness where foam is visible. Foam usually looks best rougher than
 ## clear water so it does not produce mirror-like highlights.
 @export_range(0.0, 1.0, 0.01) var foam_roughness := 0.24 :
@@ -540,6 +551,7 @@ func _process(delta : float) -> void:
 	# No generator means no cascades: a flat ocean.
 	if wave_generator != null:
 		_update_waves(delta)
+		_update_micro_roughness()
 		_update_frame_blend_uniform()
 		_cascade_data = _pack_surface_query_cascades()
 	_dispatch_surface_queries()
@@ -556,7 +568,7 @@ func _push_all_shader_parameters() -> void:
 	_set_water_shader_parameter(&'normal_strength', normal_strength)
 	_set_water_shader_parameter(&'use_bicubic_normals', use_bicubic_normals)
 	_set_water_shader_parameter(&'fragment_cascade_limit', fragment_cascade_limit)
-	_set_water_shader_parameter(&'clear_roughness', clear_roughness)
+	_update_micro_roughness()
 	_set_water_shader_parameter(&'foam_roughness', foam_roughness)
 	_set_water_shader_parameter(&'foam_intensity', foam_intensity)
 	_set_water_shader_parameter(&'foam_detail', foam_detail_texture)
@@ -635,6 +647,22 @@ func _update_spectrum_blend_uniform() -> void:
 	for i in parameters.size():
 		spectrum_blend_states[i] = parameters[i].get_spectrum_blend_state(i)
 	_set_water_shader_parameter(&'spectrum_blend_states', spectrum_blend_states)
+
+## Wind (m/s) at the surface: the external source's, else the first cascade's.
+func get_surface_wind_speed() -> float:
+	if should_use_external_wind():
+		return get_external_wind_speed()
+	return parameters[0].wind_speed if not parameters.is_empty() and parameters[0] != null else 0.0
+
+
+## The water's micro-roughness for the shader's clear_roughness: GGX alpha squared
+## is the slope variance (both axes) of what the cascades do not draw, the calm
+## clear_roughness plus the wind's short waves (short_wave_slope_scale).
+func _update_micro_roughness() -> void:
+	var short_wave_variance := maxf(0.00356 * get_surface_wind_speed() - 0.005, 0.0) * short_wave_slope_scale
+	var alpha := sqrt(pow(clear_roughness, 4.0) + short_wave_variance)
+	_set_water_shader_parameter(&'clear_roughness', sqrt(alpha))
+
 
 ## Updates every cascade whose newest frame the display has reached. A cascade
 ## computes its next frame one update interval ahead of now, so blending from

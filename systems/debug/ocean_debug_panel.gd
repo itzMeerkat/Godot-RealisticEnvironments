@@ -210,7 +210,7 @@ func _add_ocean_controls(parent : VBoxContainer) -> void:
 			water.foam_color = value
 	)
 
-	var clear_roughness := _add_float_row(parent, "Clear Roughness", "PBR roughness for clear water.", 0.0, 1.0, 0.01, false)
+	var clear_roughness := _add_float_row(parent, "Clear Roughness", "Roughness of calm clear water; the wind adds short-wave roughness on top.", 0.0, 1.0, 0.01, false)
 	clear_roughness.value_changed.connect(func(value : float) -> void:
 		if not _is_syncing and water:
 			water.clear_roughness = value
