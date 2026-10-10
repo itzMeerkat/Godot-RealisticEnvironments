@@ -256,6 +256,13 @@ func _finalize_generation() -> void:
 	_invalidate_probe_cache()
 	_connect_probe_signals()
 	_queue_debug_rebuild()
+	update_configuration_warnings()
+
+
+func _get_configuration_warnings() -> PackedStringArray:
+	if _get_physical_probes().is_empty():
+		return PackedStringArray(["No buoyancy probes: the body does not float. Set source_paths to the hull meshes, press Generate All Probes, and save the scene."])
+	return PackedStringArray()
 
 
 ## States of the enabled physical probes, created once per probe and reused.

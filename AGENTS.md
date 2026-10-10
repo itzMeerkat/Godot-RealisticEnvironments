@@ -15,6 +15,14 @@ before touching its code; this file only records what is easy to get wrong.
   every frame, and model expected states ("no result yet", "disabled")
   explicitly. Compute features check `RenderingContext.failed` after building
   their resources.
+- Setup mistakes a user can make in the editor also show as node
+  configuration warnings (`_get_configuration_warnings()`, refreshed with
+  `update_configuration_warnings()` from the setters they depend on): missing
+  sources and paths, the sky's missing global uniforms, a sky `sea_level` that
+  differs from the ocean's `water_level`, camera far planes short of the
+  horizon, missing probes and hull profiles, missing input actions. Godot asks
+  only `@tool` scripts, so runtime-only nodes are `@tool` and return from
+  `_ready` in the editor (`Engine.is_editor_hint()`) with processing off.
 - `docs/water-interaction-plan.md` and `docs/bow-wave-plan.md` are completed
   design records (their *Deferred verification* list is still open). The
   sections below describe the code as it is *today*.

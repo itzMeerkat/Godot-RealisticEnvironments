@@ -5,6 +5,7 @@
 [ext_resource type="PackedScene" uid="uid://lsh7kr3nyl2t" path="res://addons/ocean_system/ocean_system.tscn" id="3_water"]
 [ext_resource type="Script" uid="uid://btyuqnmfuyrr6" path="res://addons/wind_system/wind_system.gd" id="4_wind"]
 [ext_resource type="PackedScene" uid="uid://bm4bg7uoyr0xy" path="res://systems/debug/ocean_debug_panel.tscn" id="5_panel"]
+[ext_resource type="Script" uid="uid://chrxdfdli1lpb" path="res://addons/exposure_system/exposure_controller.gd" id="6_exposure"]
 
 [node name="OceanOpticsDebug" type="Node3D" unique_id=1794523757]
 script = ExtResource("1_debug")
@@ -15,6 +16,11 @@ cycle_enabled = false
 cycle_duration_seconds = 120.0
 radiance_sun_disk_strength = 0.24
 radiance_sun_halo_strength = 0.28
+
+[node name="ExposureController" type="Node" parent="." unique_id=856103528]
+script = ExtResource("6_exposure")
+light_source_path = NodePath("../SkySystem")
+target_path = NodePath("../SkySystem/WorldEnvironment")
 
 [node name="WindSystem" type="Node" parent="." unique_id=1423349862]
 script = ExtResource("4_wind")

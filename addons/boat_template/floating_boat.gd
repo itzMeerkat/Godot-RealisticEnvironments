@@ -1,3 +1,4 @@
+@tool
 class_name FloatingBoat
 extends RigidBody3D
 ## Root of a floating boat: player drive input, stability torques, model
@@ -14,6 +15,7 @@ const DEBUG_HISTORY_COLOR := Color(0.2, 1.0, 0.45, 1.0)
 	set(value):
 		player_controlled = value
 		_update_history_visibility()
+		update_configuration_warnings()
 
 @export_group("Drive")
 ## InputMap action used for forward throttle.
@@ -71,10 +73,13 @@ var _drive_enabled := true
 
 
 func _ready() -> void:
+	if Engine.is_editor_hint():
+		set_physics_process(false)
+		return
 	_create_history_node()
 	for action in [move_forward_action, move_back_action, turn_left_action, turn_right_action]:
 		if not InputMap.has_action(action):
-			push_error("FloatingBoat %s: InputMap has no action \"%s\" (enable the Floating Boat Template plugin, add it in Project Settings > Input Map, or set the *_action exports); the boat ignores drive input." % [get_path(), action])
+			push_error("FloatingBoat %s: InputMap has no action \"%s\" (enable the Boat Template plugin, add it in Project Settings > Input Map, or set the *_action exports); the boat ignores drive input." % [get_path(), action])
 			_drive_enabled = false
 	if autoplay_animation != &"":
 		_play_model_animation()
@@ -87,6 +92,24 @@ func _physics_process(_delta: float) -> void:
 	_apply_local_angular_damping()
 	if player_controlled and debug_enabled:
 		_record_history_point()
+
+
+func _get_configuration_warnings() -> PackedStringArray:
+	var warnings := PackedStringArray()
+	if player_controlled:
+		var missing := PackedStringArray()
+		for action in [move_forward_action, move_back_action, turn_left_action, turn_right_action]:
+			if not ProjectSettings.has_setting("input/" + action):
+				missing.push_back(action)
+		if not missing.is_empty():
+			warnings.push_back("The Input Map lacks %s: the boat ignores drive input. Enable the Boat Template plugin (it adds them), add them in Project Settings > Input Map, or set the *_action exports." % ", ".join(missing))
+	if autoplay_animation != &"":
+		var animation_player := get_node_or_null(animation_player_path) as AnimationPlayer
+		if animation_player == null:
+			warnings.push_back("autoplay_animation is set but animation_player_path does not point to an AnimationPlayer.")
+		elif not animation_player.has_animation(autoplay_animation):
+			warnings.push_back("The AnimationPlayer has no animation \"%s\" (autoplay_animation)." % autoplay_animation)
+	return warnings
 
 
 func clear_position_history() -> void:

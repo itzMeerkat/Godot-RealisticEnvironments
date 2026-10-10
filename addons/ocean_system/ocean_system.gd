@@ -123,6 +123,7 @@ const WATER_DEBUG_VIEW_NORMAL := 0
 @export var sky_source_path : NodePath :
 	set(value):
 		sky_source_path = value
+		update_configuration_warnings()
 		if is_node_ready():
 			_resolve_sky_source()
 			_update_sky_lighting_shader_parameters()
@@ -355,6 +356,7 @@ const WATER_DEBUG_VIEW_NORMAL := 0
 @export var use_external_wind := false :
 	set(value):
 		use_external_wind = value
+		update_configuration_warnings()
 		if is_node_ready():
 			_resolve_wind_source()
 ## Wind source node, required when use_external_wind is enabled. It must expose
@@ -363,6 +365,7 @@ const WATER_DEBUG_VIEW_NORMAL := 0
 @export var wind_source_path : NodePath :
 	set(value):
 		wind_source_path = value
+		update_configuration_warnings()
 		if is_node_ready():
 			_resolve_wind_source()
 
@@ -392,6 +395,7 @@ const WATER_DEBUG_VIEW_NORMAL := 0
 				120.0 + PI*i
 			)
 		parameters = new_parameters
+		update_configuration_warnings()
 		if is_node_ready():
 			_setup_wave_generator()
 		_update_scales_uniform()
@@ -436,6 +440,7 @@ const WATER_DEBUG_VIEW_NORMAL := 0
 @export var water_level := 0.0 :
 	set(value):
 		water_level = value
+		update_configuration_warnings()
 		if is_node_ready(): _update_planar_reflection_settings()
 
 
@@ -973,6 +978,34 @@ func _resolve_sky_source() -> void:
 	_sky_source_polled = sky_source != null and not signals_changes
 	if signals_changes:
 		sky_source.connect(&'lighting_changed', _on_sky_lighting_changed)
+
+func _get_configuration_warnings() -> PackedStringArray:
+	var warnings := PackedStringArray()
+	if ProjectSettings.get_setting("rendering/renderer/rendering_method") == "gl_compatibility":
+		warnings.push_back("The ocean needs the Forward+ or Mobile renderer (compute shaders); with Compatibility there is no water.")
+	if parameters.is_empty():
+		warnings.push_back("No wave cascades (parameters): the sea is flat.")
+	if not global_basis.is_equal_approx(Basis.IDENTITY):
+		warnings.push_back("Don't rotate or scale the ocean: the waves, queries and reflections assume a level, unscaled node. Only water_level sets its height.")
+	if not sky_source_path.is_empty():
+		var sky := get_node_or_null(sky_source_path)
+		if sky == null:
+			warnings.push_back("sky_source_path does not point to a node; the manual sky values are used.")
+		elif sky.get(&'sea_level') != null and not is_equal_approx(float(sky.get(&'sea_level')), water_level):
+			warnings.push_back("The sky's sea_level (%s) differs from water_level (%s): its horizon and haze sit at the wrong height. Set both to the same value (OceanEnvironment.sea_level does)." % [sky.get(&'sea_level'), water_level])
+	if use_external_wind:
+		var wind := get_node_or_null(wind_source_path) if not wind_source_path.is_empty() else null
+		if wind == null or not (wind.has_method(&'get_wind_speed') or wind.get(&'wind_speed') != null):
+			warnings.push_back("use_external_wind is on but wind_source_path does not point to a wind source (e.g. a WindSystem); the cascades use their own wind.")
+	# Cameras of the edited scene: the sea is drawn out to the horizon, but no farther
+	# than a camera's far plane.
+	var scene_root := get_tree().edited_scene_root if Engine.is_editor_hint() and is_inside_tree() else null
+	if scene_root != null:
+		for camera : Camera3D in scene_root.find_children("*", "Camera3D", true, false):
+			var horizon := sqrt(2.0 * EARTH_RADIUS * maxf(camera.global_position.y - water_level, 2.0))
+			if camera.far < horizon:
+				warnings.push_back("Camera %s: far (%d m) ends before the horizon (%d m at its height), so the sea stops short of it. Raise far (the demo uses 60000 m)." % [scene_root.get_path_to(camera), camera.far, horizon])
+	return warnings
 
 func _on_sky_lighting_changed() -> void:
 	_sky_lighting_dirty = true

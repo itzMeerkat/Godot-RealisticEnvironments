@@ -1,3 +1,4 @@
+@tool
 class_name ExposureController
 extends Node
 ## Sets a camera's exposure from the light falling on the scene, as an incident-light
@@ -11,8 +12,9 @@ extends Node
 ## tone reproduction for high dynamic range images"): twilight and night stay darker than
 ## day.
 ##
-## Writes target's CameraAttributes.exposure_multiplier at runtime only. Godot applies
-## it to the scene's light before rendering (needs physical light units off).
+## Writes target's CameraAttributes.exposure_multiplier at runtime only (in the editor it
+## only shows configuration warnings). Godot applies it to the scene's light before
+## rendering (needs physical light units off).
 
 ## Grey card reflectance: the meter's middle grey.
 const GREY_REFLECTANCE := 0.18
@@ -25,10 +27,16 @@ const DARKEST_GREY_LUMINANCE := 1e-4
 ## The node metering the light: get_scene_illuminance() (lux on a level surface at the
 ## camera, negative while unknown) and get_illuminance_unit_lux() (lux of a scene
 ## irradiance of 1).
-@export var light_source_path : NodePath
+@export var light_source_path : NodePath :
+	set(value):
+		light_source_path = value
+		update_configuration_warnings()
 ## A WorldEnvironment (its camera_attributes) or a Camera3D (its attributes) to expose.
 ## One without CameraAttributes gets a CameraAttributesPractical.
-@export var target_path : NodePath
+@export var target_path : NodePath :
+	set(value):
+		target_path = value
+		update_configuration_warnings()
 ## Exposure on top of the meter's, in stops.
 @export_range(-10.0, 10.0, 0.1) var exposure_compensation_ev := 0.0
 ## Adapt like an eye (dim light stays darker) instead of like a camera (every light
@@ -55,8 +63,11 @@ var _adapted_lux := -1.0
 
 
 func _ready() -> void:
+	if Engine.is_editor_hint():
+		set_process(false)
+		return
 	_light_source = get_node_or_null(light_source_path)
-	if _light_source == null or not (_light_source.has_method(&"get_scene_illuminance") and _light_source.has_method(&"get_illuminance_unit_lux")):
+	if not _is_light_source(_light_source):
 		push_error("ExposureController %s: light_source_path must point to a node with get_scene_illuminance() and get_illuminance_unit_lux(); exposure is fixed." % get_path())
 		set_process(false)
 		return
@@ -102,6 +113,20 @@ func _add_night_vision(target : Node) -> void:
 	effects.push_back(effect)
 	_compositor.compositor_effects = effects
 	_night_vision = effect
+
+
+func _get_configuration_warnings() -> PackedStringArray:
+	var warnings := PackedStringArray()
+	if not _is_light_source(get_node_or_null(light_source_path)):
+		warnings.push_back("light_source_path must point to a node with get_scene_illuminance() and get_illuminance_unit_lux(), e.g. a SkySystem. Without it the exposure is fixed.")
+	var target := get_node_or_null(target_path)
+	if not (target is WorldEnvironment or target is Camera3D):
+		warnings.push_back("target_path must point to the WorldEnvironment (e.g. SkySystem/WorldEnvironment) or the Camera3D to expose. Without it the exposure is fixed.")
+	return warnings
+
+
+static func _is_light_source(node : Node) -> bool:
+	return node != null and node.has_method(&"get_scene_illuminance") and node.has_method(&"get_illuminance_unit_lux")
 
 
 ## The illuminance (lux) the exposure is currently adapted to; < 0 before the first reading.

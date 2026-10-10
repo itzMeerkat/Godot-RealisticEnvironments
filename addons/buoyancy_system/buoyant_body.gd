@@ -1,3 +1,4 @@
+@tool
 class_name BuoyantBody
 extends Node
 ## Applies probe-based buoyancy forces to a parent RigidBody3D using the water
@@ -15,7 +16,10 @@ signal probe_exited_water(state: BuoyancyProbeState)
 signal sinking_started(reason: StringName, data: Dictionary)
 
 ## Optional rigid body target. Leave empty to use the parent or nearest ancestor RigidBody3D.
-@export var rigid_body_path : NodePath
+@export var rigid_body_path : NodePath :
+	set(value):
+		rigid_body_path = value
+		update_configuration_warnings()
 ## Automatically includes child BuoyancyProbeVolume nodes in addition to explicit paths.
 @export var auto_collect_child_volumes := true
 ## Explicit probe volumes used by this buoyant body.
@@ -87,6 +91,9 @@ var _is_sinking := false
 
 
 func _ready() -> void:
+	if Engine.is_editor_hint():
+		set_physics_process(false)
+		return
 	rigid_body = _resolve_rigid_body()
 	water = WaterSurface.find(self)
 	if rigid_body == null or water == null:
@@ -119,11 +126,13 @@ func _exit_tree() -> void:
 
 func _physics_process(_delta : float) -> void:
 	if not apply_forces:
+		_end_first_sample_hold()
 		return
 	if _probe_cache_dirty:
 		_rebuild_probe_cache()
-	# Every volume and probe is disabled: nothing to float.
+	# Every volume and probe is disabled: nothing to float, and no sample to wait for.
 	if _points.is_empty():
+		_end_first_sample_hold()
 		return
 
 	var body_transform := rigid_body.global_transform
@@ -135,9 +144,7 @@ func _physics_process(_delta : float) -> void:
 	if result.samples.size() != _points.size():
 		push_error("BuoyantBody %s: query result has %d samples for %d probes; tick skipped." % [get_path(), result.samples.size(), _points.size()])
 		return
-	if _awaiting_first_sample:
-		_awaiting_first_sample = false
-		rigid_body.freeze = false
+	_end_first_sample_hold()
 	var elapsed := water.get_query_age(result)
 	var now := float(Time.get_ticks_msec()) * 0.001
 
@@ -253,6 +260,23 @@ func get_probe_state(probe : Node) -> BuoyancyProbeState:
 	if _probe_cache_dirty:
 		_rebuild_probe_cache()
 	return _states_by_probe.get(probe.get_instance_id())
+
+
+## Releases the body held frozen until the first water sample (see _ready()).
+func _end_first_sample_hold() -> void:
+	if _awaiting_first_sample:
+		_awaiting_first_sample = false
+		rigid_body.freeze = false
+
+
+func _get_configuration_warnings() -> PackedStringArray:
+	var warnings := PackedStringArray()
+	var body : Node = get_node_or_null(rigid_body_path) if not rigid_body_path.is_empty() else _find_parent_rigid_body()
+	if not body is RigidBody3D:
+		warnings.push_back("Needs a RigidBody3D to float: make it a descendant of one, or set rigid_body_path.")
+	elif probe_volume_paths.is_empty() and not (auto_collect_child_volumes and not body.find_children("*", "BuoyancyProbeVolume", true, false).is_empty()):
+		warnings.push_back("No BuoyancyProbeVolume under the body (or in probe_volume_paths): nothing makes it float.")
+	return warnings
 
 
 ## Null (reported) when the configured body is missing or not a RigidBody3D.

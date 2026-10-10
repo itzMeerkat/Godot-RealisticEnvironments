@@ -413,6 +413,37 @@ func _check_project_settings() -> void:
 		push_error("SkySystem %s: rendering/lights_and_shadows/use_physical_light_units is on; the sky's lights and exposure are wrong with it. Turn it off." % get_path())
 
 
+func _get_configuration_warnings() -> PackedStringArray:
+	var warnings := PackedStringArray()
+	var missing := PackedStringArray()
+	for declaration : Array in AtmosphereGlobals.DECLARATIONS:
+		if not ProjectSettings.has_setting("shader_globals/" + declaration[0]):
+			missing.push_back(declaration[0])
+	if not missing.is_empty():
+		warnings.push_back("The project lacks the global shader uniforms %s, so the sky's shaders do not compile. Enable the Sky System plugin (Project Settings > Plugins), which adds them." % ", ".join(missing))
+	if ProjectSettings.get_setting("rendering/renderer/rendering_method") == "gl_compatibility":
+		warnings.push_back("The atmosphere and clouds need the Forward+ or Mobile renderer (compute shaders); with Compatibility the sky is empty.")
+	if ProjectSettings.get_setting("rendering/lights_and_shadows/use_physical_light_units"):
+		warnings.push_back("Physical light units are on (Project Settings > Rendering > Lights and Shadows); the sky's lights and exposure are wrong with them. Turn them off.")
+	var scene_root := get_tree().edited_scene_root if Engine.is_editor_hint() and is_inside_tree() else null
+	if scene_root != null:
+		var others := PackedStringArray()
+		for node in scene_root.find_children("*", "WorldEnvironment", true, false) + scene_root.find_children("*", "DirectionalLight3D", true, false):
+			if not is_ancestor_of(node):
+				others.push_back(str(scene_root.get_path_to(node)))
+		if not others.is_empty():
+			warnings.push_back("Other WorldEnvironment or DirectionalLight3D nodes in the scene (%s) fight the sky's own: remove them." % ", ".join(others))
+		var exposed := false
+		for node in scene_root.find_children("*", "", true, false):
+			var path = node.get(&'light_source_path')
+			if path is NodePath and not path.is_empty() and node.get_node_or_null(path) == self:
+				exposed = true
+				break
+		if not exposed:
+			warnings.push_back("No ExposureController reads this sky (light_source_path): light levels are physical, so nights and overcast render near black. Add one (exposure_system), or ignore this if your own exposure reads get_scene_illuminance().")
+	return warnings
+
+
 func _enter_tree() -> void:
 	if is_node_ready():
 		_setup_atmosphere()

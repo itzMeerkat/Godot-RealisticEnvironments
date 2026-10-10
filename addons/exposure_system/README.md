@@ -61,7 +61,8 @@ Exports:
 - Adaptation smooths the metered lux in log space with the time constant for
   its direction.
 - The result is written to `CameraAttributes.exposure_multiplier` at runtime
-  only (the node is not a tool script, so nothing is saved into scenes). Godot
+  only (in the editor the node only shows configuration warnings, so nothing
+  is saved into scenes). Godot
   applies it before rendering, to lights, emission and the sky; systems that
   write their own light (the sky system's atmosphere and clouds, the ocean's
   reflections) read the same value and match it. Keep physical light units off.
