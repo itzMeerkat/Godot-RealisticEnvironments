@@ -32,17 +32,35 @@ signal sinking_started(reason: StringName, data: Dictionary)
 @export_range(0.0, 10.0, 0.01, "or_greater") var buoyancy_strength := 1.0
 ## Fluid density in kg/m^3. Seawater is usually around 1025.
 @export_range(1.0, 2000.0, 1.0, "or_greater") var water_density := 1025.0
-## Vertical water drag applied at each physical probe, in 1/s, against the probe's
-## vertical velocity relative to the water there. Damps heave, pitch and roll
-## relative to the surface, so the body still rides the waves.
-@export_range(0.0, 100.0, 0.01, "or_greater") var vertical_water_drag := 2.0
-## Body-forward/back water drag applied at each physical probe, against the
-## probe's velocity relative to the water (which moves with the waves).
-@export_range(0.0, 100.0, 0.01, "or_greater") var longitudinal_water_drag := 0.45
-## Body-sideways water drag applied at each physical probe, against the probe's
-## velocity relative to the water.
-@export_range(0.0, 100.0, 0.01, "or_greater") var lateral_water_drag := 0.45
-## Safety cap for acceleration contributed by any single probe.
+# Water resistance follows Morison's equation for bodies small next to the
+# waves: quadratic drag ½·ρ·C_d·area·|v|·v along each of the body's up, forward
+# and right axes, against the velocity across that face relative to the water
+# (which moves with the waves), plus wave-making damping and added mass.
+
+## Drag coefficient along the body's up axis, against the column's
+## cross-section (volume / buoyancy_height): about 1 for a blunt body, 2 for a
+## flat plate.
+@export_range(0.0, 10.0, 0.01, "or_greater") var vertical_drag_coefficient := 1.0
+## Drag coefficient along the body's forward axis, against the column's wetted
+## side (width × submerged height). Side by side, the columns' sides add up to
+## more than a hull's frontal area, so a streamlined hull is around 0.05.
+@export_range(0.0, 10.0, 0.001, "or_greater") var longitudinal_drag_coefficient := 1.0
+## Drag coefficient along the body's right axis, against the column's wetted
+## side: about 1 for a hull's side or keel.
+@export_range(0.0, 10.0, 0.001, "or_greater") var lateral_drag_coefficient := 1.0
+## Linear damping of each probe's bobbing as a fraction of critical damping
+## (from its waterplane stiffness and its share of the mass), against its
+## vertical velocity relative to the water: the energy a floating body radiates
+## as waves. Damps heave, pitch and roll where the quadratic drag is too weak
+## (small, slow motion). Ships are around 0.1-0.3.
+@export_range(0.0, 2.0, 0.01, "or_greater") var heave_damping_ratio := 0.2
+## Added mass in heave, as a multiple of the submerged volume's water mass: the
+## water that has to move with the body. It adds inertia but no weight, so it
+## slows the bobbing without changing the draft. About 1 for a hull. Heave only:
+## pitch and roll get no added inertia.
+@export_range(0.0, 5.0, 0.01, "or_greater") var added_mass_coefficient := 1.0
+## Safety cap for the acceleration any single probe's buoyancy, and separately
+## its drag, can contribute. 0 disables it.
 @export_range(0.0, 100.0, 0.1, "or_greater") var max_probe_acceleration := 35.0
 ## Enables applying forces. Disable to keep query/contact state without affecting physics.
 @export var apply_forces := true
@@ -76,6 +94,8 @@ var probe_volumes : Array[BuoyancyProbeVolume] = []
 ## True while the body is held frozen waiting for its first water sample.
 var _awaiting_first_sample := false
 var _gravity := 9.8
+## Physics time (s) this node has run: the clock of probe states and events.
+var _physics_time := 0.0
 
 # Probe cache. Force (physical) probes come first in every per-point array,
 # contact probes after them.
@@ -88,8 +108,15 @@ var _points := PackedVector3Array()
 var _max_volumes := PackedFloat32Array()
 var _volume_shares := PackedFloat32Array()
 var _column_heights := PackedFloat32Array()
+## sqrt(volume / height): the side of a square column, for tilted columns.
+var _column_widths := PackedFloat32Array()
 var _longitudinal_drag := PackedFloat32Array()
 var _lateral_drag := PackedFloat32Array()
+## Water vertical velocity and acceleration at each physical probe, from the
+## last two results (for the added mass), and the clock of the last one.
+var _water_velocity_y := PackedFloat32Array()
+var _water_acceleration_y := PackedFloat32Array()
+var _water_sample_time := -INF
 ## Water clock (WaterSurface.get_clock()) when the probe set last changed. Results dispatched before
 ## then answer the old point set.
 var _probe_set_time := -INF
@@ -131,7 +158,8 @@ func _exit_tree() -> void:
 		water.release_query(self)
 
 
-func _physics_process(_delta : float) -> void:
+func _physics_process(delta : float) -> void:
+	_physics_time += delta
 	if not apply_forces:
 		_end_first_sample_hold()
 		return
@@ -153,46 +181,96 @@ func _physics_process(_delta : float) -> void:
 		return
 	_end_first_sample_hold()
 	var elapsed := water.get_query_age(result)
-	var now := float(Time.get_ticks_msec()) * 0.001
-
-	var forward := -body_transform.basis.z
-	forward.y = 0.0
-	forward = forward.normalized() if forward.length_squared() > 0.0001 else Vector3.FORWARD
-	var right := body_transform.basis.x
-	right.y = 0.0
-	right = right.normalized() if right.length_squared() > 0.0001 else Vector3.RIGHT
+	_update_water_acceleration(result)
+	# Drag acts along the body's own axes, so it stays well defined however the
+	# body lies. The areas come from each column's geometry, so the coefficients
+	# mean the same in every orientation.
+	var body_basis := body_transform.basis.orthonormalized()
+	var body_up := body_basis.y
+	var forward := -body_basis.z
+	var right := body_basis.x
 	var mass := rigid_body.mass
 	var linear_velocity := rigid_body.linear_velocity
 	var angular_velocity := rigid_body.angular_velocity
+	var body_state := PhysicsServer3D.body_get_direct_state(rigid_body.get_rid())
 	# Probe forces are summed into one force and one torque about the center of mass
 	# (what apply_force() at each probe adds up to), sent with two calls per tick.
-	var center_of_mass := PhysicsServer3D.body_get_direct_state(rigid_body.get_rid()).center_of_mass
+	var center_of_mass := body_state.center_of_mass
+	# Columns hang from their probes along the body's down axis and turn with it:
+	# a capsized body displaces what it does upright, instead of floating a column
+	# height higher (columns hanging below the inverted hull).
+	var column_tilt := sqrt(maxf(1.0 - body_up.y * body_up.y, 0.0))
 
 	var total_external_force := Vector3.ZERO
 	var total_torque := Vector3.ZERO
+	var added_mass := 0.0
+	var added_mass_water_force := 0.0
 	for i in _force_states.size():
 		var sample := result.samples[i]
 		var water_height := sample.extrapolated_height(elapsed)
 		var position := _points[i]
 		var column_height := _column_heights[i]
-		var submersion := clampf(water_height - (position.y - column_height), 0.0, column_height) / column_height
+		var column_width := _column_widths[i]
+		var column := body_up * column_height
+		var column_center := position - column * 0.5
+		# A tilted column is a prism of its own width, so the submerged share stays
+		# smooth all the way to a horizontal column.
+		var vertical_extent := column_height * absf(body_up.y) + column_width * column_tilt
+		var submersion := clampf((water_height - column_center.y) / vertical_extent + 0.5, 0.0, 1.0)
 		var applied_force := Vector3.ZERO
 		if submersion > 0.0:
-			var share := _volume_shares[i]
-			var offset := position - body_transform.origin
-			var relative_velocity := linear_velocity + angular_velocity.cross(offset) - sample.surface_velocity
-			var buoyancy_force := Vector3.UP * water_density * _gravity * buoyancy_strength * _max_volumes[i] * submersion
-			var drag_scale := mass * share * submersion
-			var longitudinal_drag_force := -forward * relative_velocity.dot(forward) * longitudinal_water_drag * _longitudinal_drag[i] * drag_scale
-			var lateral_drag_force := -right * relative_velocity.dot(right) * lateral_water_drag * _lateral_drag[i] * drag_scale
-			var vertical_drag_force := Vector3.DOWN * relative_velocity.y * vertical_water_drag * drag_scale
-			applied_force = buoyancy_force + longitudinal_drag_force + lateral_drag_force + vertical_drag_force
-			var max_force := mass * share * max_probe_acceleration
-			if max_probe_acceleration > 0.0 and applied_force.length_squared() > max_force * max_force:
-				applied_force = applied_force.normalized() * max_force
+			var probe_mass := mass * _volume_shares[i]
+			# Forces act at the submerged part's centre: from the column's lower end
+			# (fully dry) to its centre (fully wet), along the column's vertical span.
+			var force_point := column_center + column * (body_up.y * (submersion - 1.0) * 0.5)
+			# linear_velocity is the center of mass's, so the lever arm is from there.
+			var arm := force_point - body_transform.origin - center_of_mass
+			var relative_velocity := linear_velocity + angular_velocity.cross(arm) - sample.surface_velocity
+			var max_force := probe_mass * max_probe_acceleration if max_probe_acceleration > 0.0 else INF
+			# Buoyancy and drag are capped separately. Capping their sum let a deeply
+			# submerged probe's buoyancy swallow its drag (the sum stayed at the cap
+			# whichever way the probe moved), so a body that dived bounced undamped and
+			# the waves pumped it higher with every bounce.
+			var buoyancy := water_density * _gravity * buoyancy_strength * _max_volumes[i] * submersion
+			var buoyancy_force := Vector3.UP * minf(buoyancy, max_force)
+
+			# Quadratic drag per body axis, each from the velocity across that face
+			# alone (the cross-flow principle: moving forward does not stiffen the
+			# sides), as a rate on the probe's share of the mass (see
+			# _stable_drag_rate()). The end face meets the water fully once it is a
+			# column width deep; the sides are wet over the submerged height.
+			var drag_per_area := 0.5 * water_density / probe_mass
+			var end_area := column_width * column_width * minf(submersion * vertical_extent / column_width, 1.0)
+			var side_area := column_width * column_height * submersion
+			var up_speed := relative_velocity.dot(body_up)
+			var forward_speed := relative_velocity.dot(forward)
+			var right_speed := relative_velocity.dot(right)
+			var drag_acceleration := -body_up * up_speed * _stable_drag_rate(drag_per_area * vertical_drag_coefficient * end_area * absf(up_speed), delta)
+			drag_acceleration -= forward * forward_speed * _stable_drag_rate(drag_per_area * longitudinal_drag_coefficient * _longitudinal_drag[i] * side_area * absf(forward_speed), delta)
+			drag_acceleration -= right * right_speed * _stable_drag_rate(drag_per_area * lateral_drag_coefficient * _lateral_drag[i] * side_area * absf(right_speed), delta)
+			# Wave-making damping while the column crosses the surface (where its
+			# waterplane gives it a stiffness k): c = 2·ζ·√(k·m).
+			if submersion < 1.0 and heave_damping_ratio > 0.0:
+				var stiffness := water_density * _gravity * buoyancy_strength * _max_volumes[i] / vertical_extent
+				drag_acceleration.y -= relative_velocity.y * _stable_drag_rate(2.0 * heave_damping_ratio * sqrt(stiffness / probe_mass), delta)
+			var drag_force := drag_acceleration * probe_mass
+			if drag_force.length_squared() > max_force * max_force:
+				drag_force = drag_force.normalized() * max_force
+			applied_force = buoyancy_force + drag_force
 			total_external_force += applied_force
-			total_torque += (offset - center_of_mass).cross(applied_force)
-		_update_state(_force_states[i], position, sample, water_height, applied_force, submersion, now)
+			total_torque += arm.cross(applied_force)
+			var probe_added_mass := water_density * added_mass_coefficient * _max_volumes[i] * submersion
+			added_mass += probe_added_mass
+			added_mass_water_force += probe_added_mass * _water_acceleration_y[i]
+		_update_state(_force_states[i], position, sample, water_height, applied_force, submersion, _physics_time)
+
+	# Added mass in heave: (m + M_a)·a = F + m·g + M_a·a_water. The engine only
+	# knows m, so add the force that gives that acceleration. It comes from this
+	# tick's forces, not from measured accelerations, so it cannot feed back and
+	# go unstable however large M_a gets.
+	if added_mass > 0.0:
+		var net_vertical_force := total_external_force.y + mass * body_state.total_gravity.y
+		total_external_force.y += (mass * added_mass_water_force - added_mass * net_vertical_force) / (mass + added_mass)
 
 	if total_external_force != Vector3.ZERO:
 		rigid_body.apply_central_force(total_external_force)
@@ -201,7 +279,7 @@ func _physics_process(_delta : float) -> void:
 	var force_count := _force_states.size()
 	for j in _contact_states.size():
 		var sample := result.samples[force_count + j]
-		_update_state(_contact_states[j], _points[force_count + j], sample, sample.extrapolated_height(elapsed), Vector3.ZERO, 0.0, now)
+		_update_state(_contact_states[j], _points[force_count + j], sample, sample.extrapolated_height(elapsed), Vector3.ZERO, 0.0, _physics_time)
 
 	_update_volume_debug(total_external_force)
 	if sinking_enabled and not _is_sinking:
@@ -269,6 +347,29 @@ func get_probe_state(probe : Node) -> BuoyancyProbeState:
 	if _probe_cache_dirty:
 		_rebuild_probe_cache()
 	return _states_by_probe.get(probe.get_instance_id())
+
+
+## Estimates the water's vertical acceleration at each physical probe from the
+## surface velocity of the last two results (once per new result).
+func _update_water_acceleration(result : WaterSurfaceQueryResult) -> void:
+	if result.dispatch_time == _water_sample_time:
+		return
+	var interval := result.dispatch_time - _water_sample_time
+	for i in _force_states.size():
+		var velocity_y := result.samples[i].surface_velocity.y
+		# The first result (also after the probe set changed) has no predecessor;
+		# the cap keeps a stalled readback from spiking it.
+		var acceleration := (velocity_y - _water_velocity_y[i]) / interval if is_finite(_water_sample_time) and interval > 0.0 else 0.0
+		_water_acceleration_y[i] = clampf(acceleration, -2.0 * _gravity, 2.0 * _gravity)
+		_water_velocity_y[i] = velocity_y
+	_water_sample_time = result.dispatch_time
+
+
+## Drag rate (1/s) that removes over one tick of delta what rate would remove
+## continuously: never more than the relative velocity, so even strong drag
+## cannot overshoot and oscillate.
+static func _stable_drag_rate(rate : float, delta : float) -> float:
+	return (1.0 - exp(-rate * delta)) / delta if delta > 0.0 else rate
 
 
 ## Releases the body held frozen until the first water sample (see _ready()).
@@ -357,8 +458,13 @@ func _rebuild_probe_cache() -> void:
 	_max_volumes.resize(force_count)
 	_volume_shares.resize(force_count)
 	_column_heights.resize(force_count)
+	_column_widths.resize(force_count)
 	_longitudinal_drag.resize(force_count)
 	_lateral_drag.resize(force_count)
+	_water_velocity_y.resize(force_count)
+	_water_acceleration_y.resize(force_count)
+	_water_acceleration_y.fill(0.0)
+	_water_sample_time = -INF
 	_states_by_probe.clear()
 	var total_volume := 0.0
 	for i in force_count:
@@ -366,6 +472,7 @@ func _rebuild_probe_cache() -> void:
 		_body_offsets[i] = to_body * probe.global_position
 		_max_volumes[i] = probe.max_submerged_volume_cubic_meters
 		_column_heights[i] = probe.buoyancy_height
+		_column_widths[i] = sqrt(probe.max_submerged_volume_cubic_meters / probe.buoyancy_height)
 		_longitudinal_drag[i] = probe.longitudinal_water_drag_multiplier
 		_lateral_drag[i] = probe.lateral_water_drag_multiplier
 		_states_by_probe[probe.get_instance_id()] = _force_states[i]

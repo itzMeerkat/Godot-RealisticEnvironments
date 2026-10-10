@@ -96,7 +96,6 @@ shape = SubResource("CylinderShape_barrel")
 
 [node name="BuoyantBody" type="Node" parent="." unique_id=2093759217]
 script = ExtResource("1_buoyant")
-vertical_water_drag = 4.0
 
 [node name="BuoyancyProbeVolume" type="Node3D" parent="." unique_id=1763295929]
 script = ExtResource("2_volume")

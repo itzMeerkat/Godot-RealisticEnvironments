@@ -197,9 +197,7 @@ roll_righting_torque_per_kg = 4.0
 shape = SubResource("ConvexPolygonShape3D_c6sjc")
 
 [node name="BuoyantBody" parent="." index="1" unique_id=1177248212]
-vertical_water_drag = 10.0
-longitudinal_water_drag = 0.3
-lateral_water_drag = 2.0
+heave_damping_ratio = 0.3
 
 [node name="BuoyancyProbeVolume" parent="." index="2" unique_id=782435554]
 source_paths = Array[NodePath]([NodePath("../Model/Sketchfab_model/Wooden_boat_fbx/RootNode/Boat/Boat_Boat_texture_0")])

@@ -42,7 +42,7 @@ var force := Vector3.ZERO
 var normal := Vector3.UP
 ## Velocity of the water surface at the probe (m/s).
 var surface_velocity := Vector3.ZERO
-## Seconds (Time.get_ticks_msec() / 1000) of the last update.
+## Physics time (s, the BuoyantBody's physics ticks so far) of the last update.
 var time := 0.0
 
 var _last_event_time := -1.0e20

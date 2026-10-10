@@ -288,10 +288,12 @@ func _add_buoyancy_controls(parent : VBoxContainer) -> void:
 
 	_add_bound_param(parent, "Buoyancy Strength", "Global multiplier for all buoyancy volume forces.", buoyant_body.buoyancy_strength, 0.0, 10.0, 0.01, func(value : float) -> void: buoyant_body.buoyancy_strength = value, true)
 	_add_bound_param(parent, "Water Density", "Seawater is usually around 1025 kg/m^3; freshwater is around 1000 kg/m^3.", buoyant_body.water_density, 1.0, 2000.0, 1.0, func(value : float) -> void: buoyant_body.water_density = value, true)
-	_add_bound_param(parent, "Vertical Drag", "Water drag at each probe against its vertical velocity relative to the water: damps heave, pitch and roll.", buoyant_body.vertical_water_drag, 0.0, 100.0, 0.01, func(value : float) -> void: buoyant_body.vertical_water_drag = value, true)
-	_add_bound_param(parent, "Longitudinal Drag", "Global water drag along the body's forward axis.", buoyant_body.longitudinal_water_drag, 0.0, 100.0, 0.01, func(value : float) -> void: buoyant_body.longitudinal_water_drag = value, true)
-	_add_bound_param(parent, "Lateral Drag", "Global water drag along the body's right axis.", buoyant_body.lateral_water_drag, 0.0, 100.0, 0.01, func(value : float) -> void: buoyant_body.lateral_water_drag = value, true)
-	_add_bound_param(parent, "Max Probe Accel", "Caps each buoyancy probe's acceleration contribution to avoid numerical blowups.", buoyant_body.max_probe_acceleration, 0.0, 100.0, 0.1, func(value : float) -> void: buoyant_body.max_probe_acceleration = value, true)
+	_add_bound_param(parent, "Vertical Drag Cd", "Drag coefficient along the body's up axis, against each column's cross-section.", buoyant_body.vertical_drag_coefficient, 0.0, 10.0, 0.01, func(value : float) -> void: buoyant_body.vertical_drag_coefficient = value, true)
+	_add_bound_param(parent, "Longitudinal Drag Cd", "Drag coefficient along the body's forward axis, against each column's wetted side.", buoyant_body.longitudinal_drag_coefficient, 0.0, 10.0, 0.001, func(value : float) -> void: buoyant_body.longitudinal_drag_coefficient = value, true)
+	_add_bound_param(parent, "Lateral Drag Cd", "Drag coefficient along the body's right axis, against each column's wetted side.", buoyant_body.lateral_drag_coefficient, 0.0, 10.0, 0.001, func(value : float) -> void: buoyant_body.lateral_drag_coefficient = value, true)
+	_add_bound_param(parent, "Heave Damping Ratio", "Wave-making damping of each probe's bobbing, as a fraction of critical damping: damps heave, pitch and roll.", buoyant_body.heave_damping_ratio, 0.0, 2.0, 0.01, func(value : float) -> void: buoyant_body.heave_damping_ratio = value, true)
+	_add_bound_param(parent, "Added Mass", "Water moving with the body in heave, as a multiple of the submerged water mass.", buoyant_body.added_mass_coefficient, 0.0, 5.0, 0.01, func(value : float) -> void: buoyant_body.added_mass_coefficient = value, true)
+	_add_bound_param(parent, "Max Probe Accel", "Caps the acceleration each probe's buoyancy, and separately its drag, can contribute.", buoyant_body.max_probe_acceleration, 0.0, 100.0, 0.1, func(value : float) -> void: buoyant_body.max_probe_acceleration = value, true)
 
 
 func _add_mesh_controls(parent : VBoxContainer) -> void:

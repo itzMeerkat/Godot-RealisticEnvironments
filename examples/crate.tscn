@@ -111,7 +111,6 @@ shape = SubResource("BoxShape_crate")
 
 [node name="BuoyantBody" type="Node" parent="." unique_id=700136512]
 script = ExtResource("1_buoyant")
-vertical_water_drag = 4.0
 
 [node name="BuoyancyProbeVolume" type="Node3D" parent="." unique_id=564786270]
 script = ExtResource("2_volume")

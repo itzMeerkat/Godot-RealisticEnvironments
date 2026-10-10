@@ -33,7 +33,7 @@ RigidBody3D                (e.g. FloatingBoat)
 3. In the editor press **Generate Physical Probes**, **Generate FX Probes**
    or **Generate All Probes**, then save the scene. Generation only runs in the editor; at runtime a volume with no probes
    just warns once.
-4. Tune probe volumes, `buoyancy_strength` and drag. Probes are ordinary nodes:
+4. Tune probe volumes, `buoyancy_strength` and the drag coefficients. Probes are ordinary nodes:
    move, delete or duplicate them by hand as needed.
 
 ## Probes
@@ -63,18 +63,56 @@ Each `_physics_process` it transforms the cached positions by the body
 transform, submits them with `water.submit_query(self, points, rigid_body)`
 (so a body that pushes water through a `HullWaterFootprint` does not read its
 own simulated waves back), reads
-the latest completed result, and for every physical probe applies at the probe
-position:
+the latest completed result, and for every physical probe applies, at the centre
+of the column's submerged part:
 
 - buoyancy `ρ · g · buoyancy_strength · displaced_volume` upward;
-- vertical, longitudinal and lateral drag (`vertical_water_drag`,
-  `longitudinal_water_drag`, `lateral_water_drag`, in 1/s) against the probe's
-  velocity relative to the water there (`sample.surface_velocity`: the waves'
-  orbital motion), scaled by body mass, the probe's share of total volume, and
-  submersion. Relative to the water, the vertical drag damps heave, pitch and
-  roll without holding the body still against the waves: damped against its
-  absolute velocity, the rowboat lagged the swell by 0.18 s (0.03 s now);
-- a per-probe force cap of `mass × volume_share × max_probe_acceleration`.
+- water resistance after Morison's equation (the offshore-engineering model
+  for bodies small next to the waves), against the velocity of that point of
+  the body (centre-of-mass velocity plus `ω × arm` from the centre of mass)
+  relative to the water there (`sample.surface_velocity`: the waves' orbital
+  motion). Relative to the water, it damps the body's motion without holding it
+  still against the waves: damped against its absolute velocity, the rowboat
+  lagged the swell by 0.18 s (0.03 s now).
+  - Quadratic drag `½ · ρ · C_d · area · |v_k| · v_k` along each of the body's
+    up, forward and right axes, from the velocity across that face alone (the
+    cross-flow principle: moving forward does not stiffen the sides, which kept
+	the boats' turning unchanged). The areas come from the column: its
+	cross-section `volume / buoyancy_height` for the end (fully wet once a
+	column width deep) and `width × submerged height` for the sides. The
+	coefficients are `vertical_drag_coefficient`,
+	`longitudinal_drag_coefficient` × the probe's multiplier and
+	`lateral_drag_coefficient` × the probe's multiplier: about 1 for blunt
+	bodies; side by side, the columns' sides add up to more than a hull's
+	frontal area, so streamlined hulls use around 0.05 forward.
+  - Wave-making damping while the column crosses the surface: linear, on the
+	vertical velocity, `heave_damping_ratio` of critical damping from the
+	column's waterplane stiffness `ρ · g · volume / height` and its share of
+	the body's mass. Quadratic drag alone is weak for small, slow motion; this
+	is the energy a floating body radiates as waves, which damps its bobbing.
+  - Added mass in heave, `added_mass_coefficient × ρ × submerged volume`: the
+	water that moves with the body adds inertia but no weight (it cannot go
+	into the rigid body's mass, which would sink it deeper). The engine only
+	knows the body's mass, so `BuoyantBody` adds the vertical force that gives
+	`(m + M_a) · a = F + m · g + M_a · a_water`, with the water's vertical
+    acceleration estimated from the last two results. It is computed from this
+	tick's forces, never from measured accelerations, so it cannot feed back.
+	Pitch and roll get no added inertia.
+
+  Before, drag was a rate (1/s) scaled by the body's mass: a light body that
+  floats high (the example barrels, about 3 % of critical damping) rang at its
+  natural period and leapt off steep waves. The drag depends only on the
+  water and the shape now.
+- a per-probe cap of `mass × volume_share × max_probe_acceleration`, on the
+  buoyancy and on the drag separately. Capped together, a deeply submerged
+  probe's buoyancy swallowed its drag, and light bodies bounced higher and
+  higher. Drag uses the exact one-tick decay (`(1 − e^(−rate·Δt)) / Δt` on the
+  probe's share of the mass), so strong drag cannot overshoot.
+
+A column hangs from its probe along the body's down axis and turns with the
+body: a capsized hull displaces what it does upright. A tilted column is
+treated as a square prism (side `√(volume / buoyancy_height)`), so its
+submersion stays smooth up to horizontal.
 
 Query results arrive a few frames after dispatch (see the ocean README):
 
@@ -101,7 +139,8 @@ sampling.
 `is_fx_probe`, `has_sample` (false until the first water sample),
 `world_position`, `water_position`, `depth` (water height − probe Y),
 `submersion`, `is_wet`, `was_wet`, `entered`, `exited`, `force` (applied this
-tick), `normal`, `surface_velocity`, `time`. Wet/dry switching uses hysteresis
+tick), `normal`, `surface_velocity`, `time` (the body's physics time: the sum of
+its physics ticks, so it pauses and scales with the game). Wet/dry switching uses hysteresis
 and `min_event_interval`: physical probes take `enter_depth_threshold` /
 `exit_depth_threshold` from their volume, contact probes their own (the enter
 threshold must be above the exit threshold). Keep a state only as long as the

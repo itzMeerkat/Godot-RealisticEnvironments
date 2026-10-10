@@ -346,7 +346,7 @@ How it works:
   outside its waterline, and read up to 1.2 m of its own waves. So bodies that
   make waves now skip `η` entirely (see [Query semantics](#query-semantics));
   coverage still keeps the water under a hull from lifting anything else.
-  Their own radiation is approximated by `BuoyantBody.vertical_water_drag`.
+  Their own radiation is approximated by `BuoyantBody.heave_damping_ratio`.
 - **Step** (once per physics tick, from `OceanSystem._physics_process`, so each
   step sees exactly one new pose of every hull; stepping per frame made hull
   motion stutter into the forcing and ring at grid scale). Or at a fixed
