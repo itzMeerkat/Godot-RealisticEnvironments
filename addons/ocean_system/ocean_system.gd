@@ -444,6 +444,8 @@ const WATER_DEBUG_VIEW_NORMAL := 0
 		if is_node_ready(): _update_planar_reflection_settings()
 
 
+## The compute pipeline that generates the wave maps (an internal child; null without a
+## RenderingDevice).
 var wave_generator : WaveGenerator :
 	set(value):
 		if wave_generator:
@@ -451,10 +453,13 @@ var wave_generator : WaveGenerator :
 		wave_generator = value
 		if wave_generator:
 			add_child(wave_generator)
+## Seeds the cascades' spectra.
 var rng = RandomNumberGenerator.new()
 ## Ocean clock (s), advanced every frame; the waves drawn this frame are at this time.
 var time := 0.0
+## Resolved node of wind_source_path (null without a valid one).
 var wind_source : Node
+## Resolved node of sky_source_path (null without one).
 var sky_source : Node
 ## True when sky_source has no lighting_changed signal and must be read every frame.
 var _sky_source_polled := false
@@ -472,8 +477,11 @@ var _sky_lighting_dirty := false
 
 ## The generator's maps A and B (see WaveGenerator), bound to the water material.
 var displacement_maps_a := Texture2DArrayRD.new()
+## Map B of the displacement (see displacement_maps_a).
 var displacement_maps_b := Texture2DArrayRD.new()
+## Map A of the normals, slopes and foam.
 var normal_maps_a := Texture2DArrayRD.new()
+## Map B of the normals, slopes and foam.
 var normal_maps_b := Texture2DArrayRD.new()
 var _material : ShaderMaterial
 ## Bound instead of the wave maps while there is no generator (_get_flat_wave_maps()).
@@ -727,6 +735,7 @@ func get_skipped_surface_query_dispatch_count() -> int:
 func should_use_external_wind() -> bool:
 	return use_external_wind and wind_source != null
 
+## The resolved wind source node, or null without a valid one.
 func get_wind_source() -> Node:
 	return wind_source
 
@@ -744,9 +753,12 @@ func _read_wind_value(method: StringName, property: StringName) -> float:
 		return float(wind_source.call(method))
 	return float(wind_source.get(property))
 
+## The resolved sky source node, or null without one.
 func get_sky_source() -> Node:
 	return sky_source
 
+## The private duplicate of water_material the ocean renders with (the stock shader swapped
+## for the shader_quality tier). Set shader parameters on it at runtime, not on water_material.
 func get_water_material() -> ShaderMaterial:
 	if _material == null:
 		_material = water_material.duplicate()

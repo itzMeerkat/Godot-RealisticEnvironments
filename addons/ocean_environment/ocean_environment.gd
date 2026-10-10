@@ -13,9 +13,13 @@ extends Node3D
 		sea_level = value
 		_apply_sea_level()
 
+## The environment's WindSystem.
 @onready var wind : WindSystem = $WindSystem
+## The environment's SkySystem.
 @onready var sky : SkySystem = $SkySystem
+## The environment's OceanSystem.
 @onready var ocean : OceanSystem = $Ocean
+## The environment's ExposureController.
 @onready var exposure : ExposureController = $ExposureController
 
 

@@ -7,8 +7,13 @@ extends Node3D
 const DEBUG_SCREEN_POSITION := Vector2(24.0, 88.0)
 const DEBUG_PANEL_WIDTH := 260.0
 
+## Emitted for every accepted hit, before damage is applied. hit_data includes damage and
+## remaining_health.
 signal hitbox_hit(hitbox_group: StringName, hitbox: Node, projectile: Node, hit_data: Dictionary)
+## Emitted when a group's health changes through damage.
 signal group_health_changed(hitbox_group: StringName, health: float, max_health: float, hit_data: Dictionary)
+## Emitted once when a group's health reaches 0 (connect BuoyantBody._on_hitbox_group_destroyed
+## to sink the body).
 signal group_destroyed(hitbox_group: StringName, hit_data: Dictionary)
 
 ## Enables damage routing, health changes, hit effects, and projectile cleanup.
@@ -82,6 +87,8 @@ func refresh_hitboxes() -> void:
 	_collect_hitboxes(self)
 
 
+## Turns a hit reported by hitbox into damage, signals and a hit effect, and frees the
+## projectile when destroy_projectile_on_hit is on. ProjectileHitbox calls it.
 func handle_projectile_hit(hitbox: Node, projectile: Node, hit_data: Dictionary = {}) -> void:
 	if not enabled:
 		return
@@ -103,6 +110,8 @@ func handle_projectile_hit(hitbox: Node, projectile: Node, hit_data: Dictionary 
 		projectile.queue_free()
 
 
+## Whether a hit by projectile is dropped: one fired from this manager's own body while
+## ignore_own_projectiles is on.
 func should_ignore_projectile(projectile: Node, _hitbox: Node = null) -> bool:
 	if not ignore_own_projectiles or projectile == null:
 		return false
@@ -114,20 +123,24 @@ func should_ignore_projectile(projectile: Node, _hitbox: Node = null) -> bool:
 	return int(projectile.get_meta(&"source_rigid_body_instance_id")) == owner_body.get_instance_id()
 
 
+## Current health of hitbox_group.
 func get_group_health(hitbox_group: StringName) -> float:
 	_ensure_group_health(hitbox_group)
 	return float(_group_health.get(hitbox_group, 0.0))
 
 
+## Maximum health of hitbox_group (group_max_health, else default_group_max_health).
 func get_group_max_health(hitbox_group: StringName) -> float:
 	return _get_group_float(group_max_health, hitbox_group, default_group_max_health)
 
 
+## Sets hitbox_group's health, clamped to 0..max. Emits no signal.
 func set_group_health(hitbox_group: StringName, health: float) -> void:
 	_group_health[hitbox_group] = clampf(health, 0.0, get_group_max_health(hitbox_group))
 	_refresh_debug_ui()
 
 
+## Restores every group to full health and clears destroyed groups.
 func reset_health() -> void:
 	_group_health.clear()
 	_destroyed_groups.clear()
@@ -135,6 +148,7 @@ func reset_health() -> void:
 	_refresh_debug_ui()
 
 
+## Whether hitbox_group has reached 0 health.
 func is_group_destroyed(hitbox_group: StringName) -> bool:
 	return bool(_destroyed_groups.get(hitbox_group, false))
 

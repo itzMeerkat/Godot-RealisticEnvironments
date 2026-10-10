@@ -148,6 +148,8 @@ func _ready() -> void:
 	_queue_debug_rebuild()
 
 
+## Editor only: replaces the generated physical and contact probes with new ones from the
+## waterline outline of the meshes under source_paths. Save the scene to keep them.
 func generate_all_probes_from_source() -> void:
 	if not Engine.is_editor_hint():
 		push_warning("Buoyancy probes can only be generated in the editor. Generate and save probes before running the scene.")
@@ -164,6 +166,7 @@ func generate_all_probes_from_source() -> void:
 	print("BuoyancyProbeVolume generated %d physical probes and %d FX probes from %d waterline segments in %.2f ms: %s" % [physical_count, fx_count, int(context.get("segment_count", 0)), elapsed_msec, str(get_path())])
 
 
+## Editor only: replaces only the generated physical (force) probes.
 func generate_physical_probes_from_source() -> void:
 	if not Engine.is_editor_hint():
 		push_warning("Buoyancy probes can only be generated in the editor. Generate and save probes before running the scene.")
@@ -178,6 +181,7 @@ func generate_physical_probes_from_source() -> void:
 	print("BuoyancyProbeVolume generated %d physical probes from %d waterline segments in %.2f ms: %s" % [physical_count, int(context.get("segment_count", 0)), elapsed_msec, str(get_path())])
 
 
+## Editor only: replaces only the generated contact (FX) probes.
 func generate_fx_probes_from_source() -> void:
 	if not Engine.is_editor_hint():
 		push_warning("FX probes can only be generated in the editor. Generate and save probes before running the scene.")
@@ -299,6 +303,7 @@ func _get_or_create_state(probe : Node3D, is_fx_probe : bool, tag : String, ente
 	return _states_by_probe[key]
 
 
+## Called by BuoyantBody each tick with the body's centre of mass and forces, for the debug draw.
 func set_debug_body_state(center_of_mass_world: Vector3, gravity_force: Vector3, external_force: Vector3, has_state: bool) -> void:
 	if not debug_enabled:
 		return

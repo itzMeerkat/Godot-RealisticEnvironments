@@ -4,6 +4,7 @@ extends MeshInstance3D
 ## Editable point buoyancy probe. The node position is the top of the buoyant
 ## water column represented by this probe.
 
+## Emitted when a setting of the probe changes; its volume refreshes its probe cache.
 signal probe_changed
 
 const PROBE_COLOR := Color(0.1, 0.8, 1.0, 0.32)

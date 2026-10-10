@@ -6,6 +6,7 @@ extends RefCounted
 var position := Vector3.ZERO
 ## World-space Y of the rendered surface above/below position.
 var height := 0.0
+## Surface normal at the sample (world space, unit length).
 var normal := Vector3.UP
 ## Wave displacement of the surface point that lies over position.
 var displacement := Vector3.ZERO

@@ -4,6 +4,7 @@ extends Node
 ## Lightweight wind provider that can be used by ocean, particles, clouds,
 ## boats, or gameplay code without depending on any other plugin.
 
+## Emitted when an export changes (not on every gust).
 signal wind_changed
 
 @export_group("Wind")
@@ -41,14 +42,17 @@ func _process(delta : float) -> void:
 	_elapsed_time += delta
 
 
+## Current wind speed (m/s): base speed plus the gust, never negative.
 func get_wind_speed() -> float:
 	return maxf(0.0, wind_speed + get_gust_offset())
 
 
+## wind_speed without gusts (m/s).
 func get_base_wind_speed() -> float:
 	return wind_speed
 
 
+## The gust added to wind_speed right now (m/s, may be negative).
 func get_gust_offset() -> float:
 	if gust_strength <= 0.0 or gust_frequency <= 0.0:
 		return 0.0
@@ -61,19 +65,23 @@ func get_gust_offset() -> float:
 	return layered_gust * gust_strength
 
 
+## Direction the wind blows toward, in degrees: 0 along +Z, 90 along +X.
 func get_wind_direction_degrees() -> float:
 	return wind_direction
 
 
+## get_wind_direction_degrees() in radians.
 func get_wind_direction_radians() -> float:
 	return deg_to_rad(wind_direction)
 
 
+## Wind velocity in the XZ plane (x, z) in m/s, gusts included.
 func get_wind_vector_2d() -> Vector2:
 	var radians := get_wind_direction_radians()
 	return Vector2(sin(radians), cos(radians)) * get_wind_speed()
 
 
+## Wind velocity as Vector3(x, 0, z) in m/s, gusts included.
 func get_wind_vector_3d() -> Vector3:
 	var wind := get_wind_vector_2d()
 	return Vector3(wind.x, 0.0, wind.y)

@@ -7,6 +7,7 @@ class_name WaveCascadeParameters extends Resource
 ## fetch, depth, swell, spread, detail) is generated into the inactive slot and
 ## crossfaded in, so the sea never jumps. Changing tile_length resets both slots.
 
+## Emitted when tile_length, displacement_scale or normal_scale change.
 signal scale_changed
 
 const SPECTRUM_SLOT_COUNT := 2
@@ -104,15 +105,22 @@ class SpectrumInputs:
 ## patches and streaks behind breaking waves.
 @export_range(0.05, 30, 0.05, "or_greater") var foam_lifetime := 2.0
 
+## Runtime state, set by OceanSystem: the random seed of this cascade's spectrum.
 var spectrum_seed := Vector2i.ZERO
+## Runtime state: whether spectrum_seed has been set.
 var has_runtime_seed := false
+## Runtime state: this cascade's clock (s) at its newest FFT frame.
 var time : float
 ## Per-update foam rates for fft_unpack.glsl, set by advance().
 var foam_grow_rate : float
+## Per-update foam decay for fft_unpack.glsl, set by advance().
 var foam_decay_rate : float
 
+## Runtime state: the spectrum slot shown (see the class description).
 var active_spectrum_slot := 0
+## Runtime state: the slot a new spectrum is generated into and crossfaded from.
 var pending_spectrum_slot := 1
+## Runtime state: whether a crossfade between the slots is running.
 var is_blending_spectrum := false
 ## Linear crossfade progress from 0 to 1 while is_blending_spectrum is true.
 var spectrum_blend_progress := 0.0
@@ -181,6 +189,8 @@ func advance(delta : float, external_wind_speed : float, external_wind_direction
 		spectrum_blend_progress = 0.0
 
 
+## Degrees per second the waves turn toward a new wind direction: the set rate, or the
+## automatic one (slower for longer tiles).
 func get_effective_turn_rate() -> float:
 	if not auto_turn_rate_from_tile_length:
 		return wave_turn_rate_degrees_per_second
@@ -202,14 +212,17 @@ func get_slots_to_update() -> PackedInt32Array:
 	return PackedInt32Array([active_spectrum_slot])
 
 
+## The inputs slot was (or is to be) generated from.
 func get_slot_inputs(slot : int) -> SpectrumInputs:
 	return _slot_inputs[slot]
 
 
+## Whether slot's spectrum must be regenerated before it is used.
 func is_spectrum_slot_dirty(slot : int) -> bool:
 	return _slot_dirty[slot]
 
 
+## Marks slot's spectrum as generated (WaveGenerator calls it).
 func mark_spectrum_slot_clean(slot : int) -> void:
 	_slot_dirty[slot] = false
 

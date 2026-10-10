@@ -107,10 +107,13 @@ func submit_query(query_owner : Object, points : PackedVector3Array, body : Phys
 	_queued[owner_id] = [points, body == null or not _is_wave_making_body.call(body)]
 
 
+## Latest completed result for query_owner, or null before its first one arrives.
 func get_query_result(query_owner : Object) -> WaterSurfaceQueryResult:
 	return _results.get(query_owner.get_instance_id())
 
 
+## Ocean seconds from result's dispatch to now (the current physics tick, or the frame).
+## Pass it to WaterSurfaceSample.extrapolated_height().
 func get_query_age(result : WaterSurfaceQueryResult) -> float:
 	if not Engine.is_in_physics_frame():
 		return _clock - result.dispatch_time
@@ -121,6 +124,7 @@ func get_query_age(result : WaterSurfaceQueryResult) -> float:
 	return tick_time - result.dispatch_time
 
 
+## Forgets query_owner's points and results. Call from the owner's _exit_tree.
 func release_query(query_owner : Object) -> void:
 	var owner_id := query_owner.get_instance_id()
 	_owners.erase(owner_id)
@@ -128,14 +132,18 @@ func release_query(query_owner : Object) -> void:
 	_results.erase(owner_id)
 
 
+## The ocean clock (OceanSystem.time): the clock of dispatch_time.
 func get_clock() -> float:
 	return _clock
 
 
+## Whether add_impulse() has an effect: the interaction simulation runs (at runtime).
 func can_add_impulses() -> bool:
 	return interaction != null
 
 
+## Queues a splash for the next simulation step: the water within radius metres of
+## world_position is raised by amplitude metres (negative lowers it) and spreads as a ring.
 func add_impulse(world_position : Vector3, radius : float, amplitude : float) -> void:
 	if interaction != null:
 		interaction.add_impulse(world_position, radius, amplitude)

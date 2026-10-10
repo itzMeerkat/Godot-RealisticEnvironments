@@ -26,6 +26,8 @@ static func register(world : World3D, surface : WaterSurface) -> void:
 	_surfaces[id] = surface
 
 
+## Removes surface as world's water surface (only if it is the registered one). Call from
+## the simulation's _exit_tree.
 static func unregister(world : World3D, surface : WaterSurface) -> void:
 	var id := world.get_instance_id()
 	if _surfaces.get(id) == surface:

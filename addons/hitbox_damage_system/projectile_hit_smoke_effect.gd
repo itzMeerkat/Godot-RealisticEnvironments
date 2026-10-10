@@ -30,6 +30,7 @@ func _ready() -> void:
 	_build_effect()
 
 
+## Emits the smoke puff and frees the effect once it has faded.
 func play() -> void:
 	if _particles == null:
 		_build_effect()

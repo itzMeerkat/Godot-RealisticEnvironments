@@ -68,6 +68,7 @@ const SLAM_JET_ELEVATION_MAX := 1.4
 ## Emitted with the impact speed (m/s) and world position of every slam.
 signal slammed(impact_speed: float, position: Vector3)
 
+## The water surface of this node's world, resolved in _ready (null: no spray).
 var water: WaterSurface
 var _particles: GPUParticles3D
 var _previous_position := Vector3.ZERO

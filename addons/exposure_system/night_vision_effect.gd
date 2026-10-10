@@ -44,6 +44,7 @@ func _init() -> void:
 		push_error("Night vision pipeline could not be created; night vision is off.")
 
 
+## Whether the effect's compute shader was created (it needs a RenderingDevice).
 func is_valid() -> bool:
 	return _pipeline.is_valid()
 

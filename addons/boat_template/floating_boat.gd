@@ -112,6 +112,7 @@ func _get_configuration_warnings() -> PackedStringArray:
 	return warnings
 
 
+## Clears the debug position trail.
 func clear_position_history() -> void:
 	_history_points.clear()
 	_rebuild_history_mesh()

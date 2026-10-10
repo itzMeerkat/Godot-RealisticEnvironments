@@ -41,8 +41,12 @@ func own(rid : RID) -> RID:
 	return rid
 
 # --- WRAPPER FUNCTIONS ---
+## Starts a compute list on the device (RenderingDevice.compute_list_begin()).
 func compute_list_begin() -> int: return device.compute_list_begin()
+## Ends the current compute list and submits it.
 func compute_list_end() -> void: device.compute_list_end()
+## Orders the dispatches of compute_list: those after the barrier see what those before it wrote.
+## Re-applies the last push constant to the bound pipeline, so every pass sets its own.
 func compute_list_add_barrier(compute_list : int) -> void: device.compute_list_add_barrier(compute_list)
 
 # --- RESOURCES ---
@@ -50,6 +54,8 @@ func compute_list_add_barrier(compute_list : int) -> void: device.compute_list_a
 func load_shader(path : String, version := &"") -> RID:
 	return load_shader_file(load(path), version)
 
+## Compiles an imported .glsl (version: its #[versions] entry, empty for the default) and
+## owns the shader. Reports compile errors and sets [member failed]; returns an invalid RID then.
 func load_shader_file(shader_file : RDShaderFile, version := &"") -> RID:
 	var key := "%s:%s" % [shader_file.resource_path, version]
 	if _shader_cache.has(key):
@@ -63,15 +69,19 @@ func load_shader_file(shader_file : RDShaderFile, version := &"") -> RID:
 	_shader_cache[key] = shader
 	return shader
 
+## Creates and owns a compute pipeline for shader.
 func create_compute_pipeline(shader : RID) -> RID:
 	return own(device.compute_pipeline_create(shader)) if shader.is_valid() else RID()
 
+## Creates and owns a sampler with the given state.
 func create_sampler(state : RDSamplerState) -> RID:
 	return own(device.sampler_create(state))
 
+## Creates and owns a uniform set of uniforms for set_index of shader.
 func create_uniform_set(uniforms : Array, shader : RID, set_index := 0) -> RID:
 	return own(device.uniform_set_create(uniforms, shader, set_index)) if shader.is_valid() else RID()
 
+## Creates and owns a storage buffer of size bytes, filled with data when given.
 func create_storage_buffer(size : int, data := PackedByteArray()) -> Descriptor:
 	if size > data.size():
 		var padding := PackedByteArray(); padding.resize(size - data.size())
@@ -131,12 +141,15 @@ func create_pipeline(group_counts : Array, descriptor_sets : Array, shader : RID
 		list_device.compute_list_dispatch(compute_list, group_counts[0], group_counts[1], group_counts[2])
 
 # --- UNIFORMS ---
+## A storage-image uniform at binding.
 static func image_uniform(binding : int, texture : RID) -> RDUniform:
 	return _uniform(binding, RenderingDevice.UNIFORM_TYPE_IMAGE, [texture])
 
+## A sampler-with-texture uniform at binding.
 static func sampled_uniform(binding : int, sampler : RID, texture : RID) -> RDUniform:
 	return _uniform(binding, RenderingDevice.UNIFORM_TYPE_SAMPLER_WITH_TEXTURE, [sampler, texture])
 
+## A storage-buffer uniform at binding.
 static func buffer_uniform(binding : int, buffer : RID) -> RDUniform:
 	return _uniform(binding, RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER, [buffer])
 

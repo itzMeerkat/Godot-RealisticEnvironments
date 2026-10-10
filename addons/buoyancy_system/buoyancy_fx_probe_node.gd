@@ -4,6 +4,7 @@ extends MeshInstance3D
 ## Editable water-contact probe used for effects and events. It does not apply
 ## buoyancy forces.
 
+## Emitted when a setting of the probe changes; its volume refreshes its probe cache.
 signal probe_changed
 
 const FX_PROBE_COLOR := Color(1.0, 0.62, 0.14, 0.38)

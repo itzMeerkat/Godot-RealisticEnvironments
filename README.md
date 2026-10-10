@@ -75,6 +75,10 @@ them.
    scene (`sky_system.tscn`, `ocean_system.tscn`, ...) and follow its README's
    quick start.
 
+Every setting has an inspector tooltip, and every node type and resource
+(`OceanSystem`, `SkySystem`, `BuoyantBody`, ...) has a page in the editor's
+help: press F1 and search for its name.
+
 ## The demo
 
 `demo/main.tscn` is the development sandbox: the player's rowboat (one bow

@@ -11,8 +11,12 @@ extends Node
 ## probes_changed. Probes must stay rigid relative to the body: each tick only
 ## transforms their cached body-space positions.
 
+## Emitted when a probe becomes wet (its state's entered is true).
 signal probe_entered_water(state: BuoyancyProbeState)
+## Emitted when a probe becomes dry (its state's exited is true).
 signal probe_exited_water(state: BuoyancyProbeState)
+## Emitted once when the body starts sinking. reason is &"roll", &"draft",
+## &"hitbox_group_destroyed" or the one passed to start_sinking(); data holds its details.
 signal sinking_started(reason: StringName, data: Dictionary)
 
 ## Optional rigid body target. Leave empty to use the parent or nearest ancestor RigidBody3D.
@@ -63,8 +67,11 @@ signal sinking_started(reason: StringName, data: Dictionary)
 ## Node freed after delete_delay. Empty frees the rigid body.
 @export var delete_root_path : NodePath
 
+## The body the forces act on (resolved in _ready).
 var rigid_body : RigidBody3D
+## The water surface of this body's world (resolved in _ready); null disables buoyancy.
 var water : WaterSurface
+## The probe volumes in use (see refresh_volumes()).
 var probe_volumes : Array[BuoyancyProbeVolume] = []
 ## True while the body is held frozen waiting for its first water sample.
 var _awaiting_first_sample := false
@@ -221,6 +228,7 @@ func start_sinking(reason : StringName = &"manual", data : Dictionary = {}) -> v
 		get_tree().create_timer(delete_delay).timeout.connect(delete_root.queue_free)
 
 
+## Whether start_sinking() has run.
 func is_sinking() -> bool:
 	return _is_sinking
 
@@ -247,6 +255,7 @@ func get_probe_states(tag_filter := "") -> Array[BuoyancyProbeState]:
 	return states
 
 
+## States of the probes that are under water, optionally only those with tag_filter.
 func get_wet_probe_states(tag_filter := "") -> Array[BuoyancyProbeState]:
 	var states : Array[BuoyancyProbeState] = []
 	for state in get_probe_states(tag_filter):

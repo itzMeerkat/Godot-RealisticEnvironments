@@ -1,6 +1,15 @@
 @tool
 class_name SkySystem
 extends Node3D
+## Day/night sky for an open sea: places the sun and moon for latitude, date and time
+## and drives their DirectionalLight3Ds, renders a physical atmosphere (blue sky,
+## twilight, sea haze and fog, distance haze on the scene), volumetric clouds with
+## weather presets, the stars, the Milky Way, airglow and planets, and meters the
+## scene's light for an exposure controller. Instance sky_system.tscn; see
+## addons/sky_system/README.md.
+##
+## Other systems read it through duck-typed getters (the ocean's sky source contract);
+## it emits lighting_changed after every change they depend on.
 
 const StarfieldMaterial := preload("res://addons/sky_system/materials/starfield.tres")
 const DefaultStarCatalog := preload("res://addons/sky_system/stars/bright_star_catalog.tres")
@@ -15,7 +24,10 @@ const MILKY_WAY_UNIT := 1e-6
 ## then scaled up to star_cubemap_size.
 const MILKY_WAY_CUBE_SIZE := 64
 
+## Emitted when time_of_day changes (also by the day cycle).
 signal time_of_day_changed(time_of_day : float)
+## Emitted after every change of the lighting other systems read: sun and moon, sky colours,
+## clouds, atmosphere and stars. The ocean reads its sky values only when it fires.
 signal lighting_changed
 
 const SOLAR_YEAR_DAYS := 365.2422
@@ -497,14 +509,17 @@ func _duplicate_material_override(visual : MeshInstance3D) -> void:
 		visual.material_override = visual.material_override.duplicate()
 
 
+## time_of_day: 0 midnight, 0.25 sunrise, 0.5 noon, 0.75 sunset.
 func get_time_of_day() -> float:
 	return time_of_day
 
 
+## World direction toward the sun (unit vector; y < 0 below the horizon).
 func get_sun_direction() -> Vector3:
 	return _sun_direction
 
 
+## World direction toward the moon (unit vector; y < 0 below the horizon).
 func get_moon_direction() -> Vector3:
 	return _moon_direction
 
@@ -521,10 +536,12 @@ func get_sun_color() -> Color:
 	return _sun_color
 
 
+## Share of the moon's disk above the horizon (0-1).
 func get_moon_visibility() -> float:
 	return _moon_visibility
 
 
+## Lit share of the moon's disk: 0 new moon, 1 full moon.
 func get_moon_phase() -> float:
 	return _moon_phase
 

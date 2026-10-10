@@ -124,6 +124,9 @@ func get_world_bounding_sphere() -> Vector4:
 	return Vector4(center.x, center.y, center.z, radius)
 
 
+## Editor only: slices the meshes under bake_source_paths into a HullProfile, saves it next to
+## the scene (or over the current profile's file) and assigns it to profile. Save the scene
+## afterwards to keep the reference. The Bake Profile button calls it.
 func bake_profile() -> void:
 	if not Engine.is_editor_hint():
 		push_error("Hull profiles can only be baked in the editor.")

@@ -41,8 +41,10 @@ Please include:
 4. Run what you touched: `demo/main.tscn`, the relevant example, or
    `demo/ocean_optics_debug.tscn` for water shading. Headless runs have no
    `RenderingDevice`, so they catch script errors but not rendering ones.
-5. Update the addon's `README.md` (and `AGENTS.md` if a rule changes) in the
-   same change, and add a line to `CHANGELOG.md` under *Unreleased*.
+5. Document new public members with `##` comments (they become the inspector
+   tooltips and the editor's class reference), update the addon's `README.md`
+   (and `AGENTS.md` if a rule changes) in the same change, and add a line to
+   `CHANGELOG.md` under *Unreleased*.
 
 Generated files (`addons/sky_system/stars/*`, `examples/assets/simple_hull.*`,
 baked hull profiles and buoyancy probes) are regenerated with their tools or

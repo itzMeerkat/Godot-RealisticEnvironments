@@ -2,6 +2,7 @@ class_name ProjectileHitbox
 extends Area3D
 ## Area3D hitbox that reports projectile impacts to a compatible hitbox manager.
 
+## Emitted for every projectile hit on this hitbox, before the manager handles it.
 signal projectile_hit(projectile: Node, hit_data: Dictionary)
 
 ## Enables projectile detection for this hitbox.
@@ -35,6 +36,7 @@ func _ready() -> void:
 		body_entered.connect(_on_body_entered)
 
 
+## Sets the manager hits are reported to. HitboxHealthManager calls it for its hitboxes.
 func set_manager(manager: Node) -> void:
 	_manager = manager
 

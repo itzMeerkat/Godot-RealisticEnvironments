@@ -15,6 +15,7 @@ extends Resource
 @export var colors := PackedColorArray()
 
 
+## Number of stars.
 func get_star_count() -> int:
 	return directions.size()
 

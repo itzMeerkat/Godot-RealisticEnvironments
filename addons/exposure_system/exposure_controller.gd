@@ -42,9 +42,10 @@ const DARKEST_GREY_LUMINANCE := 1e-4
 ## Adapt like an eye (dim light stays darker) instead of like a camera (every light
 ## level exposed alike).
 @export var perceptual_adaptation := true
-## Time constants (s) of adapting to more light and to less: the eye adapts to light
-## quickly and to darkness slowly.
+## Time constant (s) of adapting to more light: the eye adapts to light quickly and to
+## darkness slowly (darken_seconds).
 @export_range(0.0, 60.0, 0.1, "or_greater") var brighten_seconds := 1.0
+## Time constant (s) of adapting to less light.
 @export_range(0.0, 600.0, 0.1, "or_greater") var darken_seconds := 5.0
 ## See like an eye in dim light: colours fade to a slightly blue grey where the scene
 ## is dark (rods take over from cones, NightVisionEffect). Added to the target's

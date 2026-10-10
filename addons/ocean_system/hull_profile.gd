@@ -17,15 +17,24 @@ extends Resource
 ##   (0..1 over min_y..max_y) of its highest row with a non-zero half-width.
 ##   The cutout clamps heights above it to it (HullWaterFootprint.cutout_height_offset).
 
+## Columns of image: length stations from min_z to max_z.
 const LENGTH_SAMPLES := 64
+## Rows of image: heights (R) and lateral offsets (G).
 const PROFILE_SAMPLES := 32
 
+## The baked profile (see the class description for its channels).
 @export var image : Image
+## Extent of the hull along its length (local z) covered by the columns.
 @export var min_z := 0.0
+## Far end of the hull along its length (local z).
 @export var max_z := 0.0
+## Extent of the hull in height (local y) covered by the rows.
 @export var min_y := 0.0
+## Top of the profile (local y).
 @export var max_y := 0.0
+## Largest inner half-width of the hull: the lateral range of the G channel.
 @export var max_half_width := 0.0
+## Local x of the hull's plane of symmetry.
 @export var center_x := 0.0
 
 
@@ -78,14 +87,17 @@ static func build(triangles : PackedVector3Array, inset : float) -> HullProfile:
 	return profile
 
 
+## Local height at the centre of R-channel row row.
 func get_row_height(row : int) -> float:
 	return lerpf(min_y, max_y, (float(row) + 0.5) / float(PROFILE_SAMPLES))
 
 
+## Lateral offset from center_x at the centre of G-channel row row.
 func get_row_offset(row : int) -> float:
 	return max_half_width * (float(row) + 0.5) / float(PROFILE_SAMPLES)
 
 
+## Local z of the centre of column column.
 func get_station_z(column : int) -> float:
 	return lerpf(min_z, max_z, (float(column) + 0.5) / float(LENGTH_SAMPLES))
 
