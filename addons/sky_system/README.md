@@ -171,8 +171,8 @@ stars, Benn & Ellison 1998, less the catalog's 23), which reproduces their
 latitude profile (about 270 S10 in the plane, 13 at high latitudes). The sky
 shader adds it to space (`milky_way_radiance()`), so the atmosphere dims it
 and the clouds hide it like the sun and the moon; `star_brightness` scales it
-with the stars. Credit: NASA/Goddard Space Flight Center Scientific
-Visualization Studio. Gaia DR2: ESA/Gaia/DPAC.
+with the stars. The map is public domain; credit: NASA/Goddard Space Flight
+Center Scientific Visualization Studio. Gaia DR2: ESA/Gaia/DPAC.
 
 **Airglow** is the upper atmosphere's own light (oxygen, sodium and OH
 emission at 85–100 km), the main light of a moonless sky. The atmosphere's view
