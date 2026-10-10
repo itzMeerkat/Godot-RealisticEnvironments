@@ -1,0 +1,26 @@
+[gd_scene format=3 uid="uid://zbrvn3begbi2"]
+
+[ext_resource type="Script" uid="uid://bsqjexvlrnt30" path="res://addons/ocean_environment/ocean_environment.gd" id="1_env"]
+[ext_resource type="Script" uid="uid://btyuqnmfuyrr6" path="res://addons/wind_system/wind_system.gd" id="2_wind"]
+[ext_resource type="PackedScene" uid="uid://ckdc57htjsaad" path="res://addons/sky_system/sky_system.tscn" id="3_sky"]
+[ext_resource type="PackedScene" uid="uid://lsh7kr3nyl2t" path="res://addons/ocean_system/ocean_system.tscn" id="4_ocean"]
+[ext_resource type="Script" uid="uid://chrxdfdli1lpb" path="res://addons/exposure_system/exposure_controller.gd" id="5_exposure"]
+
+[node name="OceanEnvironment" type="Node3D" unique_id=2013451906]
+script = ExtResource("1_env")
+
+[node name="WindSystem" type="Node" parent="." unique_id=507279582]
+script = ExtResource("2_wind")
+
+[node name="SkySystem" parent="." unique_id=73492935 instance=ExtResource("3_sky")]
+cloud_wind_source_path = NodePath("../WindSystem")
+
+[node name="Ocean" parent="." unique_id=1691752938 instance=ExtResource("4_ocean")]
+sky_source_path = NodePath("../SkySystem")
+use_external_wind = true
+wind_source_path = NodePath("../WindSystem")
+
+[node name="ExposureController" type="Node" parent="." unique_id=1814142300]
+script = ExtResource("5_exposure")
+light_source_path = NodePath("../SkySystem")
+target_path = NodePath("../SkySystem/WorldEnvironment")

@@ -93,8 +93,10 @@ before touching its code; this file only records what is easy to get wrong.
   wired by connecting `HitboxHealthManager.group_destroyed` to
   `BuoyantBody._on_hitbox_group_destroyed` in the scene — do not add
   hitbox/projectile imports to buoyancy code.
-- `boat_template` is the only addon allowed to compose the systems
-  (`floating_boat_template` adds the projectile weapons on top of it).
+- `ocean_environment` (wind, sky, ocean, exposure) and `boat_template` are
+  the only addons allowed to compose the systems (`floating_boat_template`
+  adds the projectile weapons on top of the boat). `OceanEnvironment.sea_level`
+  sets both `OceanSystem.water_level` and `SkySystem.sea_level`.
 - Open-source scope: `projectile_launcher_system` and `floating_boat_template`
   are development/demo gameplay, not part of the open-source addons; leave
   them as they are and keep the other addons independent of them.

@@ -35,7 +35,7 @@ window/show_image=false
 
 [editor_plugins]
 
-enabled=PackedStringArray("res://addons/core/plugin.cfg", "res://addons/ocean_system/plugin.cfg", "res://addons/sky_system/plugin.cfg", "res://addons/wind_system/plugin.cfg", "res://addons/exposure_system/plugin.cfg", "res://addons/buoyancy_system/plugin.cfg", "res://addons/hitbox_damage_system/plugin.cfg", "res://addons/projectile_launcher_system/plugin.cfg", "res://addons/boat_template/plugin.cfg", "res://addons/floating_boat_template/plugin.cfg")
+enabled=PackedStringArray("res://addons/core/plugin.cfg", "res://addons/ocean_system/plugin.cfg", "res://addons/sky_system/plugin.cfg", "res://addons/wind_system/plugin.cfg", "res://addons/exposure_system/plugin.cfg", "res://addons/buoyancy_system/plugin.cfg", "res://addons/hitbox_damage_system/plugin.cfg", "res://addons/projectile_launcher_system/plugin.cfg", "res://addons/ocean_environment/plugin.cfg", "res://addons/boat_template/plugin.cfg", "res://addons/floating_boat_template/plugin.cfg")
 
 [input]
 

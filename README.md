@@ -50,8 +50,11 @@ most ocean, sky, wind, buoyancy and cascade parameters live.
    debanding, and the boat's and weapons' default input actions. Nothing that
    is already set is changed.
 3. Use the Forward+ renderer and keep physical light units off.
-4. Instance the addon's scene (`sky_system.tscn`, `ocean_system.tscn`, ...) and
-   follow its README's quick start.
+4. For a complete sea, instance `addons/ocean_environment/ocean_environment.tscn`
+   (wind, sky, ocean and exposure, wired together) and add a `Camera3D` with a
+   far plane beyond the horizon; see its README. Or instance a single addon's
+   scene (`sky_system.tscn`, `ocean_system.tscn`, ...) and follow its README's
+   quick start.
 
 ## Repository layout
 
@@ -65,6 +68,7 @@ addons/                  Reusable systems, each self-contained with its own READ
   exposure_system/       Camera exposure from the scene's light meter, eye-like adaptation
   buoyancy_system/       Probe-based buoyancy, probe generation, sinking monitor
   hitbox_damage_system/  Hitboxes, grouped health, hit effects
+  ocean_environment/     Drop-in scene: wind, sky, ocean and exposure wired together
   boat_template/         Boat scene that wires the systems together (driving, buoyancy, health, wake, spray)
   projectile_launcher_system/  (development only) Launchers, projectiles, aim solver, recoil, FX
   floating_boat_template/      (development only) The boat template plus weapons, for the demo
@@ -99,7 +103,7 @@ in the `core` addon (the `WaterSurface` contract, RenderingDevice helpers);
 everything else goes through duck-typed methods, node groups and signals. Each
 addon can be dropped into another project with `core` alone (buoyancy also
 needs some water in the scene that registers a `WaterSurface`), except
-`boat_template`, which composes them. The projectile weapons and the
+`ocean_environment` and `boat_template`, which compose them. The projectile weapons and the
 `floating_boat_template` that adds them to the boat are the demo's gameplay and
 not part of the open-source addons.
 
