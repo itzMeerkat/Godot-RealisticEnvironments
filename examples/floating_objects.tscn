@@ -1,0 +1,51 @@
+[gd_scene format=3 uid="uid://dw0v7j5bxi23i"]
+
+[ext_resource type="PackedScene" uid="uid://0brvn3begbi2" path="res://addons/ocean_environment/ocean_environment.tscn" id="1_env"]
+[ext_resource type="PackedScene" uid="uid://ccpem72n8k6ie" path="res://examples/crate.tscn" id="2_crate"]
+[ext_resource type="PackedScene" uid="uid://by88fplwyxhla" path="res://examples/barrel.tscn" id="3_barrel"]
+[ext_resource type="Script" uid="uid://du3f50s5ccnbp" path="res://examples/free_camera.gd" id="4_camera"]
+
+[node name="FloatingObjects" type="Node3D" unique_id=905684636]
+
+[node name="OceanEnvironment" parent="." unique_id=1923075530 instance=ExtResource("1_env")]
+
+[node name="Crate0" parent="." unique_id=679100886 instance=ExtResource("2_crate")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6, 0.5, -8)
+
+[node name="Barrel1" parent="." unique_id=874165237 instance=ExtResource("3_barrel")]
+transform = Transform3D(0.7648, 0, 0.6442, 0, 1, 0, -0.6442, 0, 0.7648, -2, 0.5, -8)
+
+[node name="Crate2" parent="." unique_id=1139226634 instance=ExtResource("2_crate")]
+transform = Transform3D(0.17, 0, 0.9854, 0, 1, 0, -0.9854, 0, 0.17, 2, 0.5, -8)
+
+[node name="Barrel3" parent="." unique_id=844378945 instance=ExtResource("3_barrel")]
+transform = Transform3D(-0.5048, 0, 0.8632, 0, 1, 0, -0.8632, 0, -0.5048, 6, 0.5, -8)
+
+[node name="Barrel4" parent="." unique_id=1687402368 instance=ExtResource("3_barrel")]
+transform = Transform3D(-0.9422, 0, 0.335, 0, 1, 0, -0.335, 0, -0.9422, -6, 0.5, -12)
+
+[node name="Crate5" parent="." unique_id=1166509647 instance=ExtResource("2_crate")]
+transform = Transform3D(-0.9365, 0, -0.3508, 0, 1, 0, 0.3508, 0, -0.9365, -2, 0.5, -12)
+
+[node name="Barrel6" parent="." unique_id=1257973370 instance=ExtResource("3_barrel")]
+transform = Transform3D(-0.4903, 0, -0.8716, 0, 1, 0, 0.8716, 0, -0.4903, 2, 0.5, -12)
+
+[node name="Crate7" parent="." unique_id=1531329253 instance=ExtResource("2_crate")]
+transform = Transform3D(0.1865, 0, -0.9825, 0, 1, 0, 0.9825, 0, 0.1865, 6, 0.5, -12)
+
+[node name="Crate8" parent="." unique_id=505513935 instance=ExtResource("2_crate")]
+transform = Transform3D(0.7756, 0, -0.6313, 0, 1, 0, 0.6313, 0, 0.7756, -6, 0.5, -16)
+
+[node name="Barrel9" parent="." unique_id=1186901209 instance=ExtResource("3_barrel")]
+transform = Transform3D(0.9999, 0, 0.0168, 0, 1, 0, -0.0168, 0, 0.9999, -2, 0.5, -16)
+
+[node name="Crate10" parent="." unique_id=189638893 instance=ExtResource("2_crate")]
+transform = Transform3D(0.7539, 0, 0.657, 0, 1, 0, -0.657, 0, 0.7539, 2, 0.5, -16)
+
+[node name="Barrel11" parent="." unique_id=366590184 instance=ExtResource("3_barrel")]
+transform = Transform3D(0.1534, 0, 0.9882, 0, 1, 0, -0.9882, 0, 0.1534, 6, 0.5, -16)
+
+[node name="Camera3D" type="Camera3D" parent="." unique_id=1662422747]
+transform = Transform3D(1, 0, 0, 0, 0.966, 0.259, 0, -0.259, 0.966, 0, 5, 4)
+far = 60000.0
+script = ExtResource("4_camera")

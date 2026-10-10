@@ -1,0 +1,24 @@
+[gd_scene format=3 uid="uid://cjagxpm1gu22w"]
+
+[ext_resource type="PackedScene" uid="uid://0brvn3begbi2" path="res://addons/ocean_environment/ocean_environment.tscn" id="1_env"]
+[ext_resource type="PackedScene" uid="uid://ci5ne8s704g1i" path="res://examples/simple_boat.tscn" id="2_boat"]
+[ext_resource type="Script" uid="uid://cai06wcsqfsrw" path="res://examples/orbit_camera.gd" id="3_camera"]
+[ext_resource type="PackedScene" uid="uid://ccpem72n8k6ie" path="res://examples/crate.tscn" id="4_crate"]
+
+[node name="BoatExample" type="Node3D" unique_id=1617216737]
+
+[node name="OceanEnvironment" parent="." unique_id=1771996175 instance=ExtResource("1_env")]
+
+[node name="SimpleBoat" parent="." unique_id=1352856472 instance=ExtResource("2_boat")]
+player_controlled = true
+
+[node name="Crate" parent="." unique_id=962940013 instance=ExtResource("4_crate")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 3, 0, -12)
+
+[node name="Crate2" parent="." unique_id=948264024 instance=ExtResource("4_crate")]
+transform = Transform3D(0.8, 0, 0.6, 0, 1, 0, -0.6, 0, 0.8, -4, 0, -20)
+
+[node name="Camera3D" type="Camera3D" parent="." unique_id=196001820]
+far = 60000.0
+script = ExtResource("3_camera")
+target_path = NodePath("../SimpleBoat")

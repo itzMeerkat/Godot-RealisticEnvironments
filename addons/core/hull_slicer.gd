@@ -28,7 +28,8 @@ static func collect_triangles(mesh_instances : Array[MeshInstance3D], world_to_t
 			continue
 		var to_target := world_to_target * mesh_instance.global_transform
 		for surface_index in mesh.get_surface_count():
-			if mesh.surface_get_primitive_type(surface_index) != Mesh.PRIMITIVE_TRIANGLES:
+			# Only ArrayMesh has other primitive types; PrimitiveMeshes are triangles.
+			if mesh is ArrayMesh and mesh.surface_get_primitive_type(surface_index) != Mesh.PRIMITIVE_TRIANGLES:
 				continue
 			var arrays := mesh.surface_get_arrays(surface_index)
 			var vertices : PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]

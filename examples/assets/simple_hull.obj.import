@@ -1,0 +1,25 @@
+[remap]
+
+importer="wavefront_obj"
+importer_version=1
+type="Mesh"
+uid="uid://b8d81o1g2nk66"
+path="res://.godot/imported/simple_hull.obj-45c05be21af0a0a55f42dfd2dd0b6b66.mesh"
+
+[deps]
+
+files=["res://.godot/imported/simple_hull.obj-45c05be21af0a0a55f42dfd2dd0b6b66.mesh"]
+
+source_file="res://examples/assets/simple_hull.obj"
+dest_files=["res://.godot/imported/simple_hull.obj-45c05be21af0a0a55f42dfd2dd0b6b66.mesh", "res://.godot/imported/simple_hull.obj-45c05be21af0a0a55f42dfd2dd0b6b66.mesh"]
+
+[params]
+
+generate_tangents=true
+generate_lods=true
+generate_shadow_mesh=true
+generate_lightmap_uv2=false
+generate_lightmap_uv2_texel_size=0.2
+scale_mesh=Vector3(1, 1, 1)
+offset_mesh=Vector3(0, 0, 0)
+force_disable_mesh_compression=false

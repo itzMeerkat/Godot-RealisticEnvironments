@@ -1,0 +1,199 @@
+[gd_scene format=3 uid="uid://ccpem72n8k6ie"]
+
+[ext_resource type="Script" uid="uid://cv6g660t6s5av" path="res://addons/buoyancy_system/buoyant_body.gd" id="1_buoyant"]
+[ext_resource type="Script" uid="uid://ianh08wohto0" path="res://addons/buoyancy_system/buoyancy_probe_volume.gd" id="2_volume"]
+[ext_resource type="Script" uid="uid://obesevate4xe" path="res://addons/buoyancy_system/buoyancy_probe_node.gd" id="3_q1d6g"]
+
+[sub_resource type="BoxMesh" id="BoxMesh_crate"]
+
+[sub_resource type="StandardMaterial3D" id="Material_crate"]
+albedo_color = Color(0.6, 0.42, 0.24, 1)
+
+[sub_resource type="BoxShape3D" id="BoxShape_crate"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_q1d6g"]
+transparency = 1
+cull_mode = 2
+no_depth_test = true
+shading_mode = 0
+albedo_color = Color(0.1, 0.8, 1, 0.32)
+
+[sub_resource type="SphereMesh" id="SphereMesh_ftefq"]
+radius = 0.16
+height = 0.32
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_jhgbb"]
+transparency = 1
+cull_mode = 2
+no_depth_test = true
+shading_mode = 0
+albedo_color = Color(0.1, 0.8, 1, 0.32)
+
+[sub_resource type="SphereMesh" id="SphereMesh_tarrn"]
+radius = 0.16
+height = 0.32
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_r2o7t"]
+transparency = 1
+cull_mode = 2
+no_depth_test = true
+shading_mode = 0
+albedo_color = Color(0.1, 0.8, 1, 0.32)
+
+[sub_resource type="SphereMesh" id="SphereMesh_bnieq"]
+radius = 0.16
+height = 0.32
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_hndia"]
+transparency = 1
+cull_mode = 2
+no_depth_test = true
+shading_mode = 0
+albedo_color = Color(0.1, 0.8, 1, 0.32)
+
+[sub_resource type="SphereMesh" id="SphereMesh_4y4gp"]
+radius = 0.16
+height = 0.32
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_fl2aj"]
+transparency = 1
+cull_mode = 2
+no_depth_test = true
+shading_mode = 0
+albedo_color = Color(0.1, 0.8, 1, 0.32)
+
+[sub_resource type="SphereMesh" id="SphereMesh_qqwkf"]
+radius = 0.16
+height = 0.32
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_8ry17"]
+transparency = 1
+cull_mode = 2
+no_depth_test = true
+shading_mode = 0
+albedo_color = Color(0.1, 0.8, 1, 0.32)
+
+[sub_resource type="SphereMesh" id="SphereMesh_5c7vy"]
+radius = 0.16
+height = 0.32
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_r7ebv"]
+transparency = 1
+cull_mode = 2
+no_depth_test = true
+shading_mode = 0
+albedo_color = Color(0.1, 0.8, 1, 0.32)
+
+[sub_resource type="SphereMesh" id="SphereMesh_mh456"]
+radius = 0.16
+height = 0.32
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_pkm82"]
+transparency = 1
+cull_mode = 2
+no_depth_test = true
+shading_mode = 0
+albedo_color = Color(0.1, 0.8, 1, 0.32)
+
+[sub_resource type="SphereMesh" id="SphereMesh_0sad2"]
+radius = 0.16
+height = 0.32
+
+[node name="Crate" type="RigidBody3D" unique_id=470520592]
+mass = 250.0
+
+[node name="Mesh" type="MeshInstance3D" parent="." unique_id=193948764]
+mesh = SubResource("BoxMesh_crate")
+surface_material_override/0 = SubResource("Material_crate")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=813375530]
+shape = SubResource("BoxShape_crate")
+
+[node name="BuoyantBody" type="Node" parent="." unique_id=700136512]
+script = ExtResource("1_buoyant")
+vertical_water_drag = 4.0
+
+[node name="BuoyancyProbeVolume" type="Node3D" parent="." unique_id=564786270]
+script = ExtResource("2_volume")
+source_paths = Array[NodePath]([NodePath("../Mesh")])
+physical_probe_count = 8
+fx_probe_count = 0
+generated_probe_volume_cubic_meters = 0.125
+generated_probe_buoyancy_height = 1.0
+generated_probe_freeboard = 0.5
+editor_auto_generate_if_empty = false
+debug_enabled = false
+
+[node name="GeneratedProbes" type="Node3D" parent="BuoyancyProbeVolume" unique_id=67680503]
+
+[node name="Probe_000" type="MeshInstance3D" parent="BuoyancyProbeVolume/GeneratedProbes" unique_id=920824078]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.5, 0.5, -0.315)
+material_override = SubResource("StandardMaterial3D_q1d6g")
+cast_shadow = 0
+extra_cull_margin = 10000.0
+mesh = SubResource("SphereMesh_ftefq")
+script = ExtResource("3_q1d6g")
+max_submerged_volume_cubic_meters = 0.125
+
+[node name="Probe_001" type="MeshInstance3D" parent="BuoyancyProbeVolume/GeneratedProbes" unique_id=616039665]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5, 0.5, -0.315)
+material_override = SubResource("StandardMaterial3D_jhgbb")
+cast_shadow = 0
+extra_cull_margin = 10000.0
+mesh = SubResource("SphereMesh_tarrn")
+script = ExtResource("3_q1d6g")
+max_submerged_volume_cubic_meters = 0.125
+
+[node name="Probe_002" type="MeshInstance3D" parent="BuoyancyProbeVolume/GeneratedProbes" unique_id=1946345957]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.5, 0.5, -0.105)
+material_override = SubResource("StandardMaterial3D_r2o7t")
+cast_shadow = 0
+extra_cull_margin = 10000.0
+mesh = SubResource("SphereMesh_bnieq")
+script = ExtResource("3_q1d6g")
+max_submerged_volume_cubic_meters = 0.125
+
+[node name="Probe_003" type="MeshInstance3D" parent="BuoyancyProbeVolume/GeneratedProbes" unique_id=1288115414]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5, 0.5, -0.105)
+material_override = SubResource("StandardMaterial3D_hndia")
+cast_shadow = 0
+extra_cull_margin = 10000.0
+mesh = SubResource("SphereMesh_4y4gp")
+script = ExtResource("3_q1d6g")
+max_submerged_volume_cubic_meters = 0.125
+
+[node name="Probe_004" type="MeshInstance3D" parent="BuoyancyProbeVolume/GeneratedProbes" unique_id=1522370163]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.5, 0.5, 0.105)
+material_override = SubResource("StandardMaterial3D_fl2aj")
+cast_shadow = 0
+extra_cull_margin = 10000.0
+mesh = SubResource("SphereMesh_qqwkf")
+script = ExtResource("3_q1d6g")
+max_submerged_volume_cubic_meters = 0.125
+
+[node name="Probe_005" type="MeshInstance3D" parent="BuoyancyProbeVolume/GeneratedProbes" unique_id=729374466]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5, 0.5, 0.105)
+material_override = SubResource("StandardMaterial3D_8ry17")
+cast_shadow = 0
+extra_cull_margin = 10000.0
+mesh = SubResource("SphereMesh_5c7vy")
+script = ExtResource("3_q1d6g")
+max_submerged_volume_cubic_meters = 0.125
+
+[node name="Probe_006" type="MeshInstance3D" parent="BuoyancyProbeVolume/GeneratedProbes" unique_id=421886019]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.5, 0.5, 0.315)
+material_override = SubResource("StandardMaterial3D_r7ebv")
+cast_shadow = 0
+extra_cull_margin = 10000.0
+mesh = SubResource("SphereMesh_mh456")
+script = ExtResource("3_q1d6g")
+max_submerged_volume_cubic_meters = 0.125
+
+[node name="Probe_007" type="MeshInstance3D" parent="BuoyancyProbeVolume/GeneratedProbes" unique_id=2139367293]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5, 0.5, 0.315)
+material_override = SubResource("StandardMaterial3D_pkm82")
+cast_shadow = 0
+extra_cull_margin = 10000.0
+mesh = SubResource("SphereMesh_0sad2")
+script = ExtResource("3_q1d6g")
+max_submerged_volume_cubic_meters = 0.125

@@ -45,6 +45,10 @@ before touching its code; this file only records what is easy to get wrong.
   warnings and errors of every script through a headless editor's language
   server.
 - Reusable code lives in `addons/*`; demo glue in `systems/` and `demo/`.
+  `examples/` holds small scenes that use only the open-source addons (never
+  `systems/`, `demo/`, the projectile weapons or `floating_boat_template`);
+  their probes and hull profile are generated in the editor like any boat's,
+  and the hull mesh comes from `tools/make_example_hull.py`.
   All runtime types are registered through `class_name`; the `*_plugin.gd`
   files only set up the project. Through core's `ProjectSetup` they add what an
   addon needs to `project.godot` and never change or remove existing values:
