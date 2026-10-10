@@ -84,7 +84,7 @@ func _build() -> void:
 	margin.add_child(root)
 
 	var title := Label.new()
-	title.text = "OceanWaves"
+	title.text = "Realistic Environments"
 	title.add_theme_font_size_override("font_size", 18)
 	root.add_child(title)
 

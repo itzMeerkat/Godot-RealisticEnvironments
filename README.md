@@ -1,4 +1,4 @@
-# GodotOceanWaves
+# Godot-RealisticEnvironments
 
 A physically based open ocean for Godot 4.8: FFT waves out to a curved
 horizon, a real sky with an atmosphere, volumetric clouds and the night sky,

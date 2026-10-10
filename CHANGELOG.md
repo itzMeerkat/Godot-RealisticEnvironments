@@ -1,12 +1,14 @@
 # Changelog
 
-All notable changes to the open-source addons. The addons share one version
-(`plugin.cfg`); versions follow semantic versioning once the first release is
-tagged.
+All notable changes to the open-source addons of Godot-RealisticEnvironments.
+The addons share one version (`plugin.cfg`) and follow semantic versioning;
+before 1.0 a minor version may change the API.
 
 ## Unreleased
 
-First open-source release in preparation.
+## 0.1.0 (in preparation)
+
+First open-source release.
 
 - Ocean: FFT wave cascades (JONSWAP/TMA) following an external wind, CDLOD
   mesh to a curved horizon, foam, iWave wakes, bow waves and splashes, hull
