@@ -1,0 +1,81 @@
+/*
+ * The camera's view of the clouds (GREVolumetricCloudEffect): what cloud_trace.glsl,
+ * cloud_reconstruct.glsl and cloud_composite.glsl share. Define FRAME_BINDING and
+ * DEPTH_BINDING (and USE_MSAA for a multisampled depth buffer) before including it.
+ *
+ * The clouds are kept in a cloud buffer of half the screen's size per axis: cloud
+ * pixel p stands for screen pixel 2p (its ray and its scene depth). Each frame traces
+ * one cloud pixel of every 2x2 block (frame.pattern), and reconstructs the others from
+ * the previous frame's buffer, reprojected.
+ */
+
+#define SKY_DISTANCE 1.0e9
+
+// GREVolumetricCloudEffect._pack_frame().
+layout(set = 0, binding = FRAME_BINDING, std430) restrict readonly buffer Frame {
+	mat4 inv_view_projection;      // this frame's clip space to camera-relative world offsets
+	mat4 previous_view_projection; // the previous frame's camera-relative world offsets to its clip space
+	vec4 camera;            // xyz world x, altitude above the sea (m), world z
+	vec4 camera_motion;     // xyz the camera's world motion since the previous frame; w 1 when the history is valid
+	vec4 atmosphere_offset; // xyz camera minus the view volume's observer; w the observer's altitude
+	vec4 atmosphere_light;  // xyz toward the atmosphere's key light; w the haze lobe's g
+	vec4 sizes;             // xy screen size (pixels), zw cloud buffer size
+	vec4 settings;          // x view volume's last regular slice (m), y history weight, z frame seed, w unused
+	ivec4 pattern;          // xy this frame's traced pixel in every 2x2 block of the cloud buffer
+} frame;
+
+#ifdef USE_MSAA
+layout(set = 0, binding = DEPTH_BINDING) uniform sampler2DMS depth_texture;
+#else
+layout(set = 0, binding = DEPTH_BINDING) uniform sampler2D depth_texture;
+#endif
+
+float screen_depth(ivec2 pixel) {
+	// Sample 0 of a multisampled buffer: it holds the transparent pass's depth too.
+	return texelFetch(depth_texture, pixel, 0).r;
+}
+
+/* Samples per pixel of the depth buffer (1 without MSAA). */
+int screen_sample_count() {
+#ifdef USE_MSAA
+	return textureSamples(depth_texture);
+#else
+	return 1;
+#endif
+}
+
+/* Depth of one sample of a pixel. */
+float screen_sample_depth(ivec2 pixel, int sample_index) {
+	return texelFetch(depth_texture, pixel, sample_index).r;
+}
+
+/* Camera-relative world offset of the point at screen pixel coordinates and depth. */
+vec3 screen_offset(vec2 pixel_position, float depth) {
+	vec2 uv = pixel_position / frame.sizes.xy;
+	vec4 clip = frame.inv_view_projection * vec4(uv * 2.0 - 1.0, depth, 1.0);
+	return clip.xyz / clip.w;
+}
+
+/* World direction of the ray through a screen pixel's centre. */
+vec3 screen_direction(ivec2 pixel) {
+	// Reverse z: depth 1 is the near plane.
+	return normalize(screen_offset(vec2(pixel) + 0.5, 1.0));
+}
+
+/* Distance (m) to the surface at a screen pixel and depth; SKY_DISTANCE for the sky. */
+float depth_distance(ivec2 pixel, float depth) {
+	if (depth <= 0.0) {
+		return SKY_DISTANCE;
+	}
+	return length(screen_offset(vec2(pixel) + 0.5, depth));
+}
+
+/* Distance (m) to the scene's surface at a screen pixel (sample 0). */
+float scene_distance(ivec2 pixel) {
+	return depth_distance(pixel, screen_depth(pixel));
+}
+
+/* The screen pixel a cloud pixel stands for. */
+ivec2 cloud_to_screen(ivec2 cloud_pixel) {
+	return min(cloud_pixel * 2, ivec2(frame.sizes.xy) - 1);
+}

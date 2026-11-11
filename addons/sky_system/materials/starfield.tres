@@ -1,7 +1,0 @@
-[gd_resource type="ShaderMaterial" format=3 uid="uid://cps0x2tjsw4qc"]
-
-[ext_resource type="Shader" uid="uid://b3be76mwwvxeh" path="res://addons/sky_system/shaders/starfield.gdshader" id="1_star"]
-
-[resource]
-render_priority = -10
-shader = ExtResource("1_star")

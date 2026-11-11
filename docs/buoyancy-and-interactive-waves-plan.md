@@ -35,16 +35,16 @@ extrapolated the water's height; that part stays.
    water makes no waves (see Phase 2, Sources).
 4. **One foam look.** Interaction foam goes through the water's existing foam
    path (`foam_signal`), so wakes look like the whitecaps.
-5. **Addon boundaries stay.** `buoyancy_system` depends only on `core`;
-   `ocean_system` draws the waves; `boat_template` composes them.
+5. **Addon boundaries stay.** `gre_buoyancy_system` depends only on `gre_core`;
+   `gre_ocean_system` draws the waves; `gre_boat_template` composes them.
 
 ```
-core             WaterSurface: + submit_disturbance(), release_disturbance(), get_surface_drift();
-                 WaterDisturbance (data)
-buoyancy_system  BuoyantBody (child of a RigidBody3D): forces from queries; reports its hull
-ocean_system     OceanInteraction (internal, like WaveGenerator): wave simulation and foam
+core             GREWaterSurface: + submit_disturbance(), release_disturbance(), get_surface_drift();
+                 GREWaterDisturbance (data)
+buoyancy_system  GREBuoyantBody (child of a RigidBody3D): forces from queries; reports its hull
+ocean_system     GREOceanInteraction (internal, like GREWaveGenerator): wave simulation and foam
                  around the camera, sampled by the water shader
-boat_template    boat.tscn gets a BuoyantBody (and a WaterMask, Phase 4)
+boat_template    boat.tscn gets a GREBuoyantBody (and a GREWaterMask, Phase 4)
 ```
 
 ## Phase 0 — Spikes
@@ -126,7 +126,7 @@ band damped at up to 8/s.
 
 ## Phase 1 — Buoyancy
 
-`BuoyantBody` (`buoyancy_system`, `class_name`), a child of the `RigidBody3D` it
+`GREBuoyantBody` (`gre_buoyancy_system`, `class_name`), a child of the `RigidBody3D` it
 floats.
 
 - **Probes** lie on the hull's waterline plane, on a grid over the collision
@@ -145,8 +145,8 @@ floats.
 - **Drag** relative to the surface water's velocity, in the body's frame: low
   forward, high sideways (keel grip), plus yaw damping; in 1/s, scaled by mass
   and the submerged share.
-- **Drift:** carried downwind by `WaterSurface.get_surface_drift()`, the same
-  3 % of the wind that moves the foam (`OceanSystem._FOAM_DRIFT_WIND_SHARE`
+- **Drift:** carried downwind by `GREWaterSurface.get_surface_drift()`, the same
+  3 % of the wind that moves the foam (`GREOceanSystem._FOAM_DRIFT_WIND_SHARE`
   moves behind it), so debris and foam travel together.
 - **Timing:** depth uses the body's pose this tick; only the water's height is
   delayed, extrapolated with `extrapolated_height(get_query_age())`, and
@@ -160,10 +160,10 @@ floats.
   shapes, `draft` ≥ height, body still frozen, no water); debug drawing of the
   probes and the waterline.
 
-`FloatingBoat` drive changes: thrust at a point at the stern below the
+`GREFloatingBoat` drive changes: thrust at a point at the stern below the
 waterline (the bow lifts as it speeds up); turning by a rudder force at the
 stern that grows with speed (the boat leans and slides); both scale with the
-stern's submersion from the `BuoyantBody` (`buoyancy_path`).
+stern's submersion from the `GREBuoyantBody` (`buoyancy_path`).
 
 Remove `freeze = true` from the template, demo boats, buoy and example floaters
 and the "rewrite in progress" notes.
@@ -184,9 +184,9 @@ Done as planned, with these differences:
   mass 0.6 m above its probes, 4.7 m beam) listed 45° and never settled.
   Ballast below the probes (the buoy's centre of mass is 4.4 m under them)
   still steadies a body.
-- **Drift** is `WaterSurface.get_surface_drift()`, from
-  `OceanSystem._get_surface_drift()`, which also moves the foam.
-- **`FloatingBoat`:** `turn_acceleration` (degrees/s², from the body's yaw
+- **Drift** is `GREWaterSurface.get_surface_drift()`, from
+  `GREOceanSystem._get_surface_drift()`, which also moves the foam.
+- **`GREFloatingBoat`:** `turn_acceleration` (degrees/s², from the body's yaw
   inertia) replaces `turn_torque_per_kg`; the rudder is a side force at
   `propulsion_position`. Thrust fades over the last 10 % below the speed
   limit: switched on and off at the cap, it rocked the bow.
@@ -230,16 +230,16 @@ All seven floaters in `ocean_environment.tscn`, 60 physics ticks per second.
 
 ## Phase 2 — Interactive waves
 
-### Contract (`core`)
+### Contract (`gre_core`)
 
-`WaterSurface.submit_disturbance(owner, disturbance)` every physics tick,
+`GREWaterSurface.submit_disturbance(owner, disturbance)` every physics tick,
 `release_disturbance(owner)` in `_exit_tree`, like the queries.
-`WaterDisturbance` holds the hull's waterline transform, footprint half-extents
+`GREWaterDisturbance` holds the hull's waterline transform, footprint half-extents
 and corner roundness, draft, velocity and angular velocity, and
 `wave_strength`. More than `MAX_DISTURBANCES` (16) in the window: the nearest
 win, with one `push_error`.
 
-### Simulation (`OceanInteraction`)
+### Simulation (`GREOceanInteraction`)
 
 - **Window:** 512² cells of 0.25 m (128 m; `interaction_map_size` and
   `interaction_cell_size` as quality exports), world-locked texels with
@@ -251,7 +251,7 @@ win, with one `push_error`.
   exactly by `ω = sqrt(g |k| tanh(|k| d))`, with `d` the spectrum's
   `water_depth` (one value, one place), and viscous damping `∝ k²` for the
   shortest waves; (4) inverse FFT; (5) output: height, slopes, hull coverage.
-  One FFT kernel serves both this and `WaveGenerator`: the existing Stockham
+  One FFT kernel serves both this and `GREWaveGenerator`: the existing Stockham
   kernel generalised with a direction sign and the spectrum count (it is fixed
   at four inverse transforms today), not a second copy.
 - **Sources** (thin-ship): each hull is a smooth footprint `T(x)` (its depth
@@ -281,7 +281,7 @@ Done as planned, with these differences:
 - **Sources from poses, not velocities.** Each step adds
   `T(pose now) − T(previous pose moved by the water's velocity × step)`, which
   covers translation, turning and heave in one difference and needs no
-  sub-steps (the differences telescope). `OceanInteraction` keeps each hull's
+  sub-steps (the differences telescope). `GREOceanInteraction` keeps each hull's
   last pose; a hull seen for the first time, or one that jumped more than half
   its half length in a step, starts over instead of making a wave. Depth is
   `draft` plus the waterline plane's mean depth below the water, so a hull
@@ -289,7 +289,7 @@ Done as planned, with these differences:
 - **Footprint:** a superellipse, `(1 − r²)²` deep, fitted to the collision
   shapes' outline from above (the share of the bounding box it fills picks the
   exponent). The water sees no pointed bows.
-- **Steps run in `OceanSystem._physics_process`**, one per physics tick, after
+- **Steps run in `GREOceanSystem._physics_process`**, one per physics tick, after
   the bodies (`process_physics_priority` 100), not at a separate 60 Hz.
 - **FFT kernel:** `fft_compute.glsl` and `transpose.glsl` take the spectrum
   count, and the former a direction, as push constants (the butterfly factors
@@ -304,7 +304,7 @@ Done as planned, with these differences:
   fading foam (a 180° turn erased 10 % of a trail); since 2026-10-21 the
   window is centred on the camera.
 - Other: drifting debris makes no waves (its velocity matches the water's);
-  `BuoyantBody.wake_strength` scales a body's waves; at most 16 hulls, the
+  `GREBuoyantBody.wake_strength` scales a body's waves; at most 16 hulls, the
   nearest, with one error past that.
 
 ### Phase 2 measurements
@@ -368,7 +368,7 @@ roughness and lighting as the whitecaps. Coverage stays linearly averageable
 
 ## Phase 4 — Hull cutouts
 
-`WaterMask`: an invisible lid mesh over an open hull's opening at gunwale
+`GREWaterMask`: an invisible lid mesh over an open hull's opening at gunwale
 height, writing stencil before the water; the water skips those pixels (see
 0.2). Screen space, so hulls wider above the waterline stay correct; no baking.
 Known limit: a crest rising above the gunwale in front of the boat is cut where
@@ -377,7 +377,7 @@ transparent priority".
 
 ### Phase 4 implementation notes (2026-10-21)
 
-- **`WaterMask` lives in `core`**, not `ocean_system`: the stencil value is
+- **`GREWaterMask` lives in `gre_core`**, not `gre_ocean_system`: the stencil value is
   part of the water contract, and boats should not need the ocean addon to
   carry one. It is a `MeshInstance3D`; its material is applied through the
   RenderingServer (never saved), tinted in the editor, invisible in the game.
@@ -407,11 +407,11 @@ the sea beyond is whole. The demo and the examples run without errors.
 Added 2026-10-23 at the user's request: floaters may feel the interactive
 waves, their own and other hulls', since the buoyancy is visual anyway.
 
-- **Contract:** `WaterSurface.set_query_wave_response(owner, response)`, 0 to
-  1, kept until `release_query()`. `BuoyantBody.wave_response` (default 0)
+- **Contract:** `GREWaterSurface.set_query_wave_response(owner, response)`, 0 to
+  1, kept until `release_query()`. `GREBuoyantBody.wave_response` (default 0)
   sets it.
 - **Sampling:** `surface_query.glsl` reads the simulation's state
-  (`OceanInteraction.state_buffer`, the FFT buffer's output half: h and
+  (`GREOceanInteraction.state_buffer`, the FFT buffer's output half: h and
   dh/dt per cell), bilinear, soft-limited as drawn. The height goes into the
   sample's height, dh/dt into `surface_velocity.y` (so `height_rate()`,
   extrapolation and damping follow the wake), the slopes into the normal.
@@ -458,7 +458,7 @@ unless stated), 60 ticks per second.
   hull writing into the level that suits its size, so a battleship's whole wake
   shows (its transverse waves are ~140 m long at 30 knots). About doubles the
   simulation cost.
-- **Splashes:** a water-entry signal on `BuoyantBody` for pre-baked effects,
+- **Splashes:** a water-entry signal on `GREBuoyantBody` for pre-baked effects,
   impact rings in the simulation.
 - **Sinking.**
 
@@ -477,7 +477,7 @@ contract, the interaction window in the water shader, the stencil exception).
 - Simulation cost (0.3) on a mid-range or integrated GPU, and inside the full
   frame (the test ran alone on a local device).
 - Buoyancy (1): driving by hand (the test used simulated input); opening and
-  saving the inherited boat scenes in the editor (the `BuoyantBody` overrides
+  saving the inherited boat scenes in the editor (the `GREBuoyantBody` overrides
   have no `index` attribute yet); a battleship-sized hull; the configuration
   warnings in the Scene dock.
 - Cutouts (4): pressing Fit to Hull and the tinted preview in the editor (the

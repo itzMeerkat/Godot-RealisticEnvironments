@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://fbrc0ph51y5q"
+path="res://.godot/imported/interaction_output.glsl-50a860c58672e1b143041f91c86a5c7f.res"
+
+[deps]
+
+source_file="res://addons/gre_ocean_system/shaders/compute/interaction_output.glsl"
+dest_files=["res://.godot/imported/interaction_output.glsl-50a860c58672e1b143041f91c86a5c7f.res"]
+
+[params]
+

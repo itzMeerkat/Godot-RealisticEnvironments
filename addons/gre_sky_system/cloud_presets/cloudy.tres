@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="GRECloudPreset" format=3 uid="uid://bb3jbw7mplay0"]
+
+[ext_resource type="Script" uid="uid://ufgpbpby4f06" path="res://addons/gre_sky_system/cloud_preset.gd" id="1_cloud_preset"]
+
+[resource]
+script = ExtResource("1_cloud_preset")
+coverage = 0.62
+cloud_type = 0.6
+type_variation = 0.2
+base_altitude = 1200.0
+thickness = 3500.0
+shape_scale = 10000.0
+detail_erosion = 0.3
+density = 1.2
+density_variation = 0.25
+haze_visibility = 35000.0
+haze_scale_height = 900.0

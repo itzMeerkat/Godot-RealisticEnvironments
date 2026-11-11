@@ -1,0 +1,11 @@
+class_name GREWaterSurfaceQueryResult
+extends RefCounted
+## Latest completed surface query for one owner. samples[i] answers points[i].
+
+## Points exactly as submitted for the dispatch that produced this result.
+var points := PackedVector3Array()
+## One sample per point: samples[i] answers points[i].
+var samples : Array[GREWaterSurfaceSample] = []
+## GREWaterSurface.get_clock() when the query was dispatched. Results arrive a few
+## frames later; use GREWaterSurface.get_query_age() with GREWaterSurfaceSample.extrapolated_height().
+var dispatch_time := 0.0

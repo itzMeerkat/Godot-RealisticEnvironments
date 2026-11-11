@@ -1,6 +1,6 @@
 [gd_scene format=3 uid="uid://ccpem72n8k6ie"]
 
-[ext_resource type="Script" uid="uid://d21whouuqhx10" path="res://addons/buoyancy_system/buoyant_body.gd" id="2_buoyancy"]
+[ext_resource type="Script" uid="uid://d21whouuqhx10" path="res://addons/gre_buoyancy_system/buoyant_body.gd" id="2_buoyancy"]
 
 [sub_resource type="BoxMesh" id="BoxMesh_crate"]
 

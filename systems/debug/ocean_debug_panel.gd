@@ -2,14 +2,14 @@ class_name OceanDebugPanel
 extends CanvasLayer
 
 const RESOLUTIONS := [128, 256, 512, 1024]
-const CLOUD_PRESET_DIR := "res://addons/sky_system/cloud_presets/"
+const CLOUD_PRESET_DIR := "res://addons/gre_sky_system/cloud_presets/"
 const CLOUD_PRESET_NAMES : Array[String] = ["clear", "fair", "cloudy", "overcast", "rain", "storm", "sea_fog"]
 const PANEL_SIZE := Vector2(420, 560)
 
-var water : OceanSystem
+var water : GREOceanSystem
 var wind_source : Node
 var sky_system : Node
-var player_body : FloatingBoat
+var player_body : GREFloatingBoat
 
 var _panel : PanelContainer
 var _fps_label : Label
@@ -23,10 +23,10 @@ func _ready() -> void:
 
 
 func setup(
-	ocean_system : OceanSystem,
+	ocean_system : GREOceanSystem,
 	active_wind_source : Node = null,
 	active_sky_system : Node = null,
-	active_player_body : FloatingBoat = null
+	active_player_body : GREFloatingBoat = null
 ) -> void:
 	water = ocean_system
 	wind_source = active_wind_source
@@ -646,11 +646,11 @@ func _set_named_option(node_name : StringName, value : int) -> void:
 
 
 func _get_wind_source_speed() -> float:
-	return WindSource.get_speed(wind_source) if WindSource.is_valid(wind_source) else 0.0
+	return GREWindSource.get_speed(wind_source) if GREWindSource.is_valid(wind_source) else 0.0
 
 
 func _get_wind_source_direction() -> float:
-	return WindSource.get_direction(wind_source) if WindSource.is_valid(wind_source) else 0.0
+	return GREWindSource.get_direction(wind_source) if GREWindSource.is_valid(wind_source) else 0.0
 
 
 func _set_wind_source_speed(value : float) -> void:

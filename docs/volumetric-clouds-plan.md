@@ -15,9 +15,9 @@ ways:
 
 | Pass | Observer | Used by |
 | --- | --- | --- |
-| `VolumetricCloudEffect` (screen) | the camera | the camera's view |
-| `CloudRenderer.sea_cubemap` | the sea below the camera (clamped under the base) | water reflection, the atmosphere's cloud shadows and dome light, the mirrored camera's starfield |
-| `CloudRenderer.camera_cubemap` (256², all faces) | the camera | the sky's radiance map, the light meter |
+| `GREVolumetricCloudEffect` (screen) | the camera | the camera's view |
+| `GRECloudRenderer.sea_cubemap` | the sea below the camera (clamped under the base) | water reflection, the atmosphere's cloud shadows and dome light, the mirrored camera's starfield |
+| `GRECloudRenderer.camera_cubemap` (256², all faces) | the camera | the sky's radiance map, the light meter |
 
 - **Ray setup** (`cloud_ray_segments()`): the layer is a spherical shell. A
   ray from above or inside it can dip below the base and come back out, so it

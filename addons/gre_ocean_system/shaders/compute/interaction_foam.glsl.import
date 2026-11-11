@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://b6djhyleraufl"
+path="res://.godot/imported/interaction_foam.glsl-f75ef81782bb8daeacac4fe6810578be.res"
+
+[deps]
+
+source_file="res://addons/gre_ocean_system/shaders/compute/interaction_foam.glsl"
+dest_files=["res://.godot/imported/interaction_foam.glsl-f75ef81782bb8daeacac4fe6810578be.res"]
+
+[params]
+

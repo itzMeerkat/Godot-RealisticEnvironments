@@ -1,6 +1,6 @@
 [gd_scene format=3 uid="uid://cjagxpm1gu22w"]
 
-[ext_resource type="PackedScene" uid="uid://0brvn3begbi2" path="res://addons/ocean_environment/ocean_environment.tscn" id="1_env"]
+[ext_resource type="PackedScene" uid="uid://0brvn3begbi2" path="res://addons/gre_ocean_environment/ocean_environment.tscn" id="1_env"]
 [ext_resource type="PackedScene" uid="uid://ci5ne8s704g1i" path="res://examples/simple_boat.tscn" id="2_boat"]
 [ext_resource type="Script" uid="uid://cai06wcsqfsrw" path="res://examples/orbit_camera.gd" id="3_camera"]
 [ext_resource type="PackedScene" uid="uid://ccpem72n8k6ie" path="res://examples/crate.tscn" id="4_crate"]

@@ -1,8 +1,8 @@
 [gd_scene format=3 uid="uid://ci5ne8s704g1i"]
 
-[ext_resource type="PackedScene" uid="uid://uo22um60c0vn" path="res://addons/boat_template/boat.tscn" id="1_boat"]
+[ext_resource type="PackedScene" uid="uid://uo22um60c0vn" path="res://addons/gre_boat_template/boat.tscn" id="1_boat"]
 [ext_resource type="ArrayMesh" uid="uid://b8d81o1g2nk66" path="res://examples/assets/simple_hull.obj" id="2_hull"]
-[ext_resource type="Script" uid="uid://bgwfypmjbuf0x" path="res://addons/core/water_mask.gd" id="3_mask"]
+[ext_resource type="Script" uid="uid://bgwfypmjbuf0x" path="res://addons/gre_core/water_mask.gd" id="3_mask"]
 [ext_resource type="ArrayMesh" uid="uid://rgbr1bd4dhql" path="res://examples/assets/simple_hull_water_mask.tres" id="4_mask_mesh"]
 
 [sub_resource type="ConvexPolygonShape3D" id="ConvexPolygonShape3D_60qmf"]

@@ -1,7 +1,0 @@
-[gd_resource type="ShaderMaterial" format=4 uid="uid://byumtcccq4ew3"]
-
-[ext_resource type="Shader" uid="uid://cjhn8nkfr4mn0" path="res://addons/ocean_system/shaders/spatial/water.gdshader" id="1_uffek"]
-
-[resource]
-render_priority = -20
-shader = ExtResource("1_uffek")

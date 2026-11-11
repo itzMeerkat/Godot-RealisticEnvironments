@@ -1,9 +1,9 @@
-"""Bakes the Yale Bright Star Catalogue into SkySystem's StarCatalog resource.
+"""Bakes the Yale Bright Star Catalogue into GRESkySystem's GREStarCatalog resource.
 
     python tools/bake_star_catalog.py [catalog.gz]
 
 Reads the catalogue (CDS V/50 `catalog.gz`; downloaded into build/ when no path
-is given) and writes addons/sky_system/stars/bright_star_catalog.tres: per star its
+is given) and writes addons/gre_sky_system/stars/bright_star_catalog.tres: per star its
 J2000 direction, visual magnitude and the linear Rec. 709 colour (luminance 1) of a
 blackbody at the temperature of its B-V index. Entries without a position or a
 magnitude (a few novae and non-stellar objects) are left out.
@@ -23,7 +23,7 @@ PROJECT = pathlib.Path(__file__).resolve().parent.parent
 SOURCE_URL = "https://cdsarc.cds.unistra.fr/ftp/V/50/catalog.gz"
 DOWNLOAD_PATH = PROJECT / "build" / "bsc5_catalog.gz"
 OUTPUT_PATH = PROJECT / "addons" / "sky_system" / "stars" / "bright_star_catalog.tres"
-SCRIPT_PATH = "res://addons/sky_system/star_catalog.gd"
+SCRIPT_PATH = "res://addons/gre_sky_system/star_catalog.gd"
 SCRIPT_UID_PATH = PROJECT / "addons" / "sky_system" / "star_catalog.gd.uid"
 # Stars without a B-V index get a sun-like colour.
 DEFAULT_B_V = 0.6
@@ -114,7 +114,7 @@ def write_resource(stars) -> None:
     colors = ", ".join(f"{c:.4g}" for star in stars for c in (*star[2], 1.0))
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     OUTPUT_PATH.write_text(
-        f'[gd_resource type="Resource" script_class="StarCatalog" format=3 uid="{uid}"]\n\n'
+        f'[gd_resource type="Resource" script_class="GREStarCatalog" format=3 uid="{uid}"]\n\n'
         f'[ext_resource type="Script" uid="{script_uid}" path="{SCRIPT_PATH}" id="1_catalog"]\n\n'
         "[resource]\n"
         'script = ExtResource("1_catalog")\n'

@@ -6,9 +6,9 @@ extends Node3D
 @export var boost_multiplier := 4.0
 @export var mouse_sensitivity := 0.0025
 
-@onready var sky_system : SkySystem = $SkySystem
-@onready var water : OceanSystem = $Water
-@onready var wind_system : WindSystem = $WindSystem
+@onready var sky_system : GRESkySystem = $SkySystem
+@onready var water : GREOceanSystem = $Water
+@onready var wind_system : GREWindSystem = $WindSystem
 @onready var debug_panel : OceanDebugPanel = $OceanDebugPanel
 @onready var camera : Camera3D = $Camera3D
 

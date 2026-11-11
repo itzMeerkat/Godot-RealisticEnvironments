@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://bhy8e365fxnw7"
+path="res://.godot/imported/cloud_composite.glsl-3b74f4c2716bee7b0375d6ea46ed9be2.res"
+
+[deps]
+
+source_file="res://addons/gre_sky_system/shaders/compute/cloud_composite.glsl"
+dest_files=["res://.godot/imported/cloud_composite.glsl-3b74f4c2716bee7b0375d6ea46ed9be2.res"]
+
+[params]
+

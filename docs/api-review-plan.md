@@ -13,17 +13,17 @@ compatibility shims; every caller and scene was updated in the same change.
 ### Contracts
 
 - **Wind:** the duck-typed wind contract had four readers (ocean, sky, debug
-  panel, compass HUD), each with its own copy. It now lives in `core`'s
-  `WindSource` (`is_valid()`, `get_speed()`, `get_direction()`,
-  `get_velocity()`, `direction_to_vector()`); `WindSystem` stays
+  panel, compass HUD), each with its own copy. It now lives in `gre_core`'s
+  `GREWindSource` (`is_valid()`, `get_speed()`, `get_direction()`,
+  `get_velocity()`, `direction_to_vector()`); `GREWindSystem` stays
   dependency-free.
-- **Wind source selection:** `OceanSystem.use_external_wind` is gone: a
+- **Wind source selection:** `GREOceanSystem.use_external_wind` is gone: a
   non-empty `wind_source_path` means "follow it", as
-  `SkySystem.cloud_wind_source_path` already worked. Invalid paths are errors
+  `GRESkySystem.cloud_wind_source_path` already worked. Invalid paths are errors
   and configuration warnings in both.
 - **Sky source:** the `get_sky_top_color()` / `get_sky_horizon_color()` /
   `get_sky_ground_*()` getters and the same-name property fallbacks were never
-  provided by `SkySystem`. The contract is now methods only:
+  provided by `GRESkySystem`. The contract is now methods only:
   `get_sun_direction()`, `get_sun_visibility()` and the optional clouds,
   stars, planets and atmosphere; the gradient sky without an atmosphere comes
   from `manual_sky_top_color` / `manual_sky_horizon_color`. The contract is
@@ -35,25 +35,25 @@ compatibility shims; every caller and scene was updated in the same change.
   buoyancy, hulls and reflections used `water_level`, so moving the node split
   them. The shader now draws at the `water_level` uniform; the node's transform
   is ignored and warns unless at height 0, unrotated and unscaled.
-- **Cascades:** `WaveCascadeParameters` → `WaveCascade`, a settings-only
+- **Cascades:** `WaveCascadeParameters` → `GREWaveCascade`, a settings-only
   resource: `tile_length` (a float; non-square tiles were half-supported) and
   foam. Its runtime state (seed, clock, band, spectrum slots, crossfade, frame
-  times) moved to the internal `WaveCascadeState`, owned by `OceanSystem`, so a
+  times) moved to the internal `GREWaveCascadeState`, owned by `GREOceanSystem`, so a
   cascade can be shared between oceans. `scale_changed` → the resource's
   `changed`.
 - **One value each:** `displacement_scale` was per cascade but had to be equal
   on all (the spectrum is split by wavelength); it is now
-  `WaveSpectrum.displacement_scale`. The per-cascade `normal_scale` and the
+  `GREWaveSpectrum.displacement_scale`. The per-cascade `normal_scale` and the
   global `normal_strength` multiplied the same slopes; one
-  `OceanSystem.normal_scale` (0–2, 1 = physical) remains.
+  `GREOceanSystem.normal_scale` (0–2, 1 = physical) remains.
   `sky_reflection_enabled` duplicated `sky_reflection_strength` = 0 and is gone.
-- **`WaveSpectrum` names:** `water_depth_meters` → `water_depth`,
+- **`GREWaveSpectrum` names:** `water_depth_meters` → `water_depth`,
   `wave_turn_rate_degrees_per_second` → `turn_rate`, the `spectrum_` prefix
   dropped from `direction_refresh_threshold`, `speed_refresh_threshold` and
   `blend_duration`.
-- **Enums:** `reflection_mode` is `OceanSystem.ReflectionMode`
+- **Enums:** `reflection_mode` is `GREOceanSystem.ReflectionMode`
   (`SKY_ONLY`, `SCREEN_SPACE`, `PLANAR`), `shader_quality` is
-  `OceanSystem.ShaderQuality` (`LOW`, `MEDIUM`, `HIGH`); saved values are
+  `GREOceanSystem.ShaderQuality` (`LOW`, `MEDIUM`, `HIGH`); saved values are
   unchanged. `simulation_map_size` rejects sizes without an FFT version.
 - **Groups:** `water_level` first, then Waves (spectrum, cascades,
   wind_source_path), Water, Surface, Foam, Sky (with a Manual Sky subgroup),
@@ -62,10 +62,10 @@ compatibility shims; every caller and scene was updated in the same change.
   `sky_source` and the four map textures are private.
   `get_wind_source()`, `get_sky_source()`, `get_external_wind_*()`,
   `should_use_external_wind()`, `get_water_surface()` (use
-  `WaterSurface.find()`) and `get_skipped_surface_query_dispatch_count()` are
+  `GREWaterSurface.find()`) and `get_skipped_surface_query_dispatch_count()` are
   gone; `get_surface_wind_speed/direction()` → `get_wind_speed()` /
   `get_wind_direction_degrees()`.
-- **Internals:** `WaveGenerator` is a `RefCounted` (it was a hidden child node);
+- **Internals:** `GREWaveGenerator` is a `RefCounted` (it was a hidden child node);
   `OceanReflectionRenderer` is preloaded without a `class_name` (out of the
   Create Node dialog), is an internal child, and sends its uniforms through the
   ocean's cached setter instead of around it. Disabled oceans (no
@@ -97,7 +97,7 @@ compatibility shims; every caller and scene was updated in the same change.
   `generated_probe_volume_cubic_meters` → `generated_probe_volume`. The
   generation defaults are one **New Probes** subgroup.
 - `debug_enabled` is off by default (every shipped scene turned it off).
-- The resolved `WaterSurface` (`water`) is private in `BuoyantBody` and
+- The resolved `GREWaterSurface` (`water`) is private in `GREBuoyantBody` and
   `BowSpray`; the `apply_forces` doc now says it also stops sampling.
 
 ### Hitbox damage
@@ -119,10 +119,10 @@ compatibility shims; every caller and scene was updated in the same change.
 - **Unit-suffixed names** (`latitude_degrees`, `cycle_duration_seconds`,
   `max_roll_degrees`, ...): renaming them all is churn without a behaviour
   gain; new names carry units in hints instead.
-- **`BuoyantBody._on_hitbox_group_destroyed`** stays the documented connection
+- **`GREBuoyantBody._on_hitbox_group_destroyed`** stays the documented connection
   target (Godot's handler naming).
-- **Separate exposure reads** in `OceanSystem` and `SkySystem` (three lines
-  each), and `OceanSurfaceQueries` managing its own RIDs (its buffers grow).
+- **Separate exposure reads** in `GREOceanSystem` and `GRESkySystem` (three lines
+  each), and `GREOceanSurfaceQueries` managing its own RIDs (its buffers grow).
 - **`manual_sky_*` gradient:** still the sky of an ocean without an atmosphere
   source.
 - **Probe editor visuals** are saved into scenes as the probes' mesh and

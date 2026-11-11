@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://bosqjjjdnds1j"
+path="res://.godot/imported/cloud_reconstruct.glsl-74d1ba0bba3ed359f97c20f4ae04e2b3.res"
+
+[deps]
+
+source_file="res://addons/gre_sky_system/shaders/compute/cloud_reconstruct.glsl"
+dest_files=["res://.godot/imported/cloud_reconstruct.glsl-74d1ba0bba3ed359f97c20f4ae04e2b3.res"]
+
+[params]
+

@@ -94,9 +94,9 @@ func _draw_cardinals(center: Vector2, radius: float) -> void:
 
 
 func _draw_wind_arrow(center: Vector2, radius: float) -> void:
-	if not WindSource.is_valid(wind_source):
+	if not GREWindSource.is_valid(wind_source):
 		return
-	var direction := _degrees_to_screen_direction(WindSource.get_direction(wind_source))
+	var direction := _degrees_to_screen_direction(GREWindSource.get_direction(wind_source))
 	var right := Vector2(-direction.y, direction.x)
 	var start := center - direction * 11.0
 	var tip := center + direction * (radius - 27.0)

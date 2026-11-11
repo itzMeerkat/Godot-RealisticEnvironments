@@ -1,4 +1,4 @@
-"""Bakes NASA SVS's Milky Way map into SkySystem's calibrated Milky Way texture.
+"""Bakes NASA SVS's Milky Way map into GRESkySystem's calibrated Milky Way texture.
 
     python tools/bake_milky_way.py [milkyway_2020_4k.exr]
 
@@ -6,7 +6,7 @@ Needs numpy and opencv-python (EXR support is switched on here). Reads the "Milk
 background" of NASA SVS Deep Star Maps 2020 (https://svs.gsfc.nasa.gov/4851,
 celestial coordinates, plate carree, RA 0h at the centre increasing to the left; the
 stars brighter than V = 8 left out; downloaded into build/ when no path is given) and
-writes addons/sky_system/stars/milky_way.exr:
+writes addons/gre_sky_system/stars/milky_way.exr:
 
 - RA increasing to the right from 0h at the left edge, declination +90 at the top
   (u = RA / 360, v = (90 - dec) / 180), 2048 x 1024, area-averaged;

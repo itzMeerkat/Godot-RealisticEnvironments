@@ -1,0 +1,9 @@
+[gd_scene format=3 uid="uid://dxqyyqwa3mn4a"]
+
+[ext_resource type="PackedScene" uid="uid://uo22um60czvn" path="res://addons/gre_boat_template/boat.tscn" id="1_boat"]
+[ext_resource type="Script" uid="uid://bjhn1qu3r5p6u" path="res://addons/gre_projectile_launcher_system/projectile_weapon_controller.gd" id="2_weapons"]
+
+[node name="FloatingBoat" unique_id=2115368152 instance=ExtResource("1_boat")]
+
+[node name="Weapons" type="Node3D" parent="." index="2" unique_id=1799022156]
+script = ExtResource("2_weapons")

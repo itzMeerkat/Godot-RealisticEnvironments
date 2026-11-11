@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://bx35cpp6pwybx"
+path="res://.godot/imported/interaction_evolve.glsl-25ff189a54a7f1fadd8a16c8d7dca7fc.res"
+
+[deps]
+
+source_file="res://addons/gre_ocean_system/shaders/compute/interaction_evolve.glsl"
+dest_files=["res://.godot/imported/interaction_evolve.glsl-25ff189a54a7f1fadd8a16c8d7dca7fc.res"]
+
+[params]
+

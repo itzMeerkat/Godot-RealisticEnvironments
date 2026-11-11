@@ -19,29 +19,29 @@
 
 | 插件 | 作用 |
 | --- | --- |
-| [`core`](addons/core/README.zh-CN.md) | 共用的约定（`WaterSurface`、`WindSource`）和 GPU 辅助工具。 |
-| [`wind_system`](addons/wind_system/README.zh-CN.md) | 一股带阵风的风，海浪和云都跟随它。 |
-| [`ocean_system`](addons/ocean_system/README.zh-CN.md) | 在 GPU 上计算的 FFT 海浪和延伸到地平线的多细节层次网格；还有水体着色、泡沫、反射、船只尾迹和水面高度查询。 |
-| [`sky_system`](addons/sky_system/README.zh-CN.md) | 按天文规律运行的太阳和月亮、物理大气、体积云、星星和行星。它照亮场景并测量光照。 |
-| [`exposure_system`](addons/exposure_system/README.zh-CN.md) | 根据测得的光照为相机曝光，像人眼一样适应。 |
-| [`buoyancy_system`](addons/buoyancy_system/README.zh-CN.md) | 让刚体漂浮：以设定的吃水深度静止，随波起伏，顺风漂移。 |
-| [`hitbox_damage_system`](addons/hitbox_damage_system/README.zh-CN.md) | 投射物受击区和按分组的生命值（例如船体、桅杆）。 |
-| [`ocean_environment`](addons/ocean_environment/README.zh-CN.md) | 把风、天空、海洋和曝光放在一个接好线的场景里。 |
-| [`boat_template`](addons/boat_template/README.zh-CN.md) | 接好线的船：浮力、驾驶、生命值和相机锚点。 |
+| [`gre_core`](addons/gre_core/README.zh-CN.md) | 共用的约定（`GREWaterSurface`、`GREWindSource`）和 GPU 辅助工具。 |
+| [`gre_wind_system`](addons/gre_wind_system/README.zh-CN.md) | 一股带阵风的风，海浪和云都跟随它。 |
+| [`gre_ocean_system`](addons/gre_ocean_system/README.zh-CN.md) | 在 GPU 上计算的 FFT 海浪和延伸到地平线的多细节层次网格；还有水体着色、泡沫、反射、船只尾迹和水面高度查询。 |
+| [`gre_sky_system`](addons/gre_sky_system/README.zh-CN.md) | 按天文规律运行的太阳和月亮、物理大气、体积云、星星和行星。它照亮场景并测量光照。 |
+| [`gre_exposure_system`](addons/gre_exposure_system/README.zh-CN.md) | 根据测得的光照为相机曝光，像人眼一样适应。 |
+| [`gre_buoyancy_system`](addons/gre_buoyancy_system/README.zh-CN.md) | 让刚体漂浮：以设定的吃水深度静止，随波起伏，顺风漂移。 |
+| [`gre_hitbox_damage_system`](addons/gre_hitbox_damage_system/README.zh-CN.md) | 投射物受击区和按分组的生命值（例如船体、桅杆）。 |
+| [`gre_ocean_environment`](addons/gre_ocean_environment/README.zh-CN.md) | 把风、天空、海洋和曝光放在一个接好线的场景里。 |
+| [`gre_boat_template`](addons/gre_boat_template/README.zh-CN.md) | 接好线的船：浮力、驾驶、生命值和相机锚点。 |
 
 ```
-WindSystem --- wind ---> OceanSystem <--- sky source --- SkySystem --- light ---> ExposureController
+GREWindSystem --- wind ---> GREOceanSystem <--- sky source --- GRESkySystem --- light ---> GREExposureController
     |                     |      ^                           ^
     +---------------------|------|--- wind (cloud drift) ----+
                 registers |
                           v
-      WaterSurface (core): async height queries
+      GREWaterSurface (core): async height queries
 ```
 
-- 风（`WindSystem`）驱动海浪和云的漂移；天空（`SkySystem`）为海洋提供太阳、天空、云和
-  星星，并为 `ExposureController` 提供测光。
+- 风（`GREWindSystem`）驱动海浪和云的漂移；天空（`GRESkySystem`）为海洋提供太阳、天空、云和
+  星星，并为 `GREExposureController` 提供测光。
 - 海洋和天空每帧都用 GPU 上的计算着色器渲染：海浪谱和 FFT、大气的查找纹理，以及云。
-- 物理代码从不直接访问海洋。它每个物理帧向世界的 `WaterSurface` 提交查询点，几帧后
+- 物理代码从不直接访问海洋。它每个物理帧向世界的 `GREWaterSurface` 提交查询点，几帧后
   读取结果，并外推到当前时刻。
 - 大多数单位是物理单位：风速用 m/s，光照用勒克斯，水的光学参数按每米计。画面效果来自
   物理，而不是人为的调色。
@@ -66,30 +66,30 @@ WindSystem --- wind ---> OceanSystem <--- sky source --- SkySystem --- light ---
 
 **在你的项目中使用。**
 
-1. 把 `addons/core` 和你需要的插件复制到项目的 `addons/` 文件夹。每个插件依赖的插件
+1. 把 `addons/gre_core` 和你需要的插件复制到项目的 `addons/` 文件夹。每个插件依赖的插件
    见下表。
 2. 在 **项目设置 > 插件** 中启用它们。插件会补充项目所需的设置（天空的全局着色器
    uniform 和去色带、船只的输入动作），从不改动已有设置，并打印它添加了什么。
-3. 实例化 `addons/ocean_environment/ocean_environment.tscn`，添加一个远裁剪面超过
+3. 实例化 `addons/gre_ocean_environment/ocean_environment.tscn`，添加一个远裁剪面超过
    地平线的 `Camera3D`（演示场景用 60 公里），然后运行。
-4. 要做一艘船，继承 `addons/boat_template/boat.tscn`。
+4. 要做一艘船，继承 `addons/gre_boat_template/boat.tscn`。
 
 | 插件 | 依赖 |
 | --- | --- |
-| `core`、`wind_system`、`exposure_system`、`hitbox_damage_system` | 无 |
-| `ocean_system`、`sky_system`、`buoyancy_system` | `core` |
-| `ocean_environment` | `core`、`wind_system`、`sky_system`、`ocean_system`、`exposure_system` |
-| `boat_template` | `core`、`buoyancy_system`、`hitbox_damage_system` |
+| `gre_core`、`gre_wind_system`、`gre_exposure_system`、`gre_hitbox_damage_system` | 无 |
+| `gre_ocean_system`、`gre_sky_system`、`gre_buoyancy_system` | `gre_core` |
+| `gre_ocean_environment` | `gre_core`、`gre_wind_system`、`gre_sky_system`、`gre_ocean_system`、`gre_exposure_system` |
+| `gre_boat_template` | `gre_core`、`gre_buoyancy_system`、`gre_hitbox_damage_system` |
 
 每个设置在检查器中都有提示，每个类在编辑器帮助中都有页面（按 F1，搜索例如
-`OceanSystem`）。配置有误的节点会在场景面板中显示警告。编辑器内的说明目前只有英文。
+`GREOceanSystem`）。配置有误的节点会在场景面板中显示警告。编辑器内的说明目前只有英文。
 
 ## 演示场景
 
 `demo/main.tscn` 是开发用的沙盒。你驾驶一艘装有船头回旋炮的划艇。场景里有一艘可以
 射击的卡拉维尔帆船、一个浮标、一个罗盘 HUD，以及一个隐藏的调试面板，可以实时调整
-大多数海洋、天空和风的参数。武器（`projectile_launcher_system`、
-`floating_boat_template`）只是演示玩法，不属于开源插件。
+大多数海洋、天空和风的参数。武器（`gre_projectile_launcher_system`、
+`gre_floating_boat_template`）只是演示玩法，不属于开源插件。
 `demo/ocean_optics_debug.tscn` 是一个更轻的场景，用来调整水体着色。
 
 | 输入 | 操作 |
@@ -123,7 +123,7 @@ docs/        设计记录和图片
 - **代码**（插件、示例、演示脚本、工具）：MIT 许可证，见 `LICENSE`
   （© 2026 itzMeerkat）。海浪模拟起源于 Ethan Truong 的
   [2Retr0/GodotOceanWaves](https://github.com/2Retr0/GodotOceanWaves)，MIT 许可证，
-  见 `LICENSE_original`（`addons/ocean_system/LICENSE` 中也有一份）。
+  见 `LICENSE_original`（`addons/gre_ocean_system/LICENSE` 中也有一份）。
   `README_original.md` 是上游项目对海浪谱和 FFT 数学的说明。
 - **演示模型**（`demo/assets/`）：CC BY 4.0，作者 Ginny Sutton（"Caravel Ship"）和
   Muyaya Concept（"Stylized Low Poly Rowboat with Paddles"、"Red Marine Navigation

@@ -1,6 +1,6 @@
 [gd_scene format=3 uid="uid://xjeqspklutxr"]
 
-[ext_resource type="PackedScene" uid="uid://0brvn3begbi2" path="res://addons/ocean_environment/ocean_environment.tscn" id="1_env"]
+[ext_resource type="PackedScene" uid="uid://0brvn3begbi2" path="res://addons/gre_ocean_environment/ocean_environment.tscn" id="1_env"]
 [ext_resource type="Script" uid="uid://du3f50s5ccnbp" path="res://examples/free_camera.gd" id="2_camera"]
 
 [node name="OceanOnly" type="Node3D" unique_id=100133085]

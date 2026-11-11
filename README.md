@@ -20,29 +20,29 @@ own. They connect through small contracts instead of each other's types.
 
 | Addon | What it does |
 | --- | --- |
-| [`core`](addons/core/README.md) | The shared contracts (`WaterSurface`, `WindSource`) and GPU helpers. |
-| [`wind_system`](addons/wind_system/README.md) | One wind with gusts. The waves and the clouds follow it. |
-| [`ocean_system`](addons/ocean_system/README.md) | FFT waves computed on the GPU and a level-of-detail mesh to the horizon. Also water shading, foam, reflections, boat wakes and water-height queries. |
-| [`sky_system`](addons/sky_system/README.md) | Astronomical sun and moon, a physical atmosphere, volumetric clouds, stars and planets. It lights the scene and meters that light. |
-| [`exposure_system`](addons/exposure_system/README.md) | Exposes the camera for that light, adapting like an eye. |
-| [`buoyancy_system`](addons/buoyancy_system/README.md) | Floats rigid bodies: they rest at a set draft, ride the waves and drift downwind. |
-| [`hitbox_damage_system`](addons/hitbox_damage_system/README.md) | Projectile hitboxes and health per group (e.g. hull, mast). |
-| [`ocean_environment`](addons/ocean_environment/README.md) | Wind, sky, ocean and exposure in one ready-wired scene. |
-| [`boat_template`](addons/boat_template/README.md) | A ready-wired boat: buoyancy, driving, health and camera anchors. |
+| [`gre_core`](addons/gre_core/README.md) | The shared contracts (`GREWaterSurface`, `GREWindSource`) and GPU helpers. |
+| [`gre_wind_system`](addons/gre_wind_system/README.md) | One wind with gusts. The waves and the clouds follow it. |
+| [`gre_ocean_system`](addons/gre_ocean_system/README.md) | FFT waves computed on the GPU and a level-of-detail mesh to the horizon. Also water shading, foam, reflections, boat wakes and water-height queries. |
+| [`gre_sky_system`](addons/gre_sky_system/README.md) | Astronomical sun and moon, a physical atmosphere, volumetric clouds, stars and planets. It lights the scene and meters that light. |
+| [`gre_exposure_system`](addons/gre_exposure_system/README.md) | Exposes the camera for that light, adapting like an eye. |
+| [`gre_buoyancy_system`](addons/gre_buoyancy_system/README.md) | Floats rigid bodies: they rest at a set draft, ride the waves and drift downwind. |
+| [`gre_hitbox_damage_system`](addons/gre_hitbox_damage_system/README.md) | Projectile hitboxes and health per group (e.g. hull, mast). |
+| [`gre_ocean_environment`](addons/gre_ocean_environment/README.md) | Wind, sky, ocean and exposure in one ready-wired scene. |
+| [`gre_boat_template`](addons/gre_boat_template/README.md) | A ready-wired boat: buoyancy, driving, health and camera anchors. |
 
 ```
-WindSystem --- wind ---> OceanSystem <--- sky source --- SkySystem --- light ---> ExposureController
+GREWindSystem --- wind ---> GREOceanSystem <--- sky source --- GRESkySystem --- light ---> GREExposureController
     |                     |      ^                           ^
     +---------------------|------|--- wind (cloud drift) ----+
                 registers |
                           v
-      WaterSurface (core): async height queries
+      GREWaterSurface (core): async height queries
 ```
 
 - The ocean and the sky render with compute shaders on the GPU each frame:
   wave spectra and FFTs, the atmosphere's lookup textures, and the clouds.
 - Physics code never touches the ocean directly. It submits points to the
-  world's `WaterSurface` every physics tick and reads the answer a few frames
+  world's `GREWaterSurface` every physics tick and reads the answer a few frames
   later, extrapolated to the present.
 - Most units are physical: wind in m/s, light in lux, water optics per metre.
   The look comes from the physics, not from artistic tints.
@@ -69,25 +69,25 @@ WindSystem --- wind ---> OceanSystem <--- sky source --- SkySystem --- light ---
 
 **Use it in your project.**
 
-1. Copy `addons/core` and the addons you want into your project's `addons/`
+1. Copy `addons/gre_core` and the addons you want into your project's `addons/`
    folder. Each addon needs the ones listed below.
 2. Enable them in **Project Settings > Plugins**. The plugins add what the
    project needs (the sky's global shader uniforms and debanding, the boat's
    input actions), never change existing settings, and print what they added.
-3. Instance `addons/ocean_environment/ocean_environment.tscn`, add a
+3. Instance `addons/gre_ocean_environment/ocean_environment.tscn`, add a
    `Camera3D` whose far plane reaches past the horizon (the demo uses 60 km),
    and run.
-4. For a boat, inherit `addons/boat_template/boat.tscn`.
+4. For a boat, inherit `addons/gre_boat_template/boat.tscn`.
 
 | Addon | Needs |
 | --- | --- |
-| `core`, `wind_system`, `exposure_system`, `hitbox_damage_system` | Nothing |
-| `ocean_system`, `sky_system`, `buoyancy_system` | `core` |
-| `ocean_environment` | `core`, `wind_system`, `sky_system`, `ocean_system`, `exposure_system` |
-| `boat_template` | `core`, `buoyancy_system`, `hitbox_damage_system` |
+| `gre_core`, `gre_wind_system`, `gre_exposure_system`, `gre_hitbox_damage_system` | Nothing |
+| `gre_ocean_system`, `gre_sky_system`, `gre_buoyancy_system` | `gre_core` |
+| `gre_ocean_environment` | `gre_core`, `gre_wind_system`, `gre_sky_system`, `gre_ocean_system`, `gre_exposure_system` |
+| `gre_boat_template` | `gre_core`, `gre_buoyancy_system`, `gre_hitbox_damage_system` |
 
 Every setting has an inspector tooltip, and every class has a page in the
-editor's help (F1, then search for e.g. `OceanSystem`). Misconfigured nodes
+editor's help (F1, then search for e.g. `GREOceanSystem`). Misconfigured nodes
 show warnings in the Scene dock.
 
 ## The demo
@@ -95,7 +95,7 @@ show warnings in the Scene dock.
 `demo/main.tscn` is the development sandbox. You drive a rowboat with a bow
 swivel gun. There is a caravel you can shoot, a buoy, a compass HUD
 and a hidden debug panel for most ocean, sky and wind settings. The weapons
-(`projectile_launcher_system`, `floating_boat_template`) are demo gameplay and
+(`gre_projectile_launcher_system`, `gre_floating_boat_template`) are demo gameplay and
 not part of the open-source addons. `demo/ocean_optics_debug.tscn` is a
 lighter scene for tuning the water's shading.
 
@@ -131,7 +131,7 @@ changes.
 - **Code** (addons, examples, demo scripts, tools): MIT, `LICENSE`
   (© 2026 itzMeerkat). The wave simulation started from
   [2Retr0/GodotOceanWaves](https://github.com/2Retr0/GodotOceanWaves) by Ethan
-  Truong, MIT, `LICENSE_original` (also in `addons/ocean_system/LICENSE`).
+  Truong, MIT, `LICENSE_original` (also in `addons/gre_ocean_system/LICENSE`).
   `README_original.md` is the upstream write-up of the spectrum and FFT math.
 - **Demo models** (`demo/assets/`): CC BY 4.0, by Ginny Sutton ("Caravel
   Ship") and Muyaya Concept ("Stylized Low Poly Rowboat with Paddles", "Red

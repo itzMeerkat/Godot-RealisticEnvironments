@@ -1,0 +1,28 @@
+[gd_scene format=3 uid="uid://bkunapul4de5r"]
+
+[ext_resource type="Script" uid="uid://bn0q2riall17t" path="res://addons/gre_projectile_launcher_system/projectile.gd" id="1_projectile"]
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_projectile"]
+radius = 0.15
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_projectile"]
+albedo_color = Color(0.92, 0.82, 0.55, 1)
+metallic = 0.35
+roughness = 0.45
+
+[sub_resource type="SphereMesh" id="SphereMesh_projectile"]
+radius = 0.15
+height = 0.3
+
+[node name="DefaultProjectile" type="RigidBody3D" unique_id=1315410513]
+collision_layer = 2
+collision_mask = 4
+continuous_cd = true
+script = ExtResource("1_projectile")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1319593915]
+shape = SubResource("SphereShape3D_projectile")
+
+[node name="Visual" type="MeshInstance3D" parent="." unique_id=1269567752]
+material_override = SubResource("StandardMaterial3D_projectile")
+mesh = SubResource("SphereMesh_projectile")

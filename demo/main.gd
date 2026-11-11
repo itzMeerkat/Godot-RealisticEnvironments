@@ -9,7 +9,7 @@ extends Node3D
 @onready var compass_hud : CompassHud = $CompassLayer/CompassHud
 @onready var buoy_distance_label : BuoyDistanceLabel = $Buoy/RigidBody3D/DistanceLabel
 
-var player_boat : FloatingBoat
+var player_boat : GREFloatingBoat
 
 func _init() -> void:
 	if Engine.is_editor_hint(): return
@@ -44,12 +44,12 @@ func _input(event: InputEvent) -> void:
 func _configure_player_boat() -> void:
 	player_boat = _find_player_boat()
 	if player_boat == null:
-		push_warning("No player-controlled FloatingBoat found. Falling back to the first boat in the scene.")
+		push_warning("No player-controlled GREFloatingBoat found. Falling back to the first boat in the scene.")
 		player_boat = _find_first_boat()
 		if player_boat != null:
 			player_boat.player_controlled = true
 	if player_boat == null:
-		push_warning("No FloatingBoat found. Camera and debug panel are not bound to a boat.")
+		push_warning("No GREFloatingBoat found. Camera and debug panel are not bound to a boat.")
 		return
 
 	for boat in _get_boats():
@@ -64,22 +64,22 @@ func _configure_player_boat() -> void:
 	)
 
 
-func _find_player_boat() -> FloatingBoat:
+func _find_player_boat() -> GREFloatingBoat:
 	for boat in _get_boats():
 		if boat.player_controlled:
 			return boat
 	return null
 
 
-func _find_first_boat() -> FloatingBoat:
+func _find_first_boat() -> GREFloatingBoat:
 	var boats := _get_boats()
 	return boats[0] if not boats.is_empty() else null
 
 
-func _get_boats() -> Array[FloatingBoat]:
-	var boats : Array[FloatingBoat] = []
+func _get_boats() -> Array[GREFloatingBoat]:
+	var boats : Array[GREFloatingBoat] = []
 	for child in get_children():
-		var boat := child as FloatingBoat
+		var boat := child as GREFloatingBoat
 		if boat != null:
 			boats.push_back(boat)
 	return boats

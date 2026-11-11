@@ -1,10 +1,10 @@
 [gd_scene format=3 uid="uid://cu6jvrb4ikqbo"]
 
-[ext_resource type="PackedScene" uid="uid://dxqyyqwa3mn4a" path="res://addons/floating_boat_template/floating_boat.tscn" id="1_template"]
-[ext_resource type="Script" uid="uid://by55imxv5cm3" path="res://addons/hitbox_damage_system/projectile_hitbox.gd" id="4_m4qgx"]
+[ext_resource type="PackedScene" uid="uid://dxqyyqwa3mn4a" path="res://addons/gre_floating_boat_template/floating_boat.tscn" id="1_template"]
+[ext_resource type="Script" uid="uid://by55imxv5cm3" path="res://addons/gre_hitbox_damage_system/projectile_hitbox.gd" id="4_m4qgx"]
 [ext_resource type="PackedScene" uid="uid://c4ku7e1gt62nr" path="res://demo/assets/low_poly_boat/scene.gltf" id="6_oojqr"]
-[ext_resource type="PackedScene" uid="uid://cpi87gv104psq" path="res://addons/projectile_launcher_system/projectile_launcher.tscn" id="7_ojoqu"]
-[ext_resource type="Script" uid="uid://bgwfypmjbuf0x" path="res://addons/core/water_mask.gd" id="8_mask"]
+[ext_resource type="PackedScene" uid="uid://cpi87gv104psq" path="res://addons/gre_projectile_launcher_system/projectile_launcher.tscn" id="7_ojoqu"]
+[ext_resource type="Script" uid="uid://bgwfypmjbuf0x" path="res://addons/gre_core/water_mask.gd" id="8_mask"]
 [ext_resource type="ArrayMesh" uid="uid://b12516ythhn3i" path="res://demo/rowboat_water_mask.tres" id="9_mask_mesh"]
 
 [sub_resource type="ConvexPolygonShape3D" id="ConvexPolygonShape3D_c6sjc"]

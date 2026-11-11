@@ -1,0 +1,37 @@
+[gd_scene format=3 uid="uid://uo22um60czvn"]
+
+[ext_resource type="Script" uid="uid://dveyhksfy85al" path="res://addons/gre_boat_template/floating_boat.gd" id="1_boat"]
+[ext_resource type="Script" uid="uid://ci8d431qqx5lx" path="res://addons/gre_hitbox_damage_system/hitbox_health_manager.gd" id="4_health"]
+[ext_resource type="PackedScene" uid="uid://cs4tsoxha78ww" path="res://addons/gre_hitbox_damage_system/default_projectile_hit_smoke.tscn" id="5_hit_smoke"]
+[ext_resource type="Script" uid="uid://d21whouuqhx10" path="res://addons/gre_buoyancy_system/buoyant_body.gd" id="6_buoyancy"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_template"]
+size = Vector3(2, 1, 5)
+
+[node name="Boat" type="RigidBody3D" unique_id=2115368152]
+mass = 1000.0
+center_of_mass_mode = 1
+linear_damp_mode = 1
+script = ExtResource("1_boat")
+buoyancy_path = NodePath("BuoyantBody")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=302983775]
+shape = SubResource("BoxShape3D_template")
+
+[node name="Hitboxes" type="Node3D" parent="." unique_id=1581731188]
+script = ExtResource("4_health")
+group_max_health = {
+"hull": 100.0
+}
+hit_effect_scene = ExtResource("5_hit_smoke")
+
+[node name="CameraTargets" type="Node3D" parent="." unique_id=1262110883]
+
+[node name="ThirdPersonFocus" type="Marker3D" parent="CameraTargets" unique_id=398705810]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2, 0)
+
+[node name="FirstPersonSeat" type="Marker3D" parent="CameraTargets" unique_id=812544978]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2, -1)
+
+[node name="BuoyantBody" type="Node" parent="." unique_id=1907536648]
+script = ExtResource("6_buoyancy")

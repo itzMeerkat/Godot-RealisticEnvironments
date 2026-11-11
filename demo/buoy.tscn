@@ -2,7 +2,7 @@
 
 [ext_resource type="PackedScene" uid="uid://cu4i5s60m0u7x" path="res://demo/assets/buoy/red_marine_navigation_buoy_game_ready.glb" id="1_lq5a0"]
 [ext_resource type="Script" uid="uid://c8hdl5abw2t2d" path="res://demo/buoy_distance_label.gd" id="5_distance"]
-[ext_resource type="Script" uid="uid://d21whouuqhx10" path="res://addons/buoyancy_system/buoyant_body.gd" id="6_buoyancy"]
+[ext_resource type="Script" uid="uid://d21whouuqhx10" path="res://addons/gre_buoyancy_system/buoyant_body.gd" id="6_buoyancy"]
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_lq5a0"]
 radius = 0.9291992

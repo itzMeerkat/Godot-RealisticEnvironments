@@ -1,11 +1,11 @@
 [gd_scene format=3 uid="uid://hh83vpvyyuxa"]
 
 [ext_resource type="Script" uid="uid://behd6pbdvdjv6" path="res://demo/ocean_optics_debug.gd" id="1_debug"]
-[ext_resource type="PackedScene" uid="uid://ckdc57htjsaad" path="res://addons/sky_system/sky_system.tscn" id="2_sky"]
-[ext_resource type="PackedScene" uid="uid://lsh7kr3nyl2t" path="res://addons/ocean_system/ocean_system.tscn" id="3_water"]
-[ext_resource type="Script" uid="uid://btyuqnmfuyrr6" path="res://addons/wind_system/wind_system.gd" id="4_wind"]
+[ext_resource type="PackedScene" uid="uid://ckdc57htjsaad" path="res://addons/gre_sky_system/sky_system.tscn" id="2_sky"]
+[ext_resource type="PackedScene" uid="uid://lsh7kr3nyl2t" path="res://addons/gre_ocean_system/ocean_system.tscn" id="3_water"]
+[ext_resource type="Script" uid="uid://btyuqnmfuyrr6" path="res://addons/gre_wind_system/wind_system.gd" id="4_wind"]
 [ext_resource type="PackedScene" uid="uid://bm4bg7uoyr0xy" path="res://systems/debug/ocean_debug_panel.tscn" id="5_panel"]
-[ext_resource type="Script" uid="uid://chrxdfdli1lpb" path="res://addons/exposure_system/exposure_controller.gd" id="6_exposure"]
+[ext_resource type="Script" uid="uid://chrxdfdli1lpb" path="res://addons/gre_exposure_system/exposure_controller.gd" id="6_exposure"]
 
 [node name="OceanOpticsDebug" type="Node3D" unique_id=1794523757]
 script = ExtResource("1_debug")

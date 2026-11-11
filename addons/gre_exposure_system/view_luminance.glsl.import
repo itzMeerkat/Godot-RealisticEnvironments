@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://cy4tx57yf4o4u"
+path="res://.godot/imported/view_luminance.glsl-245df8bd897ed34837b399409daadc34.res"
+
+[deps]
+
+source_file="res://addons/gre_exposure_system/view_luminance.glsl"
+dest_files=["res://.godot/imported/view_luminance.glsl-245df8bd897ed34837b399409daadc34.res"]
+
+[params]
+

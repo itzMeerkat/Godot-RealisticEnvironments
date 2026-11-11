@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://n400y1v52pce"
+path="res://.godot/imported/atmosphere_transmittance.glsl-db92e239030b04ef28a228a70aa7cf27.res"
+
+[deps]
+
+source_file="res://addons/gre_sky_system/shaders/compute/atmosphere_transmittance.glsl"
+dest_files=["res://.godot/imported/atmosphere_transmittance.glsl-db92e239030b04ef28a228a70aa7cf27.res"]
+
+[params]
+

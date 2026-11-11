@@ -1,0 +1,22 @@
+[gd_resource type="ShaderMaterial" format=3 uid="uid://dn2e5gtbc2jx4"]
+
+[ext_resource type="Shader" uid="uid://bfqtnobg1ay72" path="res://addons/gre_sky_system/shaders/sky.gdshader" id="1_sky"]
+[ext_resource type="Texture2D" uid="uid://cok5lqicacam1" path="res://addons/gre_sky_system/stars/milky_way.exr" id="2_milky_way"]
+
+[resource]
+shader = ExtResource("1_sky")
+shader_parameter/milky_way = ExtResource("2_milky_way")
+shader_parameter/sun_direction = Vector3(0.8305959, 0.4561658, 0.31941074)
+shader_parameter/sun_color = Color(1, 0.96, 0.82, 1)
+shader_parameter/sun_visibility = 1.0
+shader_parameter/sun_irradiance = Vector3(2.7559597, 2.6457212, 2.259887)
+shader_parameter/sun_disk_size = 0.00465
+shader_parameter/sun_halo_size = 0.075
+shader_parameter/radiance_sun_disk_strength = 0.24
+shader_parameter/radiance_sun_halo_strength = 0.28
+shader_parameter/moon_direction = Vector3(-0.825071, -0.47498044, -0.30602542)
+shader_parameter/moon_color = Color(0.02, 0.025, 0.04, 1)
+shader_parameter/moon_visibility = 0.0
+shader_parameter/moon_disk_size = 0.00465
+shader_parameter/moon_phase = 0.9999999990217492
+shader_parameter/clouds_enabled = false

@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://jog6bqtc7py6"
+path="res://.godot/imported/transpose.glsl-d2bea383b0b170351cc8c4c13c2c7e79.res"
+
+[deps]
+
+source_file="res://addons/gre_ocean_system/shaders/compute/transpose.glsl"
+dest_files=["res://.godot/imported/transpose.glsl-d2bea383b0b170351cc8c4c13c2c7e79.res"]
+
+[params]
+

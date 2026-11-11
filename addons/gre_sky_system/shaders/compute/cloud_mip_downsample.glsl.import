@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://br67f8a3ew23e"
+path="res://.godot/imported/cloud_mip_downsample.glsl-44b53f7731a779a3177ba08c241b7ef3.res"
+
+[deps]
+
+source_file="res://addons/gre_sky_system/shaders/compute/cloud_mip_downsample.glsl"
+dest_files=["res://.godot/imported/cloud_mip_downsample.glsl-44b53f7731a779a3177ba08c241b7ef3.res"]
+
+[params]
+
